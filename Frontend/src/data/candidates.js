@@ -1,3 +1,4 @@
+/** Mock candidate fixtures. Swap for an API call when backend lands. */
 export const candidates = [
   { n: 'Maya Rodriguez', a: 'MR', cl: 'lg-1', role: 'Staff Frontend Engineer · 9 yrs', skills: ['React', 'TypeScript', 'Next.js', 'Design Systems'], loc: 'Brooklyn', rate: '$180K', rating: '★★★★★', rank: '#01' },
   { n: 'Daniel Park', a: 'DP', cl: 'lg-2', role: 'Senior Backend Engineer · 7 yrs', skills: ['Go', 'Postgres', 'Kubernetes', 'Distributed Systems'], loc: 'Berlin', rate: '$160K', rating: '★★★★★', rank: '#02' },

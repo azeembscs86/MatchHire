@@ -1,3 +1,16 @@
+/**
+ * Header
+ *
+ * Sticky primary navigation that hosts the brand, route links, a
+ * favorites shortcut, the dashboard dropdown, and the auth buttons.
+ *
+ * `NavLink` is preferred over `Link` here so React Router applies
+ * the `.active` class automatically — the same hook the design
+ * system uses to render the coral underline dot.
+ *
+ * The favorites count is read live from FavoritesContext, so saving
+ * or unsaving anywhere on the site updates this badge in place.
+ */
 import { NavLink, useNavigate } from 'react-router-dom';
 import Logo from './Logo.jsx';
 import DashboardDropdown from './DashboardDropdown.jsx';

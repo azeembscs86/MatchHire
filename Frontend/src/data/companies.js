@@ -1,3 +1,4 @@
+/** Mock company fixtures. Swap for an API call when backend lands. */
 export const companies = [
   { n: 'Linear', l: 'L', cl: 'lg-1', ind: 'Project Management · Series C', d: 'Build the issue tracker software teams genuinely enjoy using.', jobs: '12 open', size: '120 people' },
   { n: 'Stripe', l: 'S', cl: 'lg-2', ind: 'Fintech · Public', d: 'Economic infrastructure for the internet, processing trillions annually.', jobs: '48 open', size: '8K people' },

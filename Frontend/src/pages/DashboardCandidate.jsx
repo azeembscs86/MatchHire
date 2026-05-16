@@ -1,3 +1,10 @@
+/**
+ * DashboardCandidate page — "Candidate Hub".
+ *
+ * Personal workspace for job seekers: stats row, recent applications,
+ * profile-health checklist, matches, and an activity timeline.
+ * The sidebar links into Favorites, Profile, and Preferences.
+ */
 import { Link } from 'react-router-dom';
 
 export default function DashboardCandidate() {

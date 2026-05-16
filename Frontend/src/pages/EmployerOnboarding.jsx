@@ -1,3 +1,10 @@
+/**
+ * EmployerOnboarding page.
+ *
+ * Step 1 of the employer setup wizard (company details). Submitting
+ * is a stub; in production this would post to the API and advance
+ * the wizard to step 2 (domain verification).
+ */
 export default function EmployerOnboarding() {
   const handleSubmit = (e) => {
     e.preventDefault();

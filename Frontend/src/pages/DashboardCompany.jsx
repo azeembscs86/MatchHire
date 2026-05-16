@@ -1,3 +1,10 @@
+/**
+ * DashboardCompany page — "Company Hub".
+ *
+ * Employer-side workspace: active job postings, applicants awaiting
+ * review, and a hiring funnel (Applied → Reviewed → … → Hired) with
+ * conversion percentages and cost-per-hire footer.
+ */
 export default function DashboardCompany() {
   return (
     <section className="view active" id="view-dash-company" style={{ background: 'var(--bone)' }}>

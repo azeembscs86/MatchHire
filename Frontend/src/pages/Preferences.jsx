@@ -1,3 +1,25 @@
+/**
+ * Preferences page.
+ *
+ * The most interactive page in the app. Eight numbered sections:
+ *
+ *   1. Priorities  — ordered list the user composes from a pool
+ *   2. Role        — desired roles, experience, job type
+ *   3. Comp        — salary sliders + currency + must-haves
+ *   4. Location    — work mode, cities, relocation/visa toggles
+ *   5. Industry    — industries + company stage
+ *   6. Weights     — per-factor match-algorithm sliders
+ *   7. Dealbreakers — additive list with an inline composer
+ *   8. Alerts      — notification cadence + per-channel toggles
+ *
+ * The sidebar tracks the active section purely for visual feedback;
+ * navigation uses native smooth-scroll into the section anchors.
+ *
+ * The small inline subcomponents (TagOpt, OptCard, Toggle,
+ * WeightRow, MatchScoreRange) own their own UI-only state. The
+ * page-level `useState` calls track values that participate in
+ * cross-section logic (ranked priorities, salary range, deal list).
+ */
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ALL_PRIORITIES } from '../data/priorities.js';

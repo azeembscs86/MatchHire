@@ -1,3 +1,10 @@
+/**
+ * Home page.
+ *
+ * Above-the-fold hero, search bar, and a "Recommended for you" rail
+ * showing the first six jobs. Decorative hero cards float on the
+ * right (hidden below tablet width via media query in styles.css).
+ */
 import { Link } from 'react-router-dom';
 import { jobs } from '../data/jobs.js';
 import JobCard from '../components/JobCard.jsx';

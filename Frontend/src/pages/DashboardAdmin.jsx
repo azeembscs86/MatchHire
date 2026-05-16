@@ -1,3 +1,10 @@
+/**
+ * DashboardAdmin page — "Admin Console".
+ *
+ * Platform-operator surface: aggregate metrics (users, companies,
+ * MRR), pending verifications queue, system-health panel, recent
+ * users table, and a flagged-content timeline.
+ */
 export default function DashboardAdmin() {
   return (
     <section className="view active" id="view-dash-admin" style={{ background: 'var(--bone)' }}>

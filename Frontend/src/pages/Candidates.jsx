@@ -1,3 +1,7 @@
+/**
+ * Candidates discovery page — grid of top-rated open candidates,
+ * shown to employers as the "Find candidates" funnel entry point.
+ */
 import { candidates } from '../data/candidates.js';
 import CandidateCard from '../components/CandidateCard.jsx';
 

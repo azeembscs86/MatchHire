@@ -1,3 +1,15 @@
+/**
+ * Favorites page.
+ *
+ * Reads the saved-jobs Set from FavoritesContext, partitions it by
+ * collection (Top picks / Apply soon / Maybe later), and renders an
+ * insights panel above the grid. A "similar roles" rail at the
+ * bottom surfaces the first few jobs the user hasn't saved yet.
+ *
+ * The collection assignments and per-job deadline strings come from
+ * `data/jobs.js` — they're static for now. Replace with API-driven
+ * metadata once the backend supports user-defined collections.
+ */
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { jobs, jobCollections, collectionLabels, deadlines } from '../data/jobs.js';

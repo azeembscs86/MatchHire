@@ -1,3 +1,8 @@
+/**
+ * Catalogue of priorities the user can drag into their ranked list on
+ * the Preferences page. `id` is the stable key persisted in the
+ * ranking; `icon` + `name` + `desc` are display-only.
+ */
 export const ALL_PRIORITIES = [
   { id: 'comp', icon: '💰', name: 'Compensation & equity', desc: 'Salary, RSUs, signing bonus matter most' },
   { id: 'growth', icon: '📈', name: 'Career growth', desc: 'Clear path to staff/principal level' },

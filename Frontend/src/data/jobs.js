@@ -1,3 +1,10 @@
+/**
+ * Mock fixtures for the job listing. Replace with an API client once
+ * a backend exists; consumers only depend on the exported shapes.
+ *
+ * `jobCollections` maps a job index to a curated bucket shown on the
+ * Favorites page. `deadlines` adds per-job urgency copy.
+ */
 export const jobs = [
   { co: 'Linear', l: 'L', cl: 'lg-1', title: 'Staff Frontend Engineer', loc: 'Remote · Worldwide', type: 'Full-time', pay: '$180–230K', tags: ['React', 'TypeScript', 'Next.js'], time: '2h ago', match: '96% match', featured: true },
   { co: 'Stripe', l: 'S', cl: 'lg-2', title: 'Senior Backend Architect', loc: 'San Francisco · Hybrid', type: 'Full-time', pay: '$210–280K', tags: ['Node.js', 'Go', 'AWS'], time: '1d ago', match: '92% match' },

@@ -1,3 +1,18 @@
+/**
+ * JobCard
+ *
+ * Compact card for a single job, used on Home, Jobs, Favorites'
+ * "similar" rail, and anywhere else jobs are listed. The heart in
+ * the corner reads/writes FavoritesContext, so toggling here updates
+ * every other card and the header badge in real time.
+ *
+ * @param {object} props
+ * @param {object} props.job       - Job shape from `data/jobs.js`.
+ * @param {number} props.idx       - Stable index used as the
+ *   favorite key (until real ids exist).
+ * @param {boolean} [props.featured] - Show the FEATURED ribbon when
+ *   the job itself is marked `featured`.
+ */
 import { useFavorites } from '../context/FavoritesContext.jsx';
 
 function HeartIcon({ filled }) {

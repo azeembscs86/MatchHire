@@ -1,3 +1,11 @@
+/**
+ * CompanyCard
+ *
+ * Display card for a single company on the Companies grid.
+ *
+ * @param {object} props
+ * @param {object} props.company - Company shape from `data/companies.js`.
+ */
 export default function CompanyCard({ company }) {
   return (
     <div className="co-card">

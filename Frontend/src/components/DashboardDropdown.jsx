@@ -1,3 +1,12 @@
+/**
+ * DashboardDropdown
+ *
+ * Top-right menu that exposes the three dashboards (candidate hub,
+ * company hub, admin console). Closes on outside click via a document
+ * listener anchored to the wrapper ref — necessary because the menu
+ * is rendered outside the trigger's positioning context and React's
+ * onBlur doesn't bubble up from arbitrary children.
+ */
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 

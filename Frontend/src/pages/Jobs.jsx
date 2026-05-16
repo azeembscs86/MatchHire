@@ -1,3 +1,10 @@
+/**
+ * Jobs listing page.
+ *
+ * Two-column layout: filter sidebar on the left, results on the
+ * right. Filters are display-only at the moment — wire them up to
+ * the listing's `useMemo` when real querying is needed.
+ */
 import { jobs } from '../data/jobs.js';
 import JobCard from '../components/JobCard.jsx';
 

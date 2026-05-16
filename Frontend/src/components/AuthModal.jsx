@@ -1,3 +1,19 @@
+/**
+ * AuthModal
+ *
+ * Overlay used by every entry point that needs the user to be signed
+ * in or signed up. Open/close state is driven by AuthModalContext, so
+ * any component anywhere in the tree can pop the modal without
+ * threading callbacks through.
+ *
+ * The modal closes on Escape and on overlay click; the inner card
+ * stops propagation so clicks inside don't dismiss it.
+ *
+ * Form submission is stubbed — calls `alert(...)` and closes. Hook
+ * this up to your real auth backend (OAuth, email magic link, etc.)
+ * by replacing `handleSubmit` and persisting the session somewhere
+ * sensible (likely an AuthContext alongside this one).
+ */
 import { useEffect, useState } from 'react';
 import { useAuthModal } from '../context/AuthModalContext.jsx';
 

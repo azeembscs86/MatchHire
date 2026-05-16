@@ -1,3 +1,9 @@
+/**
+ * Footer
+ *
+ * Global footer with sitemap, brand pitch, and social row. Rendered
+ * once by the Layout — pages don't import or render it directly.
+ */
 import { Link } from 'react-router-dom';
 import Logo from './Logo.jsx';
 

@@ -1,3 +1,10 @@
+/**
+ * TopBar
+ *
+ * Thin ink-black utility strip above the main nav. Communicates
+ * trust signals (live posting count, customer-base claim) and
+ * exposes a Help Center link that doubles as a sign-up CTA.
+ */
 import { useAuthModal } from '../context/AuthModalContext.jsx';
 
 export default function TopBar() {

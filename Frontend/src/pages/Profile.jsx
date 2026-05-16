@@ -1,3 +1,11 @@
+/**
+ * Profile page.
+ *
+ * Multi-card candidate profile builder. Only the skills input is
+ * stateful — the other fields are uncontrolled inputs that would
+ * pick up their values from an API in production. The submit
+ * handler is a stub.
+ */
 import { useState } from 'react';
 
 const DEFAULT_SKILLS = ['React', 'TypeScript', 'Next.js', 'Node.js', 'GraphQL', 'Tailwind', 'PostgreSQL', 'Figma'];

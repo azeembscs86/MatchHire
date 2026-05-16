@@ -1,3 +1,4 @@
+/** Companies discovery page — grid of `CompanyCard`s. */
 import { companies } from '../data/companies.js';
 import CompanyCard from '../components/CompanyCard.jsx';
 
