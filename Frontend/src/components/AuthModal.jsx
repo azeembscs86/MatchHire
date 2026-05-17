@@ -13,8 +13,10 @@
  * the tree can pop the modal without prop-drilling a callback.
  */
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuthModal } from '../context/AuthModalContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
+import { authApi } from '../api/index.js';
 
 function FormError({ error }) {
   if (!error) return null;
@@ -38,11 +40,19 @@ function SignIn({ onSwitch, onClose }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [resendStatus, setResendStatus] = useState(null);
+  const [resending, setResending] = useState(false);
+
+  // Backend returns this exact message when the account is `pending`.
+  // Treat it specially so we can offer the user a one-click resend
+  // without making them navigate elsewhere.
+  const needsVerification = error?.message?.includes('verify your email');
 
   async function handleSubmit(e) {
     e.preventDefault();
     if (submitting) return;
     setError(null);
+    setResendStatus(null);
     setSubmitting(true);
     try {
       await login(email.trim(), password);
@@ -54,11 +64,41 @@ function SignIn({ onSwitch, onClose }) {
     }
   }
 
+  async function handleResend() {
+    if (!email.trim()) return;
+    setResending(true);
+    setResendStatus(null);
+    try {
+      await authApi.resendVerification(email.trim());
+      setResendStatus({ ok: true, text: 'If the account exists and is unverified, a fresh link is on its way.' });
+    } catch {
+      setResendStatus({ ok: false, text: 'Could not resend right now. Try again in a moment.' });
+    } finally {
+      setResending(false);
+    }
+  }
+
   return (
     <form onSubmit={handleSubmit}>
       <h2>Welcome back.</h2>
       <p>Sign in to continue your search or hiring.</p>
       <FormError error={error} />
+      {needsVerification && (
+        <div style={{ marginBottom: 12, padding: 10, borderRadius: 8, background: 'var(--bone)', fontSize: 13 }}>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={resending}
+            onClick={handleResend}
+            style={{ padding: '6px 10px', fontSize: 13 }}
+          >
+            {resending ? 'Resending…' : 'Resend verification email'}
+          </button>
+          {resendStatus && (
+            <div style={{ marginTop: 6, color: resendStatus.ok ? '#0f5132' : '#b3361b' }}>{resendStatus.text}</div>
+          )}
+        </div>
+      )}
       <div className="form-field">
         <label>Email</label>
         <input type="email" required placeholder="you@email.com" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
@@ -79,6 +119,7 @@ function SignIn({ onSwitch, onClose }) {
 
 function SignUp({ onClose }) {
   const { register } = useAuth();
+  const navigate = useNavigate();
   const [role, setRole] = useState('hunting');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -95,21 +136,27 @@ function SignUp({ onClose }) {
     setError(null);
     setSubmitting(true);
     try {
-      if (isEmployer) {
-        await register('employer', {
-          full_name: fullName,
-          email: email.trim(),
-          password,
-          company: { name: companyName || `${fullName}'s Company` },
-        });
-      } else {
-        await register('candidate', {
-          full_name: fullName,
-          email: email.trim(),
-          password,
+      const result = await register(
+        isEmployer ? 'employer' : 'candidate',
+        isEmployer
+          ? {
+              full_name: fullName,
+              email: email.trim(),
+              password,
+              company: { name: companyName || `${fullName}'s Company` },
+            }
+          : { full_name: fullName, email: email.trim(), password }
+      );
+
+      onClose();
+      // New accounts always require verification - send the user to
+      // the verify-pending screen and pass the dev URL through state.
+      if (result?.requiresVerification) {
+        navigate('/verify-email', {
+          state: { email: email.trim(), verificationUrl: result.verificationUrl },
+          replace: false,
         });
       }
-      onClose();
     } catch (err) {
       setError(err);
     } finally {

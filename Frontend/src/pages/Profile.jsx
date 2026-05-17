@@ -14,6 +14,7 @@
  */
 import { useEffect, useState } from 'react';
 import { LoadingState, ErrorState } from '../components/AsyncState.jsx';
+import ResumeUploadCard from '../components/ResumeUploadCard.jsx';
 import { candidatesApi } from '../api/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -189,6 +190,8 @@ export default function Profile() {
               Profile saved at {savedAt.toLocaleTimeString()}.
             </div>
           )}
+
+          <ResumeUploadCard onProfileUpdated={refreshMe} />
 
           <div className="form-card">
             <div className="form-card-head">

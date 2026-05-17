@@ -49,4 +49,10 @@ export const authApi = {
 
   /** Return the authenticated user + role-specific profile. */
   me() { return call(api.post('/auth/me')); },
+
+  /** Consume an email-verification token (POST variant used by the SPA). */
+  verifyEmail(token) { return call(api.post('/auth/verify-email', { token })); },
+
+  /** Re-issue a verification email. Response is intentionally vague (does not leak whether the email exists). */
+  resendVerification(email) { return call(api.post('/auth/resend-verification-email', { email })); },
 };

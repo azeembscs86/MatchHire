@@ -374,6 +374,93 @@ role-aware and very small. To add a new menu entry, edit
 in the frontend Header** — keep the menu canonically owned by the
 backend so the same logic flows to mobile / SSR / future clients.
 
+## 12c. Global job portal flows (new)
+
+### Location detection (Frontend → Backend)
+
+```
+Browser (Jobs page)
+  └─ useLocation() hook
+       ├─ reads matchhire:location from localStorage (manual pick)
+       ├─ on first mount, calls GET /public/geolocate
+       │     (server-side proxy in front of ipapi.co; visitor IP
+       │      never leaves the backend)
+       └─ on Use precise location, prompts navigator.geolocation
+            (browser asks for permission; user can deny)
+```
+
+The Jobs page calls `GET /public/jobs/location-based?country=...&city=...&job_scope=...`. With a candidate bearer token, every record carries `match_score`, `reasons[]`, and `missing[]` so the JobCard badges render in a single round-trip.
+
+### Skill-based matching
+
+`src/services/match.service.js` is the single source of truth. It scores a `(candidate, job)` pair from 0..100 across six components:
+
+| Component | Max | Looks at |
+| --- | --- | --- |
+| role | 25 | overlap between job title and candidate headline/current title |
+| skills | 30 | intersection of `job.skills_tags` and `candidate_skills` |
+| experience | 15 | candidate `years_experience` vs `experience_level` band |
+| location | 15 | city > country > remote-compatible |
+| salary | 10 | overlap between candidate range and job range |
+| category | 5 | `job_category` in `preferences.preferred_categories` |
+
+Decisions:
+- `score >= 60` → `accepted` (apply allowed)
+- `score >= 45` → `below_threshold` (apply allowed; flagged for the employer)
+- `score < 45` → `rejected` (apply blocked with a polite missing-skill reason)
+
+### Apply validation
+
+`POST /candidates/applications/:jobId/validate-and-apply` always runs the match first.
+
+- **Rejected**: HTTP 422; no application created; the attempt is recorded in `application_match_results` so admins can see why people were filtered out. The frontend opens a `RejectionModal` listing the missing skills.
+- **Accepted / borderline**: application created with `match_score` stored alongside it; `application_match_results` row also persisted; cache invalidations fire.
+
+### Resume upload + parse + confirm
+
+```
+POST /candidates/resume/upload      multipart "resume" (max 5MB)
+        ↓
+POST /candidates/resume/:id/parse   pdf-parse / mammoth + heuristics
+        ↓ structured payload          (resume_parsed_data row)
+POST /candidates/resume/:id/preview  what the frontend renders for review
+        ↓
+POST /candidates/resume/:id/confirm  merges into candidate_profiles +
+                                     candidate_skills (replace)
+```
+
+Files live under `Backend/storage/resumes/<random>.<ext>` (mode 0600). Downloads go through `POST /candidates/resume/:id/download` which returns a short-lived HMAC-signed URL: `GET /api/v1/files/<bucket>/<filename>?exp=<unix>&sig=<hmac>`. The HMAC is keyed to `JWT_SECRET`. Expired / tampered URLs return 403.
+
+### Email verification
+
+```
+POST /auth/register/*               creates user in `status='pending'`,
+                                    issues SHA-256-hashed token, sends
+                                    verification email
+        ↓
+POST /auth/login                    rejected with code EMAIL_NOT_VERIFIED
+        ↓
+GET  /auth/verify-email/:token      consumes the token, marks the user
+                                    `email_verified_at = NOW()` and flips
+                                    status to `active`
+        ↓
+POST /auth/login                    succeeds, returns access + refresh tokens
+POST /auth/resend-verification-email
+                                    re-issues the token; never reveals
+                                    whether the email exists
+```
+
+In dev the verification URL is returned in the API response and printed to the backend log so testing is one click. `EmailService` is the integration point - swap the console-log body for nodemailer/SendGrid/Resend when wiring real SMTP.
+
+### Job scope preference
+
+`preferences.job_scope` (`local | country | global_remote | hybrid`) drives the global vs local toggle on the Jobs page. The location-based query layer interprets it:
+
+- `local` → `WHERE city = candidate.city`
+- `country` → `WHERE country = candidate.country`
+- `global_remote` → `WHERE is_global_remote = 1 OR (work_mode='remote' AND country IS NULL)`
+- `hybrid` (default) → no scope filter; the priority CASE still ranks results
+
 ## 13. Swagger usage
 
 The OpenAPI 3.0 spec is generated at startup by [src/docs/swagger.js](../src/docs/swagger.js).

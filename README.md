@@ -102,6 +102,36 @@ npm run dev:frontend    # Frontend only (Vite HMR)
 | State | React Context (Auth / AuthModal / Favorites) |
 | Styling | Hand-written CSS — design system tokens preserved 1:1 |
 
+## What's in the box (global job portal)
+
+- **Location-based job discovery** — the Jobs page resolves the
+  visitor's location (stored preference → browser geolocation →
+  IP fallback via the backend's `/public/geolocate` proxy) and calls
+  `GET /public/jobs/location-based`. Results are ranked by
+  city > country > global remote.
+- **Skill-based matching** — every job carries a `match_score`
+  (0..100), `reasons[]`, and `missing[]` when fetched with a candidate
+  bearer token. The same algorithm powers `POST /candidates/jobs/match`
+  for the recommendations rail.
+- **Match-validated applications** — `POST /candidates/applications/:jobId/validate-and-apply`
+  scores the candidate first. Hard mismatches are rejected with a
+  polite, specific reason (`"Your profile is missing key skills for
+  this role: react, typescript."`); good matches create the
+  application with `match_score` stored alongside it.
+- **Resume upload + parse + auto-fill** — PDF/DOCX/TXT, max 5MB,
+  parsed with `pdf-parse`/`mammoth` + heuristic extractors. The
+  candidate reviews every field on the Profile page before it merges
+  into the profile and skills. Files are stored under
+  `Backend/storage/resumes/`; downloads use short-lived HMAC-signed
+  URLs.
+- **Email verification** — registration creates a `pending` user and
+  emails a verification link (console-logged + returned in dev for
+  one-click testing). Login is blocked until the user clicks the
+  link. Resend is rate-limited and intentionally vague (never reveals
+  whether the email exists).
+- **Global / local toggle + scope preference** — `preferences.job_scope`
+  (`local | country | global_remote | hybrid`) controls the Jobs feed.
+
 ## How they connect
 
 - The frontend talks **only** to the backend, never to a third party

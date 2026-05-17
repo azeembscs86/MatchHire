@@ -77,13 +77,24 @@ export function AuthProvider({ children }) {
 
   const register = useCallback(async (role, payload) => {
     const data = await authApi.register(role, payload);
+    // Email-verification gate: when the backend returns
+    // `requires_verification: true` it has NOT issued session tokens.
+    // The caller should navigate the user to the "verify your email"
+    // page instead of treating this as a signed-in state.
+    if (data.requires_verification) {
+      return {
+        user: data.user || null,
+        requiresVerification: true,
+        verificationUrl: data.verification_url || null,
+      };
+    }
     tokens.set({
       access_token: data.access_token,
       refresh_token: data.refresh_token,
       user: data.user,
     });
     setUser(data.user || null);
-    return data.user;
+    return { user: data.user, requiresVerification: false };
   }, []);
 
   const logout = useCallback(async () => {

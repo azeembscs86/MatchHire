@@ -36,9 +36,28 @@ function HeartIcon({ filled }) {
   );
 }
 
+function MatchBadge({ score }) {
+  // Tone the badge with the existing design palette: coral for strong,
+  // gold for borderline, muted for weak. We reuse `.job-tag` so the
+  // card's visual language stays intact.
+  let tone = '#5a6268', bg = 'rgba(90,98,104,.08)';
+  if (score >= 75) { tone = 'var(--coral, #e8593b)'; bg = 'rgba(232,89,59,.12)'; }
+  else if (score >= 60) { tone = 'var(--gold, #c08a3a)'; bg = 'rgba(192,138,58,.12)'; }
+  return (
+    <span
+      className="job-tag match"
+      title="Personalised match score"
+      style={{ background: bg, color: tone, fontWeight: 600 }}
+    >
+      ★ {score}% match
+    </span>
+  );
+}
+
 export default function JobCard({ job, featured = false, onApply }) {
   const { isSaved, toggleSave } = useFavorites();
   const saved = isSaved(job.id);
+  const score = job.matchScore;
   return (
     <div className={`job-card${featured && job.featured ? ' featured' : ''}`}>
       <button
@@ -58,9 +77,29 @@ export default function JobCard({ job, featured = false, onApply }) {
       </div>
       <div className="job-title">{job.title}</div>
       <div className="job-tags">
-        {job.match && <span className="job-tag match">★ {job.match}</span>}
+        {score != null && <MatchBadge score={score} />}
         {(job.tags || []).map((t) => <span key={t} className="job-tag">{t}</span>)}
       </div>
+      {Array.isArray(job.reasons) && job.reasons.length > 0 && (
+        <div
+          style={{
+            marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6,
+            fontSize: 11, color: 'var(--muted)',
+          }}
+        >
+          {job.reasons.slice(0, 3).map((r, i) => (
+            <span
+              key={i}
+              style={{
+                padding: '2px 8px', borderRadius: 12, background: 'var(--bone)',
+                border: '1px solid #e2e0db',
+              }}
+            >
+              {r}
+            </span>
+          ))}
+        </div>
+      )}
       <div className="job-foot">
         <div className="job-pay">{job.pay} <span>· {job.type}</span></div>
         <div className="job-time">{job.time}</div>

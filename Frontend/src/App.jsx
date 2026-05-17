@@ -35,6 +35,8 @@ import EmployerOnboarding from './pages/EmployerOnboarding.jsx';
 import DashboardCandidate from './pages/DashboardCandidate.jsx';
 import DashboardCompany from './pages/DashboardCompany.jsx';
 import DashboardAdmin from './pages/DashboardAdmin.jsx';
+import VerifyEmail from './pages/VerifyEmail.jsx';
+import VerifyPending from './pages/VerifyPending.jsx';
 
 export default function App() {
   return (
@@ -46,6 +48,10 @@ export default function App() {
         <Route path="/companies" element={<Companies />} />
         <Route path="/candidates" element={<Candidates />} />
         <Route path="/employer-onboarding" element={<EmployerOnboarding />} />
+
+        {/* Email verification (public — no token required to view the screens) */}
+        <Route path="/verify-email/:token" element={<VerifyEmail />} />
+        <Route path="/verify-email" element={<VerifyPending />} />
 
         {/* Candidate-only flows */}
         <Route element={<ProtectedRoute roles={['candidate']} />}>

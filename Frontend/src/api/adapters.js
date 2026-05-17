@@ -59,18 +59,30 @@ export function toJobCardShape(j) {
   const jobTypeLabel = String(j.job_type || 'full_time')
     .replace(/_/g, '-')
     .replace(/(^|-)([a-z])/g, (_m, p, c) => (p ? '-' : '') + c.toUpperCase());
+  const score = j.match_score != null ? Number(j.match_score) : null;
   return {
     id: j.id,
     co: j.company_name || 'Company',
     l: firstLetter(j.company_name),
     cl: toneFor(j.company_id || j.id),
     title: j.title,
-    loc: [j.location, j.is_remote ? 'Remote' : null].filter(Boolean).join(' · ') || 'Remote',
+    city: j.city || null,
+    country: j.country || null,
+    workMode: j.work_mode || null,
+    isGlobalRemote: !!j.is_global_remote,
+    loc: [j.city || j.location, j.country, j.is_global_remote ? 'Global remote' : (j.is_remote ? 'Remote' : null)]
+      .filter(Boolean)
+      .join(' · ') || 'Remote',
     type: jobTypeLabel,
     pay: formatSalary(j.salary_min, j.salary_max, j.salary_currency),
     tags: splitTags(j.skills_tags).slice(0, 4),
     time: relativeTime(j.published_at || j.created_at),
-    match: j.match_score ? `${Math.min(99, 60 + Number(j.match_score) * 5)}% match` : null,
+    // Real backend match score (0..100) when present; the old
+    // "60+x*5" simulation is gone now that the API returns real values.
+    matchScore: score,
+    match: score != null ? `${score}% match` : null,
+    reasons: Array.isArray(j.reasons) ? j.reasons : [],
+    missing: Array.isArray(j.missing) ? j.missing : [],
     featured: !!j.is_featured,
   };
 }

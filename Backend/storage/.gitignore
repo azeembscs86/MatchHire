@@ -1,0 +1,8 @@
+# Everything in here is per-environment runtime data.
+# Keep only the placeholders so the storage tree exists in fresh clones.
+*
+!.gitignore
+!.gitkeep
+!resumes/
+resumes/*
+!resumes/.gitkeep

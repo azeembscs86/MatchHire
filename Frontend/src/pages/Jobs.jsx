@@ -19,7 +19,111 @@ import JobCard from '../components/JobCard.jsx';
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.jsx';
 import { publicApi, candidatesApi } from '../api/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useLocation as useGeoLocation } from '../hooks/useLocation.js';
 import { toJobCardShape } from '../api/adapters.js';
+
+/* ---------- Location banner ---------- */
+
+function LocationBanner({ location, source, status, onRequestPermission, onReset }) {
+  if (!location) {
+    return (
+      <div
+        style={{
+          marginBottom: 16, padding: '12px 14px', borderRadius: 10,
+          background: 'var(--bone)', border: '1px solid #e2e0db', fontSize: 13,
+          display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+        }}
+      >
+        <span>📍 Detecting your location…</span>
+        <button type="button" className="btn btn-ghost" onClick={onRequestPermission}
+                style={{ padding: '4px 10px', fontSize: 12 }}>
+          Use my current location
+        </button>
+      </div>
+    );
+  }
+  const sourceLabel = source === 'browser' ? 'browser GPS'
+    : source === 'manual' ? 'set by you'
+    : source === 'ip' ? 'estimated from IP' : 'detected';
+  return (
+    <div
+      style={{
+        marginBottom: 16, padding: '12px 14px', borderRadius: 10,
+        background: 'var(--bone)', border: '1px solid #e2e0db', fontSize: 13,
+        display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+      }}
+    >
+      <span>📍 Showing jobs near <strong>{location.city ? `${location.city}, ` : ''}{location.country || 'you'}</strong></span>
+      <span className="muted" style={{ fontSize: 11 }}>({sourceLabel})</span>
+      <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+        {source !== 'browser' && status !== 'detecting' && (
+          <button type="button" className="btn btn-ghost" onClick={onRequestPermission}
+                  style={{ padding: '4px 10px', fontSize: 12 }}>
+            Use precise location
+          </button>
+        )}
+        <button type="button" className="btn btn-ghost" onClick={onReset}
+                style={{ padding: '4px 10px', fontSize: 12 }}>
+          Clear
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Apply-rejection modal ---------- */
+
+function RejectionModal({ result, onClose }) {
+  if (!result) return null;
+  return (
+    <div className="modal-overlay open" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 520, gridTemplateColumns: '1fr' }}>
+        <button className="modal-close" onClick={onClose} aria-label="Close" type="button">×</button>
+        <div className="modal-form" style={{ padding: '32px 28px' }}>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>🙏</div>
+          <h2 style={{ marginBottom: 4 }}>Not quite a fit yet</h2>
+          <p className="muted" style={{ marginBottom: 16 }}>{result.message}</p>
+
+          {Array.isArray(result.missing) && result.missing.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div className="muted" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 6 }}>
+                Skills the role expects
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {result.missing.map((s) => (
+                  <span key={s} className="job-tag" style={{ background: '#fde9e3', color: '#b3361b' }}>{s}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {Array.isArray(result.reasons) && result.reasons.length > 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <div className="muted" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 6 }}>
+                What did match
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {result.reasons.slice(0, 4).map((r, i) => (
+                  <span key={i} className="job-tag">{r}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <p style={{ fontSize: 13 }} className="muted">
+            Match score: <strong style={{ color: 'var(--coral)' }}>{result.match_score}%</strong>.
+            Update your profile or skills and try again - the score recalculates instantly.
+          </p>
+
+          <div style={{ marginTop: 24, display: 'flex', gap: 12 }}>
+            <a href="/profile" className="btn btn-coral" style={{ flex: 1, textAlign: 'center' }}>Update profile</a>
+            <button type="button" className="btn btn-ghost" onClick={onClose} style={{ flex: 1 }}>Keep browsing</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const JOB_TYPES = [
   { value: 'full_time', label: 'Full-time' },
@@ -58,19 +162,29 @@ const DEFAULT_FILTERS = {
   remote: null, salary_min: undefined, salary_max: undefined, sort: 'latest',
 };
 
+const SCOPE_OPTIONS = [
+  { value: 'hybrid', label: 'All (local + global)' },
+  { value: 'local', label: 'Local (my city)' },
+  { value: 'country', label: 'My country' },
+  { value: 'global_remote', label: 'Global remote' },
+];
+
 export default function Jobs() {
   const { role } = useAuth();
+  const { location, status, source, requestPermission, reset: resetLocation } = useGeoLocation();
   const [searchParams] = useSearchParams();
   const [filters, setFilters] = useState(() => ({
     ...DEFAULT_FILTERS,
     keyword: searchParams.get('keyword') || '',
     location: searchParams.get('location') || '',
   }));
+  const [jobScope, setJobScope] = useState('hybrid');
   const [data, setData] = useState({ records: [], total: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [applyingId, setApplyingId] = useState(null);
   const [applyMessage, setApplyMessage] = useState(null);
+  const [rejection, setRejection] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,18 +192,30 @@ export default function Jobs() {
       setLoading(true);
       setError(null);
       try {
-        const params = {
-          page: 1, limit: 20,
-          keyword: filters.keyword || undefined,
-          location: filters.location || undefined,
-          job_type: filters.job_type || undefined,
-          experience_level: filters.experience_level || undefined,
-          remote: filters.remote ?? undefined,
-          salary_min: filters.salary_min,
-          salary_max: filters.salary_max,
-          sort: filters.sort,
-        };
-        const res = await publicApi.jobs(params);
+        // When we have a resolved location, prefer the location-based
+        // endpoint - it ranks city > country > global remote and
+        // decorates each row with the match score when authenticated.
+        const useLocationFeed = !!(location?.country || location?.city);
+        const res = useLocationFeed
+          ? await publicApi.locationBasedJobs({
+              country: location.country || undefined,
+              city: location.city || undefined,
+              role: filters.keyword || undefined,
+              experience_level: filters.experience_level || undefined,
+              job_scope: jobScope,
+              page: 1, limit: 24,
+            })
+          : await publicApi.jobs({
+              page: 1, limit: 24,
+              keyword: filters.keyword || undefined,
+              location: filters.location || undefined,
+              job_type: filters.job_type || undefined,
+              experience_level: filters.experience_level || undefined,
+              remote: filters.remote ?? undefined,
+              salary_min: filters.salary_min,
+              salary_max: filters.salary_max,
+              sort: filters.sort,
+            });
         if (cancelled) return;
         setData({
           records: (res?.records || []).map(toJobCardShape).filter(Boolean),
@@ -103,7 +229,7 @@ export default function Jobs() {
     }
     load();
     return () => { cancelled = true; };
-  }, [filters]);
+  }, [filters, location?.country, location?.city, jobScope]);
 
   function update(patch) { setFilters((f) => ({ ...f, ...patch })); }
   function resetFilters() { setFilters({ ...DEFAULT_FILTERS }); }
@@ -112,14 +238,26 @@ export default function Jobs() {
     if (role !== 'candidate') return;
     setApplyingId(job.id);
     setApplyMessage(null);
+    setRejection(null);
     try {
-      await candidatesApi.applications.apply(job.id, {});
-      setApplyMessage({ ok: true, text: `Application submitted to ${job.co}.` });
+      // Validate-and-apply: the server scores first and rejects hard
+      // mismatches with a polite explanation. The frontend pops the
+      // RejectionModal for those cases.
+      const result = await candidatesApi.validateAndApply(job.id, {});
+      setApplyMessage({ ok: true, text: `Application submitted to ${job.co} (match ${result.match_score}%).` });
     } catch (err) {
-      setApplyMessage({ ok: false, text: err.message || 'Could not submit application.' });
+      // The error envelope from validate-and-apply carries the full
+      // verdict on `original.response.data.Data`. Surface it in the
+      // modal so the user gets actionable feedback.
+      const data = err.original?.response?.data?.Data;
+      if (data && data.decision === 'rejected') {
+        setRejection({ ...data, job });
+      } else {
+        setApplyMessage({ ok: false, text: err.message || 'Could not submit application.' });
+      }
     } finally {
       setApplyingId(null);
-      setTimeout(() => setApplyMessage(null), 4000);
+      setTimeout(() => setApplyMessage(null), 5000);
     }
   }
 
@@ -266,11 +404,30 @@ export default function Jobs() {
         </aside>
 
         <div>
+          <LocationBanner
+            location={location}
+            source={source}
+            status={status}
+            onRequestPermission={requestPermission}
+            onReset={resetLocation}
+          />
+
           <div className="browse-results-head">
             <div className="results-count"><strong>{headerCount}</strong> matching jobs</div>
-            <select className="sort-select" value={filters.sort} onChange={(e) => update({ sort: e.target.value })}>
-              {SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-            </select>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <select
+                className="sort-select"
+                value={jobScope}
+                onChange={(e) => setJobScope(e.target.value)}
+                aria-label="Job scope"
+                title="Show jobs in your city, country, or globally"
+              >
+                {SCOPE_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+              <select className="sort-select" value={filters.sort} onChange={(e) => update({ sort: e.target.value })}>
+                {SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            </div>
           </div>
           {applyMessage && (
             <div
@@ -305,6 +462,8 @@ export default function Jobs() {
                 )}
         </div>
       </div>
+
+      <RejectionModal result={rejection} onClose={() => setRejection(null)} />
     </section>
   );
 }
