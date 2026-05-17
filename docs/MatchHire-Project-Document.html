@@ -1,0 +1,1674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MatchHire — AI Powered Job Portal Platform · Project Document</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   Corporate palette
+   ============================================================ */
+:root{
+  --ink:        #0E1116;
+  --ink-soft:   #1A1F26;
+  --bone:       #F5F0E6;
+  --bone-2:     #EFE8DA;
+  --paper:      #FFFFFF;
+  --line:       #E2D9C7;
+  --line-soft:  #EDE5D3;
+  --muted:      #6B6258;
+  --muted-2:    #8B8278;
+  --coral:      #E85D3C;
+  --coral-deep: #C73E1D;
+  --sage:       #3F6B4F;
+  --sage-soft:  #D9E5DA;
+  --gold:       #B8893A;
+  --navy:       #1F3A5F;
+}
+
+/* ============================================================
+   Page geometry (Chrome headless honours @page size + margin)
+   ============================================================ */
+@page{
+  size: A4;
+  margin: 22mm 18mm 22mm 18mm;
+}
+@page :first{
+  margin: 0;            /* cover page is full-bleed */
+}
+
+/* ============================================================
+   Reset + base typography
+   ============================================================ */
+*{ box-sizing: border-box; margin: 0; padding: 0; }
+html,body{
+  font-family: 'Inter', -apple-system, sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.55;
+  color: #222;
+  background: #fff;
+  -webkit-font-smoothing: antialiased;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+h1,h2,h3,h4,h5{
+  font-family: 'Fraunces', Georgia, serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+p{ margin: 0 0 9pt; color: #2B2B2B; }
+strong{ color: var(--ink); font-weight: 600; }
+em{ color: var(--coral-deep); font-style: italic; }
+a{ color: var(--coral-deep); text-decoration: none; }
+ul, ol{ padding-left: 18pt; margin: 0 0 10pt; }
+li{ margin-bottom: 4pt; }
+
+/* ============================================================
+   Cover page
+   ============================================================ */
+.cover{
+  page-break-after: always;
+  break-after: page;
+  background: var(--ink);
+  color: var(--bone);
+  width: 210mm;
+  height: 297mm;
+  padding: 28mm 22mm;
+  position: relative;
+  overflow: hidden;
+}
+.cover::before{
+  content: "";
+  position: absolute;
+  width: 380mm;
+  height: 380mm;
+  background: radial-gradient(circle, rgba(232,93,60,.55) 0%, rgba(232,93,60,0) 60%);
+  top: -160mm;
+  right: -180mm;
+  pointer-events: none;
+}
+.cover::after{
+  content: "";
+  position: absolute;
+  width: 220mm;
+  height: 220mm;
+  background: radial-gradient(circle, rgba(63,107,79,.25) 0%, rgba(63,107,79,0) 60%);
+  bottom: -110mm;
+  left: -100mm;
+  pointer-events: none;
+}
+.cover-mark{
+  display: flex;
+  align-items: center;
+  gap: 14pt;
+  position: relative;
+  z-index: 1;
+}
+.cover-logo{
+  width: 56pt; height: 56pt;
+  background: var(--coral);
+  color: #fff;
+  border-radius: 14pt;
+  display: grid; place-items: center;
+  font-family: 'Fraunces', serif;
+  font-size: 32pt;
+  font-weight: 600;
+  transform: rotate(-4deg);
+}
+.cover-wordmark{
+  font-family: 'Fraunces', serif;
+  font-size: 26pt;
+  font-weight: 500;
+  letter-spacing: -.01em;
+  color: var(--bone);
+}
+.cover-wordmark em{
+  color: var(--coral);
+  font-style: italic;
+  font-weight: 400;
+}
+.cover-eyebrow{
+  position: relative;
+  z-index: 1;
+  margin-top: 64mm;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9pt;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+  color: rgba(245,240,230,.6);
+}
+.cover h1{
+  position: relative;
+  z-index: 1;
+  margin-top: 6mm;
+  font-family: 'Fraunces', serif;
+  font-size: 56pt;
+  line-height: .95;
+  font-weight: 500;
+  letter-spacing: -.025em;
+  color: var(--bone);
+  max-width: 160mm;
+}
+.cover h1 em{
+  font-style: italic;
+  font-weight: 400;
+  color: var(--coral);
+}
+.cover-sub{
+  position: relative;
+  z-index: 1;
+  margin-top: 14mm;
+  font-size: 14pt;
+  line-height: 1.45;
+  max-width: 130mm;
+  color: rgba(245,240,230,.85);
+  font-weight: 300;
+}
+.cover-meta{
+  position: absolute;
+  z-index: 1;
+  left: 22mm;
+  bottom: 22mm;
+  right: 22mm;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 14pt;
+  padding-top: 12pt;
+  border-top: 1px solid rgba(245,240,230,.15);
+  font-size: 10pt;
+}
+.cover-meta .lbl{
+  display: block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8pt;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: rgba(245,240,230,.5);
+  margin-bottom: 4pt;
+}
+.cover-meta .val{
+  display: block;
+  font-family: 'Fraunces', serif;
+  font-size: 12pt;
+  color: var(--bone);
+}
+.cover-confidential{
+  position: absolute;
+  z-index: 1;
+  right: 22mm;
+  top: 28mm;
+  padding: 5pt 10pt;
+  border: 1px solid rgba(232,93,60,.6);
+  color: var(--coral);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8pt;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  border-radius: 3pt;
+}
+
+/* ============================================================
+   Table of contents
+   ============================================================ */
+.toc{ page-break-before: always; break-before: page; }
+.toc-title{
+  font-size: 32pt;
+  margin-bottom: 4mm;
+}
+.toc-sub{
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9pt;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 16mm;
+}
+.toc-list{
+  list-style: none;
+  padding-left: 0;
+}
+.toc-list li{
+  display: flex;
+  align-items: baseline;
+  padding: 8pt 0;
+  border-bottom: 1px dotted var(--line);
+  font-size: 11.5pt;
+}
+.toc-list .num{
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9pt;
+  color: var(--coral);
+  width: 30pt;
+  flex-shrink: 0;
+}
+.toc-list .label{
+  font-family: 'Fraunces', serif;
+  font-weight: 500;
+  color: var(--ink);
+  flex: 1;
+}
+.toc-list .pg{
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9pt;
+  color: var(--muted);
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+}
+
+/* ============================================================
+   Section structure
+   ============================================================ */
+section.chapter{
+  page-break-before: always;
+  break-before: page;
+}
+.chapter-head{
+  margin-bottom: 18pt;
+  padding-bottom: 14pt;
+  border-bottom: 2px solid var(--ink);
+}
+.chapter-num{
+  display: inline-block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9pt;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--coral);
+  margin-bottom: 6pt;
+}
+.chapter-head h2{
+  font-size: 28pt;
+  line-height: 1.05;
+  letter-spacing: -.02em;
+}
+.chapter-head h2 em{
+  font-style: italic;
+  color: var(--coral);
+  font-weight: 500;
+}
+
+h3{
+  margin-top: 16pt;
+  margin-bottom: 6pt;
+  font-size: 14pt;
+  color: var(--ink);
+}
+h4{
+  margin-top: 12pt;
+  margin-bottom: 4pt;
+  font-size: 11.5pt;
+  color: var(--ink);
+}
+
+/* Lead paragraph after section header */
+.lead{
+  font-size: 12pt;
+  line-height: 1.6;
+  color: #353535;
+  margin-bottom: 14pt;
+  max-width: 165mm;
+}
+
+/* ============================================================
+   Cards / callouts
+   ============================================================ */
+.card{
+  background: var(--bone);
+  border: 1px solid var(--line);
+  border-radius: 4pt;
+  padding: 12pt 14pt;
+  margin: 10pt 0;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+.card-title{
+  font-family: 'Fraunces', serif;
+  font-size: 12pt;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 4pt;
+}
+.card-body{
+  font-size: 10.5pt;
+  color: #333;
+}
+
+.grid-2{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10pt;
+  margin: 10pt 0;
+}
+.grid-3{
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10pt;
+  margin: 10pt 0;
+}
+
+.feature{
+  padding: 11pt 12pt;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 4pt;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+.feature .icon{
+  width: 24pt;
+  height: 24pt;
+  border-radius: 6pt;
+  background: var(--bone-2);
+  display: grid;
+  place-items: center;
+  font-family: 'Fraunces', serif;
+  font-size: 14pt;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 8pt;
+}
+.feature .icon.coral{ background: rgba(232,93,60,.12); color: var(--coral-deep); }
+.feature .icon.sage{ background: var(--sage-soft); color: var(--sage); }
+.feature .icon.gold{ background: rgba(184,137,58,.12); color: var(--gold); }
+.feature .icon.navy{ background: rgba(31,58,95,.12); color: var(--navy); }
+.feature h4{
+  margin: 0 0 4pt 0;
+  font-size: 11pt;
+}
+.feature p{
+  margin: 0;
+  font-size: 9.5pt;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.callout{
+  background: var(--ink);
+  color: var(--bone);
+  border-radius: 6pt;
+  padding: 14pt 18pt;
+  margin: 12pt 0;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+.callout .eyebrow{
+  display: block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8pt;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--coral);
+  margin-bottom: 6pt;
+}
+.callout p{
+  color: rgba(245,240,230,.92);
+  margin: 0;
+  font-size: 11pt;
+  line-height: 1.55;
+}
+
+/* ============================================================
+   Tables
+   ============================================================ */
+table{
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10pt 0;
+  font-size: 10pt;
+  page-break-inside: auto;
+}
+thead{ display: table-header-group; }
+tr{ page-break-inside: avoid; }
+th{
+  text-align: left;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8.5pt;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 8pt 10pt;
+  background: var(--bone);
+  border-bottom: 1.5px solid var(--ink);
+}
+td{
+  padding: 9pt 10pt;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: top;
+  color: #2C2C2C;
+}
+td strong{
+  font-family: 'Fraunces', serif;
+  font-weight: 600;
+  color: var(--ink);
+  font-size: 10.5pt;
+}
+.tbl-tight td{ padding: 6pt 10pt; }
+
+/* Status pills inside tables */
+.pill{
+  display: inline-block;
+  padding: 2pt 8pt;
+  border-radius: 100pt;
+  font-size: 8.5pt;
+  font-weight: 500;
+  font-family: 'JetBrains Mono', monospace;
+}
+.pill.coral{ background: rgba(232,93,60,.12); color: var(--coral-deep); }
+.pill.sage{ background: var(--sage-soft); color: var(--sage); }
+.pill.gold{ background: rgba(184,137,58,.14); color: var(--gold); }
+.pill.navy{ background: rgba(31,58,95,.10); color: var(--navy); }
+.pill.muted{ background: var(--bone-2); color: var(--muted); }
+
+/* ============================================================
+   Inline diagrams
+   ============================================================ */
+.diagram{
+  margin: 14pt 0;
+  padding: 16pt;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6pt;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+.diagram-caption{
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8pt;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10pt;
+}
+
+/* ============================================================
+   Section divider
+   ============================================================ */
+.divider{
+  display: flex;
+  align-items: center;
+  gap: 10pt;
+  margin: 14pt 0 18pt;
+}
+.divider-line{
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.divider-label{
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8pt;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ============================================================
+   Small utilities
+   ============================================================ */
+.mono{ font-family: 'JetBrains Mono', monospace; }
+.muted{ color: var(--muted); }
+.center{ text-align: center; }
+.no-break{ page-break-inside: avoid; break-inside: avoid; }
+.spacer-sm{ height: 8pt; }
+.spacer-md{ height: 14pt; }
+.spacer-lg{ height: 24pt; }
+
+/* For long stack lists */
+.stack-list{ list-style: none; padding-left: 0; }
+.stack-list li{
+  padding: 8pt 0;
+  border-bottom: 1px dotted var(--line);
+  display: flex;
+  justify-content: space-between;
+  gap: 14pt;
+}
+.stack-list .stack-key{
+  font-family: 'Fraunces', serif;
+  font-weight: 600;
+  color: var(--ink);
+}
+.stack-list .stack-val{
+  text-align: right;
+  color: #353535;
+  flex-shrink: 0;
+}
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     COVER PAGE
+     ============================================================ -->
+<div class="cover">
+  <div class="cover-mark">
+    <div class="cover-logo">M</div>
+    <div class="cover-wordmark">Match<em>Hire</em></div>
+  </div>
+  <div class="cover-confidential">Strictly Confidential</div>
+
+  <div class="cover-eyebrow">Project Document · v1.0</div>
+  <h1>MatchHire<br><em>AI-Powered</em><br>Job Portal Platform.</h1>
+  <p class="cover-sub">A curated, intelligent career marketplace where senior talent meets the companies smart enough to hire them — reimagining recruitment through automated matching, transparent signals, and a calmer experience for both sides of the market.</p>
+
+  <div class="cover-meta">
+    <div>
+      <span class="lbl">Prepared by</span>
+      <span class="val">MatchHire Inc.</span>
+    </div>
+    <div>
+      <span class="lbl">Document date</span>
+      <span class="val">17 May 2026</span>
+    </div>
+    <div>
+      <span class="lbl">Document type</span>
+      <span class="val">Business &amp; Technical</span>
+    </div>
+  </div>
+</div>
+
+
+<!-- ============================================================
+     TABLE OF CONTENTS
+     ============================================================ -->
+<section class="toc">
+  <h2 class="toc-title">Table of <em style="font-style:italic;color:var(--coral)">contents</em>.</h2>
+  <div class="toc-sub">Document map · 20 sections</div>
+
+  <ol class="toc-list">
+    <li><span class="num">01</span><span class="label">Executive Summary</span><span class="pg">Business</span></li>
+    <li><span class="num">02</span><span class="label">Project Vision</span><span class="pg">Business</span></li>
+    <li><span class="num">03</span><span class="label">Business Objectives</span><span class="pg">Business</span></li>
+    <li><span class="num">04</span><span class="label">Platform Overview</span><span class="pg">Product</span></li>
+    <li><span class="num">05</span><span class="label">User Roles &amp; Permissions</span><span class="pg">Product</span></li>
+    <li><span class="num">06</span><span class="label">Complete User Flow</span><span class="pg">Product</span></li>
+    <li><span class="num">07</span><span class="label">Functional Modules</span><span class="pg">Product</span></li>
+    <li><span class="num">08</span><span class="label">AI Features</span><span class="pg">Technical</span></li>
+    <li><span class="num">09</span><span class="label">Technical Architecture</span><span class="pg">Technical</span></li>
+    <li><span class="num">10</span><span class="label">Recommended Technology Stack</span><span class="pg">Technical</span></li>
+    <li><span class="num">11</span><span class="label">Database Planning</span><span class="pg">Technical</span></li>
+    <li><span class="num">12</span><span class="label">Security Considerations</span><span class="pg">Technical</span></li>
+    <li><span class="num">13</span><span class="label">Scalability Planning</span><span class="pg">Technical</span></li>
+    <li><span class="num">14</span><span class="label">Development Roadmap</span><span class="pg">Operational</span></li>
+    <li><span class="num">15</span><span class="label">Estimated Timeline</span><span class="pg">Operational</span></li>
+    <li><span class="num">16</span><span class="label">Estimated Team Structure</span><span class="pg">Operational</span></li>
+    <li><span class="num">17</span><span class="label">Future Enhancements</span><span class="pg">Strategic</span></li>
+    <li><span class="num">18</span><span class="label">Conclusion</span><span class="pg">Strategic</span></li>
+    <li><span class="num">19</span><span class="label">Appendix · Suggested APIs</span><span class="pg">Appendix</span></li>
+    <li><span class="num">20</span><span class="label">Appendix · Deployment Notes</span><span class="pg">Appendix</span></li>
+  </ol>
+</section>
+
+
+<!-- ============================================================
+     01 · EXECUTIVE SUMMARY
+     ============================================================ -->
+<section class="chapter">
+  <div class="chapter-head">
+    <span class="chapter-num">Section 01</span>
+    <h2>Executive <em>summary</em>.</h2>
+  </div>
+
+  <p class="lead"><strong>MatchHire</strong> is an AI-powered job marketplace built for the next generation of professional hiring. The platform connects vetted senior talent with employers who value quality over volume, replacing the noise of conventional job boards with a calmer, signal-rich experience for both sides of the market.</p>
+
+  <h3>Overview</h3>
+  <p>The platform brings together three distinct surfaces — a Candidate Hub for job seekers, a Company Hub for employers, and an Admin Console for platform operators — each tailored to the workflows of its primary user. Underpinning these surfaces is a proprietary matching engine that scores candidates against opportunities across compensation fit, skills alignment, location, career trajectory, and cultural signals.</p>
+
+  <h3>Purpose</h3>
+  <p>MatchHire exists to remove the friction that has accumulated in modern hiring: vague job descriptions, irrelevant matches, opaque salary bands, slow response times, and the volume problem that buries qualified candidates beneath unqualified ones. The product expresses a clear philosophy — fewer, better matches, with the data to back every recommendation.</p>
+
+  <h3>Business goals</h3>
+  <ul>
+    <li>Establish MatchHire as the destination of choice for senior, hard-to-fill technical and creative roles.</li>
+    <li>Reduce average time-to-hire from the industry baseline of 42 days to under 21 days for partner employers.</li>
+    <li>Achieve a 90%+ match-relevance score across the top three recommendations served to any active candidate.</li>
+    <li>Build a recurring revenue base through tiered employer subscriptions and premium candidate services.</li>
+  </ul>
+
+  <h3>Market opportunity</h3>
+  <p>The global online recruitment market is projected to surpass <strong>USD 43 billion by 2027</strong>, with the highest growth in specialised, AI-augmented hiring platforms targeting senior and technical roles. MatchHire enters this market with a differentiated thesis: curation over volume, signal over advertising, and intelligence over keyword search. The opportunity is not to compete with mass job boards, but to displace the recruiter-led hiring funnel for a clearly defined segment of high-trust roles.</p>
+
+  <div class="callout">
+    <span class="eyebrow">Positioning statement</span>
+    <p>A premium, intelligent career marketplace — where every match is earned, every recommendation is explained, and every interaction respects the time of both parties.</p>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     02 · PROJECT VISION
+     ============================================================ -->
+<section class="chapter">
+  <div class="chapter-head">
+    <span class="chapter-num">Section 02</span>
+    <h2>Project <em>vision</em>.</h2>
+  </div>
+
+  <p class="lead">To make hiring feel less like advertising and more like introduction — where the right person and the right company find each other quickly, transparently, and with mutual respect for the decision in front of them.</p>
+
+  <h3>Long-term vision</h3>
+  <p>Over the next five years, MatchHire intends to evolve from a curated job marketplace into a complete <strong>career operating system</strong> — owning the candidate journey from discovery, through application, through interview preparation, to negotiation and onboarding. On the employer side, the platform will expand from a sourcing channel into a full applicant-tracking and hiring-intelligence suite, with predictive insights that help hiring teams forecast offer acceptance, compensation positioning, and retention risk before extending an offer.</p>
+
+  <h3>AI hiring transformation</h3>
+  <p>Conventional hiring tools treat AI as a filter — a way to discard résumés faster. MatchHire treats AI as a <strong>recommender</strong> — a way to surface the right people and the right roles to the front of each other's queue. Every algorithmic decision carries a human-readable explanation, and every recommendation invites a counter-factual ("show me roles that are more remote-friendly", "show me candidates with stronger backend experience"). The system learns from both signals and corrections, improving over time without becoming a black box.</p>
+
+  <h3>Recruitment automation goals</h3>
+  <ul>
+    <li><strong>Automate the obvious.</strong> Skill extraction, salary normalisation, application acknowledgement, interview scheduling, and reference outreach should run without human attention.</li>
+    <li><strong>Augment the judgement-heavy.</strong> Shortlisting, evaluation, and offer crafting should be assisted — never decided — by the platform.</li>
+    <li><strong>Eliminate ghosting.</strong> Every candidate receives a definitive response within a published service-level agreement; every employer receives a structured signal of candidate intent.</li>
+    <li><strong>Compress the cycle.</strong> The end-to-end median hiring cycle should be measurable, comparable, and shrinking quarter on quarter.</li>
+  </ul>
+</section>
+
+
+<!-- ============================================================
+     03 · BUSINESS OBJECTIVES
+     ============================================================ -->
+<section class="chapter">
+  <div class="chapter-head">
+    <span class="chapter-num">Section 03</span>
+    <h2>Business <em>objectives</em>.</h2>
+  </div>
+
+  <p class="lead">Five concrete objectives anchor the first eighteen months of operation. Each is measurable, owns a primary metric, and ladders up to the platform's overarching commercial thesis.</p>
+
+  <div class="grid-2">
+    <div class="feature">
+      <div class="icon coral">①</div>
+      <h4>Faster hiring</h4>
+      <p>Reduce median time-to-offer by 50% versus the industry baseline through automated screening, instant matching, and integrated scheduling.</p>
+    </div>
+    <div class="feature">
+      <div class="icon sage">②</div>
+      <h4>Better candidate matching</h4>
+      <p>Deliver match scores that correlate with downstream interview-conversion rates above 70% — a measurable, predictive signal rather than a marketing number.</p>
+    </div>
+    <div class="feature">
+      <div class="icon gold">③</div>
+      <h4>Reduced recruitment cost</h4>
+      <p>Cut employer cost-per-hire by 40% relative to agency-led sourcing by eliminating contingent recruiter fees and shortening the funnel.</p>
+    </div>
+    <div class="feature">
+      <div class="icon navy">④</div>
+      <h4>Improved hiring workflow</h4>
+      <p>Replace fragmented tooling (job boards, ATS, scheduler, reference checks) with a single, integrated workflow that reduces context switching.</p>
+    </div>
+  </div>
+
+  <div class="feature" style="margin-top:10pt">
+    <div class="icon coral">⑤</div>
+    <h4>Employer and candidate engagement</h4>
+    <p>Sustain a weekly active rate above 60% on both sides of the marketplace through intelligent notifications, transparent application status, and a steady stream of relevant new opportunities or candidates.</p>
+  </div>
+
+  <h3>Objective metrics</h3>
+  <table>
+    <thead>
+      <tr><th>Objective</th><th>Primary metric</th><th>Target (year 1)</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Faster hiring</strong></td><td>Median time-to-offer</td><td>≤ 21 days</td></tr>
+      <tr><td><strong>Better matching</strong></td><td>Top-3 match → interview rate</td><td>≥ 70%</td></tr>
+      <tr><td><strong>Lower cost</strong></td><td>Employer cost-per-hire</td><td>40% reduction vs. baseline</td></tr>
+      <tr><td><strong>Workflow</strong></td><td>Tools consolidated per hire</td><td>From 4–6 → 1</td></tr>
+      <tr><td><strong>Engagement</strong></td><td>Weekly active users</td><td>≥ 60% of activated accounts</td></tr>
+    </tbody>
+  </table>
+</section>
+
+
+<!-- ============================================================
+     04 · PLATFORM OVERVIEW
+     ============================================================ -->
+<section class="chapter">
+  <div class="chapter-head">
+    <span class="chapter-num">Section 04</span>
+    <h2>Platform <em>overview</em>.</h2>
+  </div>
+
+  <p class="lead">MatchHire is composed of ten interlocking modules, each designed to serve a distinct user need while contributing data and signal to the others. Together they form a coherent product surface that is simple at the edges and intelligent at the core.</p>
+
+  <div class="grid-2">
+    <div class="feature">
+      <div class="icon coral">★</div>
+      <h4>Candidate Portal</h4>
+      <p>A dedicated workspace for job seekers — profile builder, job search, application tracker, interview calendar, and personalised recommendations.</p>
+    </div>
+    <div class="feature">
+      <div class="icon navy">◆</div>
+      <h4>Employer Portal</h4>
+      <p>Company-side hub for posting roles, reviewing applicants, managing interview pipelines, and tracking funnel performance against benchmarks.</p>
+    </div>
+    <div class="feature">
+      <div class="icon sage">◉</div>
+      <h4>Admin Console</h4>
+      <p>Platform-operator surface providing verification queues, content moderation, user management, and system health monitoring.</p>
+    </div>
+    <div class="feature">
+      <div class="icon gold">⚙</div>
+      <h4>AI Matching System</h4>
+      <p>Proprietary scoring engine that ranks candidate-role compatibility across compensation, skills, location, stage, and cultural fit.</p>
+    </div>
+    <div class="feature">
+      <div class="icon coral">▤</div>
+      <h4>Dashboard System</h4>
+      <p>Role-aware analytics dashboards that surface the right metric for the right user — applications for candidates, funnel health for employers, platform vitals for admins.</p>
+    </div>
+    <div class="feature">
+      <div class="icon sage">⚐</div>
+      <h4>Notifications</h4>
+      <p>Multi-channel delivery (in-app, email, push) with intelligent volume control — five great matches a day rather than fifty mediocre ones.</p>
+    </div>
+    <div class="feature">
+      <div class="icon navy">♥</div>
+      <h4>Favorites &amp; Preferences</h4>
+      <p>Collections, deal-breakers, and weighted preferences let candidates teach the engine what good looks like and refine matches in real time.</p>
+    </div>
+    <div class="feature">
+      <div class="icon gold">★</div>
+      <h4>Job Recommendations</h4>
+      <p>Continuously refreshed feed of the highest-scoring open roles, with transparent explanations behind every suggestion.</p>
+    </div>
+    <div class="feature">
+      <div class="icon coral">◇</div>
+      <h4>Company Profiles</h4>
+      <p>Verified employer pages with culture signals, team size, funding stage, and aggregate engagement metrics from past hires.</p>
+    </div>
+    <div class="feature">
+      <div class="icon sage">▥</div>
+      <h4>Resume Management</h4>
+      <p>Structured profile data with optional file uploads, automatic parsing, and version history — keeping candidates' presentation polished without manual rework.</p>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     05 · USER ROLES & PERMISSIONS
+     ============================================================ -->
+<section class="chapter">
+  <div class="chapter-head">
+    <span class="chapter-num">Section 05</span>
+    <h2>User roles &amp; <em>permissions</em>.</h2>
+  </div>
+
+  <p class="lead">Access control follows a strict role-based access control (RBAC) model. Every privileged action checks both the user's role and the relationship between the user and the target resource. Permissions are enforced server-side and never inferred from UI state.</p>
+
+  <table>
+    <thead>
+      <tr><th style="width:24%">Role</th><th>Primary capability</th><th>Scope</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Candidate</strong><div class="pill sage">Self-service</div></td>
+        <td>Build profile · apply to roles · manage favorites · configure preferences · track applications · interview scheduling.</td>
+        <td>Own profile and applications only.</td>
+      </tr>
+      <tr>
+        <td><strong>Employer</strong><div class="pill navy">Team-scoped</div></td>
+        <td>Post jobs · review applicants · shortlist candidates · schedule interviews · access hiring funnel analytics · manage company profile.</td>
+        <td>Company-owned content; teammates within the same company.</td>
+      </tr>
+      <tr>
+        <td><strong>Admin</strong><div class="pill gold">Operational</div></td>
+        <td>Approve company verifications · review flagged content · moderate users · respond to reports · access platform-wide analytics.</td>
+        <td>Read/write across moderation surfaces; read across users and companies.</td>
+      </tr>
+      <tr>
+        <td><strong>Super Admin</strong><div class="pill coral">Platform owner</div></td>
+        <td>All Admin powers plus: configure platform settings · manage admin team · access financial reporting · approve product-level releases.</td>
+        <td>Unrestricted within the platform. Limited to a small, audited team.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <span class="eyebrow">Principle</span>
+    <p>Authority follows responsibility. The principle of least privilege is enforced by default: a Candidate cannot see another candidate's profile, an Employer cannot see candidates who have not applied to one of their roles, and an Admin can never read private candidate-employer communication without explicit consent.</p>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     06 · COMPLETE USER FLOW
+     ============================================================ -->
+<section class="chapter">
+  <div class="chapter-head">
+    <span class="chapter-num">Section 06</span>
+    <h2>Complete <em>user flow</em>.</h2>
+  </div>
+
+  <p class="lead">The platform supports two distinct journeys — Candidate and Employer — that converge at the Application moment. Below is the end-to-end choreography for both sides, alongside a visual map of the workflow.</p>
+
+  <h3>Candidate journey</h3>
+  <ol>
+    <li><strong>Registration</strong> — Account creation via email or OAuth. Initial role selection (job seeker vs. employer).</li>
+    <li><strong>Profile completion</strong> — Guided builder for personal information, work experience, skills, and target role. Completion percentage is shown live to drive the user to 100%.</li>
+    <li><strong>Preferences</strong> — Candidate ranks their top priorities (compensation, growth, balance, etc.), sets salary expectations, work-mode and location preferences, and configures dealbreakers.</li>
+    <li><strong>Job search</strong> — Browse the full open roles index or rely on personalised recommendations. Filter by experience level, salary band, work mode, and skill stack.</li>
+    <li><strong>Apply flow</strong> — One-click apply using the structured profile. Optional cover note and answer to employer-defined screening questions.</li>
+    <li><strong>Interview &amp; outcome</strong> — Receive interview invitations directly in the calendar; track status as the application progresses through the employer's pipeline; receive a definitive outcome within the published SLA.</li>
+  </ol>
+
+  <h3>Employer journey</h3>
+  <ol>
+    <li><strong>Employer onboarding</strong> — Submit company information (domain, industry, headcount), pass domain verification, and configure billing.</li>
+    <li><strong>Job posting</strong> — Compose a structured role with required and preferred skills, compensation band, location, and screening questions.</li>
+    <li><strong>Candidate review</strong> — Inbound applicants are ranked by match score. Employers review profiles, shortlist, request additional information, or reject with a templated reason.</li>
+    <li><strong>Hiring workflow</strong> — Shortlisted candidates move through the configurable pipeline (Reviewed → Interview → Offer → Hired) with full funnel visibility and historical benchmarks.</li>
+  </ol>
+
+  <div class="diagram">
+    <div class="diagram-caption">Figure 6.1 — End-to-end platform workflow</div>
+    <svg viewBox="0 0 700 240" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#0E1116"/>
+        </marker>
+        <marker id="arrCoral" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#E85D3C"/>
+        </marker>
+      </defs>
+
+      <!-- Lane labels -->
+      <text x="10" y="40" font-family="Inter" font-size="9" fill="#6B6258" font-weight="600" letter-spacing="2">CANDIDATE</text>
+      <text x="10" y="195" font-family="Inter" font-size="9" fill="#6B6258" font-weight="600" letter-spacing="2">EMPLOYER</text>
+
+      <!-- Candidate lane -->
+      <g>
+        <rect x="80" y="20" width="100" height="50" rx="6" fill="#FFFFFF" stroke="#0E1116" stroke-width="1.2"/>
+        <text x="130" y="45" text-anchor="middle" font-family="Inter" font-size="10.5" fill="#0E1116" font-weight="600">Register</text>
+        <text x="130" y="60" text-anchor="middle" font-family="Inter" font-size="8.5" fill="#6B6258">&amp; build profile</text>
+
+        <rect x="200" y="20" width="100" height="50" rx="6" fill="#FFFFFF" stroke="#0E1116" stroke-width="1.2"/>
+        <text x="250" y="45" text-anchor="middle" font-family="Inter" font-size="10.5" fill="#0E1116" font-weight="600">Set preferences</text>
+        <text x="250" y="60" text-anchor="middle" font-family="Inter" font-size="8.5" fill="#6B6258">priorities · weights</text>
+
+        <rect x="320" y="20" width="100" height="50" rx="6" fill="#FFFFFF" stroke="#0E1116" stroke-width="1.2"/>
+        <text x="370" y="45" text-anchor="middle" font-family="Inter" font-size="10.5" fill="#0E1116" font-weight="600">Search jobs</text>
+        <text x="370" y="60" text-anchor="middle" font-family="Inter" font-size="8.5" fill="#6B6258">filter · save</text>
+
+        <rect x="440" y="20" width="100" height="50" rx="6" fill="#E85D3C" stroke="#E85D3C"/>
+        <text x="490" y="45" text-anchor="middle" font-family="Inter" font-size="10.5" fill="#FFFFFF" font-weight="600">Apply</text>
+        <text x="490" y="60" text-anchor="middle" font-family="Inter" font-size="8.5" fill="rgba(255,255,255,0.85)">one-click</text>
+
+        <rect x="560" y="20" width="120" height="50" rx="6" fill="#0E1116"/>
+        <text x="620" y="45" text-anchor="middle" font-family="Inter" font-size="10.5" fill="#F5F0E6" font-weight="600">Interview</text>
+        <text x="620" y="60" text-anchor="middle" font-family="Inter" font-size="8.5" fill="rgba(245,240,230,0.7)">&amp; outcome</text>
+
+        <line x1="180" y1="45" x2="200" y2="45" stroke="#0E1116" marker-end="url(#arr)"/>
+        <line x1="300" y1="45" x2="320" y2="45" stroke="#0E1116" marker-end="url(#arr)"/>
+        <line x1="420" y1="45" x2="440" y2="45" stroke="#0E1116" marker-end="url(#arr)"/>
+        <line x1="540" y1="45" x2="560" y2="45" stroke="#0E1116" marker-end="url(#arr)"/>
+      </g>
+
+      <!-- Center: AI Matching -->
+      <g>
+        <rect x="240" y="105" width="220" height="30" rx="6" fill="#3F6B4F"/>
+        <text x="350" y="124" text-anchor="middle" font-family="Inter" font-size="10.5" fill="#FFFFFF" font-weight="600">AI Matching Engine · Score &amp; rank</text>
+        <line x1="370" y1="70" x2="370" y2="105" stroke="#E85D3C" stroke-width="1.5" marker-end="url(#arrCoral)" stroke-dasharray="3,3"/>
+        <line x1="350" y1="135" x2="350" y2="170" stroke="#E85D3C" stroke-width="1.5" marker-end="url(#arrCoral)" stroke-dasharray="3,3"/>
+      </g>
+
+      <!-- Employer lane -->
+      <g>
+        <rect x="80" y="170" width="120" height="50" rx="6" fill="#FFFFFF" stroke="#0E1116" stroke-width="1.2"/>
+        <text x="140" y="195" text-anchor="middle" font-family="Inter" font-size="10.5" fill="#0E1116" font-weight="600">Onboarding</text>
+        <text x="140" y="210" text-anchor="middle" font-family="Inter" font-size="8.5" fill="#6B6258">domain verify</text>
+
+        <rect x="220" y="170" width="120" height="50" rx="6" fill="#FFFFFF" stroke="#0E1116" stroke-width="1.2"/>
+        <text x="280" y="195" text-anchor="middle" font-family="Inter" font-size="10.5" fill="#0E1116" font-weight="600">Post job</text>
+        <text x="280" y="210" text-anchor="middle" font-family="Inter" font-size="8.5" fill="#6B6258">structured role</text>
+
+        <rect x="360" y="170" width="140" height="50" rx="6" fill="#FFFFFF" stroke="#0E1116" stroke-width="1.2"/>
+        <text x="430" y="195" text-anchor="middle" font-family="Inter" font-size="10.5" fill="#0E1116" font-weight="600">Review applicants</text>
+        <text x="430" y="210" text-anchor="middle" font-family="Inter" font-size="8.5" fill="#6B6258">match-ranked</text>
+
+        <rect x="520" y="170" width="160" height="50" rx="6" fill="#0E1116"/>
+        <text x="600" y="195" text-anchor="middle" font-family="Inter" font-size="10.5" fill="#F5F0E6" font-weight="600">Hire</text>
+        <text x="600" y="210" text-anchor="middle" font-family="Inter" font-size="8.5" fill="rgba(245,240,230,0.7)">offer · onboarding</text>
+
+        <line x1="200" y1="195" x2="220" y2="195" stroke="#0E1116" marker-end="url(#arr)"/>
+        <line x1="340" y1="195" x2="360" y2="195" stroke="#0E1116" marker-end="url(#arr)"/>
+        <line x1="500" y1="195" x2="520" y2="195" stroke="#0E1116" marker-end="url(#arr)"/>
+      </g>
+    </svg>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     07 · FUNCTIONAL MODULES
+     ============================================================ -->
+<section class="chapter">
+  <div class="chapter-head">
+    <span class="chapter-num">Section 07</span>
+    <h2>Functional <em>modules</em>.</h2>
+  </div>
+
+  <p class="lead">Each module owns a clearly defined slice of the product surface, exposes a stable internal API to neighbouring modules, and can be developed, tested, and released independently. This separation is the foundation of the platform's long-term maintainability.</p>
+
+  <h3>Core modules</h3>
+  <table>
+    <thead>
+      <tr><th style="width:30%">Module</th><th>Responsibilities</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Authentication</strong></td>
+        <td>Email + password, OAuth providers (Google), JWT issuance and rotation, password reset, multi-factor authentication for privileged roles.</td>
+      </tr>
+      <tr>
+        <td><strong>Job Management</strong></td>
+        <td>CRUD over job postings, status lifecycle (draft → active → paused → closed), structured fields (compensation, location, requirements), expiry handling, and audit trail.</td>
+      </tr>
+      <tr>
+        <td><strong>Candidate Management</strong></td>
+        <td>Profile data ownership, skill catalogue, work history, completion scoring, and visibility controls (public / recruiter-only / private).</td>
+      </tr>
+      <tr>
+        <td><strong>Company Management</strong></td>
+        <td>Company entity lifecycle from creation through verification, team management, billing entity linkage, and public profile rendering.</td>
+      </tr>
+      <tr>
+        <td><strong>Search &amp; Filters</strong></td>
+        <td>Full-text search across jobs, companies, and candidates with structured facet filters (location, salary, experience, stack), backed by a dedicated search index.</td>
+      </tr>
+      <tr>
+        <td><strong>Dashboard Analytics</strong></td>
+        <td>Role-aware dashboards: candidate hub (applications, matches, profile health), company hub (funnel, applicants, posting performance), admin (platform vitals, revenue).</td>
+      </tr>
+      <tr>
+        <td><strong>Preferences System</strong></td>
+        <td>Ranked priorities, weighted factors, dealbreaker filters, notification thresholds, and per-user preference history.</td>
+      </tr>
+      <tr>
+        <td><strong>Favorites System</strong></td>
+        <td>Saved-jobs collections, per-collection labels, expiry reminders, and pattern insights derived from the saved set.</td>
+      </tr>
+      <tr>
+        <td><strong>Notifications</strong></td>
+        <td>Multi-channel delivery (in-app, email, push), digest cadence control, per-event opt-in, and unread-state tracking.</td>
+      </tr>
+      <tr>
+        <td><strong>Reporting</strong></td>
+        <td>Scheduled and on-demand reports for employers (funnel performance, time-to-hire) and the platform team (revenue, engagement, content health).</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+
+<!-- ============================================================
+     08 · AI FEATURES
+     ============================================================ -->
+<section class="chapter">
+  <div class="chapter-head">
+    <span class="chapter-num">Section 08</span>
+    <h2>AI <em>features</em>.</h2>
+  </div>
+
+  <p class="lead">Artificial intelligence is not a feature of MatchHire — it is the platform's central proposition. The system applies machine learning at five distinct points in the user journey, each producing a transparent, auditable signal rather than an opaque verdict.</p>
+
+  <div class="grid-2">
+    <div class="feature">
+      <div class="icon coral">◆</div>
+      <h4>Smart candidate matching</h4>
+      <p>For every active role, the engine produces a ranked list of candidates with a per-candidate match score broken down by the underlying contributing factors.</p>
+    </div>
+    <div class="feature">
+      <div class="icon sage">◇</div>
+      <h4>Resume screening</h4>
+      <p>Uploaded resumes are parsed into structured fields, normalised against the platform's skill ontology, and surfaced to candidates for confirmation before they go live on a profile.</p>
+    </div>
+    <div class="feature">
+      <div class="icon gold">▤</div>
+      <h4>Skill analysis</h4>
+      <p>Embeddings are computed for both skill descriptions and role requirements, enabling fuzzy matching that recognises "Postgres" and "PostgreSQL" as the same competency.</p>
+    </div>
+    <div class="feature">
+      <div class="icon navy">★</div>
+      <h4>Recommendation engine</h4>
+      <p>A continuous feed of relevant new roles for every candidate, scored against their preferences, weighted by recency, and explained in plain language.</p>
+    </div>
+  </div>
+
+  <div class="feature" style="margin-top:10pt">
+    <div class="icon coral">▥</div>
+    <h4>Match scoring</h4>
+    <p>Every recommendation carries a numeric match score (0–100) and a structured explanation across five dimensions: compensation fit, skill alignment, location compatibility, company stage, and career trajectory. Candidates can drill into the breakdown of any score; employers can do the same on the candidate side.</p>
+  </div>
+
+  <h3>Scoring methodology</h3>
+  <table>
+    <thead>
+      <tr><th>Dimension</th><th>Weight (default)</th><th>Inputs</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Skills match</strong></td><td>30%</td><td>Required vs. possessed skills · embedding similarity · years of practice</td></tr>
+      <tr><td><strong>Compensation fit</strong></td><td>25%</td><td>Posted band vs. candidate expectation · currency normalisation</td></tr>
+      <tr><td><strong>Career trajectory</strong></td><td>20%</td><td>Seniority level · growth path implied by the role</td></tr>
+      <tr><td><strong>Location compatibility</strong></td><td>15%</td><td>Work-mode preference · timezone overlap · visa requirements</td></tr>
+      <tr><td><strong>Company stage fit</strong></td><td>10%</td><td>Stage preference · industry alignment · cultural signals</td></tr>
+    </tbody>
+  </table>
+  <p class="muted" style="font-size:9.5pt">Weights are tuned per-candidate via the Preferences module. The defaults above represent the platform's average configuration.</p>
+</section>
+
+
+<!-- ============================================================
+     09 · TECHNICAL ARCHITECTURE
+     ============================================================ -->
+<section class="chapter">
+  <div class="chapter-head">
+    <span class="chapter-num">Section 09</span>
+    <h2>Technical <em>architecture</em>.</h2>
+  </div>
+
+  <p class="lead">MatchHire is architected as a modern, three-tier web application with a clear separation between presentation, application, and data layers. The system is built for clarity first, then for scale — every component can be horizontally replaced as load grows.</p>
+
+  <div class="diagram">
+    <div class="diagram-caption">Figure 9.1 — System architecture overview</div>
+    <svg viewBox="0 0 700 320" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto">
+      <defs>
+        <marker id="aArr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#0E1116"/>
+        </marker>
+      </defs>
+
+      <!-- Frontend tier -->
+      <rect x="40" y="20" width="620" height="80" rx="8" fill="#F5F0E6" stroke="#E2D9C7"/>
+      <text x="55" y="40" font-family="Inter" font-size="9" fill="#6B6258" font-weight="600" letter-spacing="2">PRESENTATION TIER</text>
+      <g>
+        <rect x="60" y="50" width="180" height="40" rx="6" fill="#FFFFFF" stroke="#0E1116"/>
+        <text x="150" y="68" text-anchor="middle" font-family="Inter" font-size="10.5" fill="#0E1116" font-weight="600">Web Client (React)</text>
+        <text x="150" y="82" text-anchor="middle" font-family="Inter" font-size="8.5" fill="#6B6258">React Router · Context · Vite</text>
+
+        <rect x="260" y="50" width="180" height="40" rx="6" fill="#FFFFFF" stroke="#0E1116"/>
+        <text x="350" y="68" text-anchor="middle" font-family="Inter" font-size="10.5" fill="#0E1116" font-weight="600">Mobile (Future)</text>
+        <text x="350" y="82" text-anchor="middle" font-family="Inter" font-size="8.5" fill="#6B6258">React Native</text>
+
+        <rect x="460" y="50" width="180" height="40" rx="6" fill="#FFFFFF" stroke="#0E1116"/>
+        <text x="550" y="68" text-anchor="middle" font-family="Inter" font-size="10.5" fill="#0E1116" font-weight="600">CDN · Static assets</text>
+        <text x="550" y="82" text-anchor="middle" font-family="Inter" font-size="8.5" fill="#6B6258">CloudFront / Vercel</text>
+      </g>
+
+      <line x1="350" y1="100" x2="350" y2="125" stroke="#0E1116" marker-end="url(#aArr)"/>
+
+      <!-- API Gateway -->
+      <rect x="200" y="130" width="300" height="40" rx="6" fill="#0E1116"/>
+      <text x="350" y="148" text-anchor="middle" font-family="Inter" font-size="10.5" fill="#F5F0E6" font-weight="600">API Gateway · REST + JWT auth</text>
+      <text x="350" y="162" text-anchor="middle" font-family="Inter" font-size="8.5" fill="rgba(245,240,230,0.7)">Rate limiting · request validation · routing</text>
+
+      <line x1="350" y1="170" x2="350" y2="195" stroke="#0E1116" marker-end="url(#aArr)"/>
+
+      <!-- Application tier -->
+      <rect x="40" y="200" width="620" height="60" rx="8" fill="#F5F0E6" stroke="#E2D9C7"/>
+      <text x="55" y="220" font-family="Inter" font-size="9" fill="#6B6258" font-weight="600" letter-spacing="2">APPLICATION TIER · Node.js + Express</text>
+      <g>
+        <rect x="60" y="228" width="110" height="22" rx="4" fill="#FFFFFF" stroke="#0E1116"/>
+        <text x="115" y="243" text-anchor="middle" font-family="Inter" font-size="9" fill="#0E1116" font-weight="600">Auth Service</text>
+
+        <rect x="180" y="228" width="110" height="22" rx="4" fill="#FFFFFF" stroke="#0E1116"/>
+        <text x="235" y="243" text-anchor="middle" font-family="Inter" font-size="9" fill="#0E1116" font-weight="600">Jobs Service</text>
+
+        <rect x="300" y="228" width="110" height="22" rx="4" fill="#FFFFFF" stroke="#0E1116"/>
+        <text x="355" y="243" text-anchor="middle" font-family="Inter" font-size="9" fill="#0E1116" font-weight="600">Candidates Svc</text>
+
+        <rect x="420" y="228" width="110" height="22" rx="4" fill="#E85D3C"/>
+        <text x="475" y="243" text-anchor="middle" font-family="Inter" font-size="9" fill="#FFFFFF" font-weight="600">AI Matcher</text>
+
+        <rect x="540" y="228" width="110" height="22" rx="4" fill="#FFFFFF" stroke="#0E1116"/>
+        <text x="595" y="243" text-anchor="middle" font-family="Inter" font-size="9" fill="#0E1116" font-weight="600">Notifications</text>
+      </g>
+
+      <line x1="350" y1="260" x2="350" y2="280" stroke="#0E1116" marker-end="url(#aArr)"/>
+
+      <!-- Data tier -->
+      <rect x="40" y="285" width="620" height="30" rx="6" fill="#1F3A5F"/>
+      <text x="60" y="304" font-family="Inter" font-size="9" fill="rgba(255,255,255,0.6)" font-weight="600" letter-spacing="2">DATA TIER</text>
+      <text x="180" y="304" font-family="Inter" font-size="10" fill="#FFFFFF" font-weight="600">MySQL (primary) · Redis (cache) · S3 (files) · Elasticsearch (search)</text>
+    </svg>
+  </div>
+
+  <h3>Frontend architecture</h3>
+  <p>The web client is a single-page application built on React 18 and bundled with Vite. Routing is handled by React Router v6 in browser mode. Cross-cutting state lives in React Context (favorites, auth modal); page-local state stays inside its owning component. Styling uses a custom design system in plain CSS — no framework dependency — keeping the bundle small and the visual language tightly controlled.</p>
+
+  <h3>Backend architecture</h3>
+  <p>The application tier runs on Node.js with Express, organised as a modular monolith with service-oriented internal boundaries (Auth, Jobs, Candidates, Companies, Matching, Notifications). Each service owns its database tables and exposes a typed internal API. This layout converts cleanly to true microservices when individual modules cross the scaling threshold, without a disruptive rewrite.</p>
+
+  <h3>Database structure</h3>
+  <p>MySQL is the primary store, holding the authoritative state for all transactional data — users, jobs, applications, companies. Redis sits in front for hot reads (session lookups, leaderboard queries, rate-limit counters). Elasticsearch indexes job and candidate text for full-text search. S3 holds resumes, company logos, and other binary assets.</p>
+
+  <h3>API architecture</h3>
+  <p>The external API surface is a REST/JSON gateway, versioned at <span class="mono">/api/v1</span>. Every request is authenticated by JWT and authorised by the RBAC layer before reaching service logic. Response shapes are stable per major version; breaking changes ship behind a new version path with a published deprecation window.</p>
+
+  <h3>Authentication flow</h3>
+  <p>On successful sign-in the server issues a short-lived access token (15 minutes) and a longer-lived refresh token (14 days). The web client stores the refresh token in an HTTP-only, secure cookie and the access token in memory. The refresh exchange runs silently in the background; revocation is immediate on logout.</p>
+
+  <h3>Deployment flow</h3>
+  <p>Every merge to <span class="mono">main</span> triggers the CI pipeline (lint, type-check, test, build), produces immutable Docker images, and ships through staging into production. Infrastructure is provisioned on AWS with Nginx as the edge proxy, ECS or Kubernetes for compute, RDS for MySQL, ElastiCache for Redis, and CloudFront for the CDN.</p>
+</section>
+
+
+<!-- ============================================================
+     10 · TECHNOLOGY STACK
+     ============================================================ -->
+<section class="chapter">
+  <div class="chapter-head">
+    <span class="chapter-num">Section 10</span>
+    <h2>Recommended <em>technology stack</em>.</h2>
+  </div>
+
+  <p class="lead">The recommended stack favours well-understood, widely supported technologies. Each choice has a clear rationale: ecosystem strength, hiring availability, operational maturity, and a credible long-term roadmap.</p>
+
+  <table>
+    <thead>
+      <tr><th style="width:18%">Layer</th><th style="width:32%">Technology</th><th>Rationale</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Frontend</strong></td>
+        <td><span class="pill navy">React 18</span> <span class="pill muted">React Router v6</span> <span class="pill muted">Vite</span></td>
+        <td>Industry-standard UI library with the largest component and tooling ecosystem. Vite delivers near-instant developer feedback.</td>
+      </tr>
+      <tr>
+        <td><strong>Backend</strong></td>
+        <td><span class="pill sage">Node.js LTS</span> <span class="pill muted">Express 4</span></td>
+        <td>Single language across the stack reduces context switching. Express remains the most battle-tested HTTP framework on Node.</td>
+      </tr>
+      <tr>
+        <td><strong>Database</strong></td>
+        <td><span class="pill navy">MySQL 8</span></td>
+        <td>Mature relational store with strong consistency, the right model for transactional hiring data. Read replicas scale horizontally.</td>
+      </tr>
+      <tr>
+        <td><strong>Cache</strong></td>
+        <td><span class="pill coral">Redis 7</span></td>
+        <td>Sub-millisecond reads for sessions, rate limits, and hot recommendation surfaces.</td>
+      </tr>
+      <tr>
+        <td><strong>Search</strong></td>
+        <td><span class="pill gold">Elasticsearch</span></td>
+        <td>Purpose-built for full-text search and faceted filtering across jobs, companies, and candidates.</td>
+      </tr>
+      <tr>
+        <td><strong>Object storage</strong></td>
+        <td><span class="pill navy">Amazon S3</span></td>
+        <td>Durable, cheap blob storage for resumes, logos, and exports.</td>
+      </tr>
+      <tr>
+        <td><strong>Infrastructure</strong></td>
+        <td><span class="pill sage">AWS</span> <span class="pill muted">Docker</span> <span class="pill muted">Nginx</span></td>
+        <td>Industry leader in cloud infrastructure with the broadest service catalogue. Docker and Nginx complete the stack at the deployment edge.</td>
+      </tr>
+      <tr>
+        <td><strong>Authentication</strong></td>
+        <td><span class="pill coral">JWT</span> <span class="pill muted">OAuth 2.0</span></td>
+        <td>JWT for stateless session tokens; OAuth for social sign-in (Google, GitHub).</td>
+      </tr>
+      <tr>
+        <td><strong>AI / ML</strong></td>
+        <td><span class="pill gold">Python (FastAPI)</span> <span class="pill muted">PyTorch · scikit-learn</span></td>
+        <td>The matching engine runs as a separate Python service to leverage the ML ecosystem; consumed by Node via internal REST.</td>
+      </tr>
+      <tr>
+        <td><strong>Observability</strong></td>
+        <td><span class="pill navy">Datadog</span> <span class="pill muted">Sentry</span></td>
+        <td>Unified metrics, traces, and logs (Datadog) and frontend error tracking (Sentry).</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+
+<!-- ============================================================
+     11 · DATABASE PLANNING
+     ============================================================ -->
+<section class="chapter">
+  <div class="chapter-head">
+    <span class="chapter-num">Section 11</span>
+    <h2>Database <em>planning</em>.</h2>
+  </div>
+
+  <p class="lead">The data model is anchored around eight primary entities. Relationships are expressed via foreign keys with strict referential integrity; audit fields (<span class="mono">created_at</span>, <span class="mono">updated_at</span>, <span class="mono">deleted_at</span>) appear on every table.</p>
+
+  <table>
+    <thead>
+      <tr><th style="width:22%">Entity</th><th style="width:30%">Purpose</th><th>Key relationships</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Users</strong></td>
+        <td>Authentication identity, role, contact details, account status.</td>
+        <td>1:1 with Candidate or Employer profile. 1:N with Sessions.</td>
+      </tr>
+      <tr>
+        <td><strong>Jobs</strong></td>
+        <td>Open role specification — title, description, compensation band, location, status.</td>
+        <td>N:1 with Companies. 1:N with Applications. M:N with Skills.</td>
+      </tr>
+      <tr>
+        <td><strong>Applications</strong></td>
+        <td>Candidate's expression of interest in a specific job, with pipeline status.</td>
+        <td>N:1 with Jobs. N:1 with Users (Candidate). 1:N with Interviews.</td>
+      </tr>
+      <tr>
+        <td><strong>Companies</strong></td>
+        <td>Employer entity — verified domain, industry, headcount, billing.</td>
+        <td>1:N with Jobs. 1:N with Users (employer team members).</td>
+      </tr>
+      <tr>
+        <td><strong>Skills</strong></td>
+        <td>Canonical skill ontology, normalised across job postings and candidate profiles.</td>
+        <td>M:N with Jobs (requirements). M:N with Users (possessed skills).</td>
+      </tr>
+      <tr>
+        <td><strong>Preferences</strong></td>
+        <td>Per-candidate ranked priorities, weighted factors, dealbreakers, salary expectations.</td>
+        <td>1:1 with Users.</td>
+      </tr>
+      <tr>
+        <td><strong>Favorites</strong></td>
+        <td>Saved-job records grouped into user-defined collections.</td>
+        <td>N:1 with Users. N:1 with Jobs.</td>
+      </tr>
+      <tr>
+        <td><strong>Notifications</strong></td>
+        <td>Outbound message log across channels, with delivery and read state.</td>
+        <td>N:1 with Users.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Indexing strategy</h3>
+  <ul>
+    <li>Composite index on <span class="mono">jobs(status, created_at)</span> for the home-page listing query.</li>
+    <li>Composite index on <span class="mono">applications(user_id, status)</span> for the candidate's "my applications" view.</li>
+    <li>Full-text index on <span class="mono">jobs(title, description)</span> mirrored into Elasticsearch.</li>
+    <li>Unique index on <span class="mono">users(email)</span> and <span class="mono">companies(domain)</span>.</li>
+  </ul>
+</section>
+
+
+<!-- ============================================================
+     12 · SECURITY CONSIDERATIONS
+     ============================================================ -->
+<section class="chapter">
+  <div class="chapter-head">
+    <span class="chapter-num">Section 12</span>
+    <h2>Security <em>considerations</em>.</h2>
+  </div>
+
+  <p class="lead">Security is treated as a product requirement, not an afterthought. The platform's threat model recognises that hiring data is personal, regulated, and commercially sensitive — its protection is a competitive necessity.</p>
+
+  <div class="grid-2">
+    <div class="feature">
+      <div class="icon coral">⊕</div>
+      <h4>JWT authentication</h4>
+      <p>Short-lived access tokens (15 min) signed with rotating keys; refresh tokens stored in HTTP-only secure cookies; immediate revocation on logout or compromise.</p>
+    </div>
+    <div class="feature">
+      <div class="icon sage">⊞</div>
+      <h4>Role-based access control</h4>
+      <p>Every privileged endpoint checks both role and resource ownership. UI hides ineligible actions; the server enforces them.</p>
+    </div>
+    <div class="feature">
+      <div class="icon navy">≡</div>
+      <h4>API request validation</h4>
+      <p>Every inbound payload is validated against a strict schema; unknown fields are rejected; type coercion is explicit.</p>
+    </div>
+    <div class="feature">
+      <div class="icon gold">▣</div>
+      <h4>SQL injection prevention</h4>
+      <p>Parameterised queries everywhere — no string-concatenated SQL. The data-access layer is the only path to the database.</p>
+    </div>
+    <div class="feature">
+      <div class="icon coral">⊠</div>
+      <h4>XSS protection</h4>
+      <p>React's default escape behaviour, strict Content Security Policy headers, and sanitisation of user-generated rich content.</p>
+    </div>
+    <div class="feature">
+      <div class="icon sage">⇧</div>
+      <h4>Secure file uploads</h4>
+      <p>MIME-type validation, virus scanning on ingest, signed URLs for retrieval, and per-tenant isolation in S3.</p>
+    </div>
+  </div>
+
+  <h3>Compliance posture</h3>
+  <ul>
+    <li><strong>GDPR.</strong> Right to access, right to be forgotten, and data portability are first-class API features.</li>
+    <li><strong>Data residency.</strong> Region-pinned databases for jurisdictions with strict residency requirements.</li>
+    <li><strong>Encryption.</strong> TLS 1.3 in transit; AES-256 at rest for databases, backups, and object storage.</li>
+    <li><strong>Audit trail.</strong> All privileged actions are logged with actor, target, timestamp, and outcome.</li>
+  </ul>
+</section>
+
+
+<!-- ============================================================
+     13 · SCALABILITY PLANNING
+     ============================================================ -->
+<section class="chapter">
+  <div class="chapter-head">
+    <span class="chapter-num">Section 13</span>
+    <h2>Scalability <em>planning</em>.</h2>
+  </div>
+
+  <p class="lead">The architecture is designed to absorb 100× load growth without a rewrite. Each tier scales independently, each bottleneck has a known remediation, and every architectural choice has been weighed against its scaling cost.</p>
+
+  <table class="tbl-tight">
+    <thead>
+      <tr><th>Capability</th><th>Mechanism</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Modular architecture</strong></td>
+        <td>The application tier is organised as a modular monolith — distinct services internally, deployed as one binary. Internal boundaries are well-defined so they can split out when needed.</td>
+      </tr>
+      <tr>
+        <td><strong>Microservice readiness</strong></td>
+        <td>Auth, Jobs, Candidates, Notifications, and AI Matching are first-class internal services. Promotion to independent deployment is mechanical, not architectural.</td>
+      </tr>
+      <tr>
+        <td><strong>Caching</strong></td>
+        <td>Redis fronts session lookups, recommendation surfaces, rate-limit counters, and other hot reads. Cache invalidation is event-driven and explicit.</td>
+      </tr>
+      <tr>
+        <td><strong>CDN readiness</strong></td>
+        <td>All static assets ship to CloudFront with long TTLs and cache-busting hashes. The HTML shell itself is cacheable below a thin authentication edge.</td>
+      </tr>
+      <tr>
+        <td><strong>Queue systems</strong></td>
+        <td>SQS-backed queues for long-running work — resume parsing, bulk notifications, scheduled digests, and data exports — keeping request paths fast.</td>
+      </tr>
+      <tr>
+        <td><strong>High-concurrency handling</strong></td>
+        <td>Stateless application servers behind an autoscaling group. Database connection pooling via PgBouncer-equivalent for MySQL. Read replicas for high-volume reads.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <span class="eyebrow">Scaling principle</span>
+    <p>Scale the part that hurts, not the whole platform. The architecture lets the team identify the specific bottleneck and address it without a wholesale migration.</p>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     14 · DEVELOPMENT ROADMAP
+     ============================================================ -->
+<section class="chapter">
+  <div class="chapter-head">
+    <span class="chapter-num">Section 14</span>
+    <h2>Development <em>roadmap</em>.</h2>
+  </div>
+
+  <p class="lead">Delivery is structured into six sequential phases, each with a defined entry condition, a measurable exit criterion, and a working deliverable at the end. The phases overlap deliberately — backend foundations begin while the frontend is still in design polish, so dependent teams stay productive.</p>
+
+  <table>
+    <thead>
+      <tr><th style="width:6%">#</th><th style="width:24%">Phase</th><th>Scope &amp; deliverables</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="pill coral">P1</span></td>
+        <td><strong>UI / Frontend</strong></td>
+        <td>Complete React SPA with all eleven routes, design system, and stub data. Production-grade visual treatment. Deliverable: deployable static site.</td>
+      </tr>
+      <tr>
+        <td><span class="pill navy">P2</span></td>
+        <td><strong>Backend APIs</strong></td>
+        <td>Express services for Jobs, Candidates, Companies, Applications. REST endpoints, validation, persistence. Deliverable: stable v1 API.</td>
+      </tr>
+      <tr>
+        <td><span class="pill sage">P3</span></td>
+        <td><strong>Authentication</strong></td>
+        <td>Email + OAuth sign-in, JWT issuance, role-based access control, session management. Deliverable: production-ready auth surface.</td>
+      </tr>
+      <tr>
+        <td><span class="pill gold">P4</span></td>
+        <td><strong>AI Matching</strong></td>
+        <td>Python service for skill embeddings, match scoring, recommendation feed. Deliverable: scored recommendations live on candidate dashboards.</td>
+      </tr>
+      <tr>
+        <td><span class="pill navy">P5</span></td>
+        <td><strong>Admin Panel</strong></td>
+        <td>Verification queue, content moderation tooling, user management, system health dashboards. Deliverable: operational platform.</td>
+      </tr>
+      <tr>
+        <td><span class="pill coral">P6</span></td>
+        <td><strong>Testing &amp; Deployment</strong></td>
+        <td>End-to-end test suite, load testing, security review, production deployment, monitoring, runbooks. Deliverable: launched product.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+
+<!-- ============================================================
+     15 · ESTIMATED TIMELINE
+     ============================================================ -->
+<section class="chapter">
+  <div class="chapter-head">
+    <span class="chapter-num">Section 15</span>
+    <h2>Estimated <em>timeline</em>.</h2>
+  </div>
+
+  <p class="lead">A 22-week delivery plan from project kickoff to production launch. Weeks overlap across phases to keep team utilisation efficient; milestones below mark the moments at which value becomes visible to stakeholders.</p>
+
+  <table>
+    <thead>
+      <tr><th style="width:12%">Weeks</th><th style="width:24%">Phase</th><th>Key milestones</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>W1 – W4</strong></td><td>Phase 1 · UI / Frontend</td><td>Design system locked · all 11 routes scaffolded · clickable prototype shipped to stakeholders.</td></tr>
+      <tr><td><strong>W3 – W8</strong></td><td>Phase 2 · Backend APIs</td><td>Schema designed · Jobs/Candidates/Companies CRUD live · staging environment online.</td></tr>
+      <tr><td><strong>W6 – W10</strong></td><td>Phase 3 · Authentication</td><td>Email and OAuth sign-in working · RBAC enforced · sessions persisted.</td></tr>
+      <tr><td><strong>W9 – W14</strong></td><td>Phase 4 · AI Matching</td><td>Skill ontology seeded · match-scoring service deployed · recommendations live for beta users.</td></tr>
+      <tr><td><strong>W12 – W17</strong></td><td>Phase 5 · Admin Panel</td><td>Verification queue operational · moderation tools complete · admin onboarding documented.</td></tr>
+      <tr><td><strong>W15 – W22</strong></td><td>Phase 6 · Testing &amp; Deployment</td><td>Full e2e suite passing · load testing complete · security audit closed · production launch.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <span class="eyebrow">Risk note</span>
+    <p>The AI matching phase carries the highest delivery risk because of its dependence on a clean skill ontology. A two-week schedule buffer is included in phases 4 and 6 to absorb learning-curve overhead without compromising launch.</p>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     16 · TEAM STRUCTURE
+     ============================================================ -->
+<section class="chapter">
+  <div class="chapter-head">
+    <span class="chapter-num">Section 16</span>
+    <h2>Estimated <em>team structure</em>.</h2>
+  </div>
+
+  <p class="lead">An eleven-person core team can execute the 22-week plan with quality and predictable cadence. The structure is deliberately lean — senior engineers in primary roles, with quality-assurance, design, and operations distributed thoughtfully rather than scaled by headcount.</p>
+
+  <table>
+    <thead>
+      <tr><th style="width:36%">Role</th><th style="width:18%">Headcount</th><th>Responsibilities</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Frontend Developers</strong></td><td>3</td><td>React SPA delivery, design-system implementation, accessibility, performance budgets.</td></tr>
+      <tr><td><strong>Backend Developers</strong></td><td>3</td><td>API services, data modelling, integration with AI service, observability instrumentation.</td></tr>
+      <tr><td><strong>AI / ML Engineer</strong></td><td>1</td><td>Embedding models, scoring engine, recommendation feedback loop.</td></tr>
+      <tr><td><strong>UI/UX Designer</strong></td><td>1</td><td>Information architecture, interaction design, visual system, prototyping.</td></tr>
+      <tr><td><strong>QA Engineers</strong></td><td>1</td><td>Test plans, automation, regression coverage, release gating.</td></tr>
+      <tr><td><strong>DevOps</strong></td><td>1</td><td>Infrastructure-as-code, CI/CD, monitoring, on-call rotations, security hardening.</td></tr>
+      <tr><td><strong>Project Manager</strong></td><td>1</td><td>Roadmap ownership, cross-team coordination, stakeholder communication, risk management.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+
+<!-- ============================================================
+     17 · FUTURE ENHANCEMENTS
+     ============================================================ -->
+<section class="chapter">
+  <div class="chapter-head">
+    <span class="chapter-num">Section 17</span>
+    <h2>Future <em>enhancements</em>.</h2>
+  </div>
+
+  <p class="lead">The launch product establishes the foundation. The next twelve to eighteen months extend that foundation across new surfaces, new revenue models, and deeper intelligence. Each enhancement below has been sized as a self-contained programme that can be ranked, funded, and scheduled independently.</p>
+
+  <div class="grid-2">
+    <div class="feature">
+      <div class="icon coral">▶</div>
+      <h4>Video interviews</h4>
+      <p>In-platform video calls with calendar integration, recording, transcription, and shareable highlights — eliminating a fragmented stack of external tools.</p>
+    </div>
+    <div class="feature">
+      <div class="icon sage">◆</div>
+      <h4>AI interview assistant</h4>
+      <p>Real-time question suggestions for interviewers, post-interview summaries, and structured candidate-comparison briefs.</p>
+    </div>
+    <div class="feature">
+      <div class="icon gold">⌬</div>
+      <h4>Real-time chat</h4>
+      <p>Secure messaging between candidates and hiring teams with message-template support and full audit trail.</p>
+    </div>
+    <div class="feature">
+      <div class="icon navy">▤</div>
+      <h4>Mobile applications</h4>
+      <p>Native iOS and Android apps built on React Native, sharing the design system and reusing the API surface from day one.</p>
+    </div>
+    <div class="feature">
+      <div class="icon coral">$</div>
+      <h4>Subscription model</h4>
+      <p>Tiered employer subscriptions (Starter · Growth · Enterprise) replacing pay-per-post, with premium analytics and seat-based pricing.</p>
+    </div>
+    <div class="feature">
+      <div class="icon sage">★</div>
+      <h4>Premium hiring tools</h4>
+      <p>Bulk outreach, sourcing intelligence, talent-pool nurture campaigns, and offer-acceptance forecasting — sold as Enterprise add-ons.</p>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     18 · CONCLUSION
+     ============================================================ -->
+<section class="chapter">
+  <div class="chapter-head">
+    <span class="chapter-num">Section 18</span>
+    <h2>Conclusion.</h2>
+  </div>
+
+  <p class="lead">MatchHire is positioned to redefine senior hiring by combining a calmer user experience with credible artificial intelligence, transparent signals, and an architecture built for measured growth.</p>
+
+  <p>The platform's product surface — Candidate Hub, Company Hub, Admin Console, AI Matching engine — is comprehensive enough to address the entire hiring lifecycle without forcing teams onto fragmented tooling. The technical foundation is deliberately mainstream: React, Node.js, MySQL, Redis, Elasticsearch, AWS. There is no novelty for novelty's sake; every layer is chosen because it is well-understood, well-supported, and trivial to staff.</p>
+
+  <p>The commercial proposition is equally clear. Specialised, AI-augmented hiring platforms are the fastest-growing segment of a USD 43 billion market, and MatchHire enters with a differentiated thesis — curation over volume, signal over noise, intelligence over keywords. Tiered subscriptions, premium tools, and adjacent revenue streams (assessments, interview tooling) compound the lifetime value of every employer relationship.</p>
+
+  <p>What follows the publication of this document is execution. The 22-week delivery plan and 11-person team structure described above are designed to put a production-grade platform in market by the end of the first half — at which point the work shifts from building to learning, and the data that the platform generates becomes its own competitive advantage.</p>
+
+  <div class="callout">
+    <span class="eyebrow">Closing</span>
+    <p>The opportunity is real, the market is ready, the architecture is sound, and the team is sized to ship. The path from here is straightforward — build the product, measure the outcomes, refine continuously.</p>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     19 · APPENDIX A · SUGGESTED APIs
+     ============================================================ -->
+<section class="chapter">
+  <div class="chapter-head">
+    <span class="chapter-num">Appendix · A</span>
+    <h2>Suggested <em>APIs &amp; integrations</em>.</h2>
+  </div>
+
+  <p class="lead">A reference list of third-party services that accelerate delivery without compromising the long-term architecture. Each is replaceable on commodity infrastructure; the recommendation is to integrate them now and own them later, if and when scale justifies the engineering investment.</p>
+
+  <table>
+    <thead>
+      <tr><th style="width:24%">Capability</th><th style="width:30%">Recommended provider</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>OAuth</strong></td><td>Google Identity · GitHub OAuth</td><td>Standard social sign-in. Add Microsoft for enterprise.</td></tr>
+      <tr><td><strong>Email delivery</strong></td><td>SendGrid · Amazon SES</td><td>SendGrid for transactional and marketing. SES as a low-cost fallback.</td></tr>
+      <tr><td><strong>SMS / push</strong></td><td>Twilio · Firebase Cloud Messaging</td><td>Twilio for SMS at launch; FCM for mobile push when apps ship.</td></tr>
+      <tr><td><strong>Payments</strong></td><td>Stripe</td><td>Subscription billing, taxes, invoicing, and global payment methods.</td></tr>
+      <tr><td><strong>Calendar &amp; scheduling</strong></td><td>Google Calendar · Microsoft Graph</td><td>Two-way sync for interview scheduling.</td></tr>
+      <tr><td><strong>Video calls</strong></td><td>Daily.co · Twilio Video</td><td>WebRTC infrastructure under the in-platform video product.</td></tr>
+      <tr><td><strong>Maps &amp; geocoding</strong></td><td>Mapbox</td><td>Location normalisation, candidate-location matching, commute estimates.</td></tr>
+      <tr><td><strong>Document parsing</strong></td><td>Apryse · Adobe PDF Services</td><td>Resume extraction for candidates uploading PDF/DOCX files.</td></tr>
+      <tr><td><strong>Embeddings</strong></td><td>OpenAI · Cohere</td><td>Initial embedding source for skill and role text until in-house models are trained.</td></tr>
+      <tr><td><strong>Background checks</strong></td><td>Checkr</td><td>Pre-hire verification for premium employer tier.</td></tr>
+      <tr><td><strong>Observability</strong></td><td>Datadog · Sentry</td><td>APM, logs, traces (Datadog) and frontend exception capture (Sentry).</td></tr>
+    </tbody>
+  </table>
+</section>
+
+
+<!-- ============================================================
+     20 · APPENDIX B · DEPLOYMENT NOTES
+     ============================================================ -->
+<section class="chapter">
+  <div class="chapter-head">
+    <span class="chapter-num">Appendix · B</span>
+    <h2>Deployment <em>notes</em>.</h2>
+  </div>
+
+  <p class="lead">A pragmatic deployment baseline. Every assertion below has been chosen for operational simplicity at the early stage and a credible upgrade path as the platform matures.</p>
+
+  <h3>Environments</h3>
+  <ul>
+    <li><strong>Development</strong> — Local Docker Compose stack covering MySQL, Redis, Elasticsearch, and the application services. One command to start (<span class="mono">make dev</span>), one to stop.</li>
+    <li><strong>Staging</strong> — Continuously deployed from <span class="mono">main</span>, mirroring production topology at reduced scale. Synthetic load and integration tests run on every deploy.</li>
+    <li><strong>Production</strong> — Multi-AZ deployment on AWS with autoscaling groups, RDS Multi-AZ MySQL, ElastiCache Redis, and CloudFront in front of the static surfaces.</li>
+  </ul>
+
+  <h3>CI / CD pipeline</h3>
+  <ol>
+    <li>Pull request opened → lint, type-check, unit tests, build.</li>
+    <li>Merge to <span class="mono">main</span> → integration tests, container image built and tagged, image pushed to ECR.</li>
+    <li>Automatic deploy to staging → e2e tests, smoke checks.</li>
+    <li>Promotion to production via gated approval → blue/green or canary rollout.</li>
+    <li>Post-deploy monitoring window with automated rollback trigger.</li>
+  </ol>
+
+  <h3>Backups &amp; disaster recovery</h3>
+  <ul>
+    <li>Daily MySQL snapshots with 30-day retention; weekly archival snapshots retained for one year.</li>
+    <li>Point-in-time recovery enabled with a 7-day window.</li>
+    <li>S3 versioning enabled on user-upload buckets.</li>
+    <li>Quarterly disaster-recovery drill with full restore to an isolated environment.</li>
+  </ul>
+
+  <h3>SLA targets</h3>
+  <table class="tbl-tight">
+    <thead>
+      <tr><th>Metric</th><th>Target</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>API uptime (monthly)</td><td>99.9%</td></tr>
+      <tr><td>Mean response time (95th percentile)</td><td>&lt; 300 ms</td></tr>
+      <tr><td>Mean time to acknowledge incident</td><td>&lt; 5 minutes</td></tr>
+      <tr><td>Mean time to recover (sev-1)</td><td>&lt; 60 minutes</td></tr>
+      <tr><td>Recovery point objective (RPO)</td><td>≤ 1 hour</td></tr>
+      <tr><td>Recovery time objective (RTO)</td><td>≤ 4 hours</td></tr>
+    </tbody>
+  </table>
+
+  <div class="divider">
+    <span class="divider-line"></span>
+    <span class="divider-label">End of document · MatchHire v1.0</span>
+    <span class="divider-line"></span>
+  </div>
+</section>
+
+</body>
+</html>

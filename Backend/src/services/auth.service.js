@@ -1,0 +1,252 @@
+'use strict';
+
+/**
+ * Auth service
+ * ------------
+ * Business logic for the auth flows. The controller layer never touches
+ * jwt/bcrypt directly - all credential handling, token rotation, and reset
+ * flows live here.
+ *
+ * Token storage strategy:
+ *   - access_token   : short-lived JWT, never stored server-side
+ *   - refresh_token  : opaque random hex, SHA-256 hash stored in
+ *                      `refresh_tokens`. Rotated on every refresh. Logout
+ *                      revokes the supplied token; change_password revokes
+ *                      ALL refresh tokens for the user.
+ *
+ * Password storage:
+ *   - bcryptjs with cost 10 (`hashSync`/`compare`). Hash stored on `users.password_hash`.
+ *
+ * Password reset:
+ *   - random hex token, SHA-256 hash stored in `password_reset_tokens`.
+ *     Tokens expire after 1 hour and are single-use.
+ */
+
+const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
+const config = require('../config/env');
+const db = require('../config/database');
+const userRepo = require('../repositories/user.repository');
+const tokenRepo = require('../repositories/token.repository');
+const candidateRepo = require('../repositories/candidate.repository');
+const companyRepo = require('../repositories/company.repository');
+const employerRepo = require('../repositories/employer.repository');
+const AppError = require('../utils/AppError');
+const { ROLES } = require('../constants/roles');
+
+function hashToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function signAccessToken(user) {
+  return jwt.sign(
+    { sub: user.id, role: user.role, email: user.email, full_name: user.full_name },
+    config.jwt.secret,
+    { expiresIn: config.jwt.expiresIn }
+  );
+}
+
+function generateRefreshToken() {
+  return crypto.randomBytes(48).toString('hex');
+}
+
+function expiresInDays(spec, fallbackDays) {
+  if (typeof spec === 'string') {
+    const m = spec.match(/^(\d+)([dhm])$/);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      const unit = m[2];
+      const ms = unit === 'd' ? n * 24 * 3600 * 1000 : unit === 'h' ? n * 3600 * 1000 : n * 60 * 1000;
+      return new Date(Date.now() + ms);
+    }
+  }
+  return new Date(Date.now() + fallbackDays * 24 * 3600 * 1000);
+}
+
+async function issueTokens(user, meta = {}) {
+  const accessToken = signAccessToken(user);
+  const refreshToken = generateRefreshToken();
+  const refreshHash = hashToken(refreshToken);
+  const expires_at = expiresInDays(config.jwt.refreshExpiresIn, 30);
+  await tokenRepo.saveRefreshToken({
+    user_id: user.id,
+    token_hash: refreshHash,
+    expires_at,
+    ip_address: meta.ip || null,
+    user_agent: meta.userAgent || null,
+  });
+  return {
+    access_token: accessToken,
+    refresh_token: refreshToken,
+    token_type: 'Bearer',
+    expires_in: config.jwt.expiresIn,
+  };
+}
+
+async function registerCandidate(payload, meta = {}) {
+  const exists = await userRepo.emailExists(payload.email);
+  if (exists) throw new AppError('Email already in use', 409);
+
+  const password_hash = await bcrypt.hash(payload.password, 10);
+
+  const user_id = await db.transaction(async (conn) => {
+    const id = await userRepo.create({
+      full_name: payload.full_name,
+      email: payload.email.toLowerCase(),
+      phone: payload.phone || null,
+      password_hash,
+      role: ROLES.CANDIDATE,
+    }, conn);
+    await candidateRepo.upsertProfile(id, {
+      headline: payload.headline || null,
+      current_title: payload.current_title || null,
+      years_experience: payload.years_experience || 0,
+      location: payload.location || null,
+      country: payload.country || null,
+    }, conn);
+    return id;
+  });
+
+  const user = await userRepo.findById(user_id);
+  await candidateRepo.recomputeProfileStrength(user_id);
+  const tokens = await issueTokens(user, meta);
+  return { user, ...tokens };
+}
+
+async function registerEmployer(payload, meta = {}) {
+  const exists = await userRepo.emailExists(payload.email);
+  if (exists) throw new AppError('Email already in use', 409);
+
+  const password_hash = await bcrypt.hash(payload.password, 10);
+
+  const result = await db.transaction(async (conn) => {
+    const user_id = await userRepo.create({
+      full_name: payload.full_name,
+      email: payload.email.toLowerCase(),
+      phone: payload.phone || null,
+      password_hash,
+      role: ROLES.EMPLOYER,
+    }, conn);
+    const company = await companyRepo.create({
+      owner_user_id: user_id,
+      name: payload.company.name,
+      website: payload.company.website || null,
+      industry: payload.company.industry || null,
+      size: payload.company.size || null,
+      location: payload.company.location || null,
+      country: payload.company.country || null,
+      description: payload.company.description || null,
+    }, conn);
+    await employerRepo.createProfile({
+      user_id,
+      company_id: company.id,
+      designation: payload.designation || null,
+      phone: payload.phone || null,
+      is_primary_contact: true,
+    }, conn);
+    return { user_id, company_id: company.id };
+  });
+
+  const user = await userRepo.findById(result.user_id);
+  const tokens = await issueTokens(user, meta);
+  return { user, company_id: result.company_id, ...tokens };
+}
+
+async function login({ email, password }, meta = {}) {
+  const userRow = await userRepo.findByEmail(email.toLowerCase());
+  if (!userRow) throw new AppError('Invalid email or password', 401);
+  if (userRow.status === 'suspended') throw new AppError('Account suspended', 403);
+  if (userRow.status === 'inactive') throw new AppError('Account inactive', 403);
+  const ok = await bcrypt.compare(password, userRow.password_hash);
+  if (!ok) throw new AppError('Invalid email or password', 401);
+
+  await userRepo.touchLogin(userRow.id);
+  const { password_hash, ...user } = userRow; // eslint-disable-line no-unused-vars
+  const tokens = await issueTokens(user, meta);
+  return { user, ...tokens };
+}
+
+async function logout(refresh_token) {
+  if (!refresh_token) return;
+  const hash = hashToken(refresh_token);
+  const rec = await tokenRepo.findRefreshTokenByHash(hash);
+  if (rec) await tokenRepo.revokeRefreshToken(rec.id);
+}
+
+async function rotateRefreshToken(refresh_token, meta = {}) {
+  if (!refresh_token) throw new AppError('Refresh token required', 400);
+  const hash = hashToken(refresh_token);
+  const rec = await tokenRepo.findRefreshTokenByHash(hash);
+  if (!rec) throw new AppError('Invalid refresh token', 401);
+  if (rec.revoked_at) throw new AppError('Refresh token revoked', 401);
+  if (new Date(rec.expires_at).getTime() <= Date.now()) throw new AppError('Refresh token expired', 401);
+
+  const user = await userRepo.findById(rec.user_id);
+  if (!user) throw new AppError('User no longer exists', 401);
+
+  const tokens = await issueTokens(user, meta);
+  const newHash = hashToken(tokens.refresh_token);
+  const newRec = await tokenRepo.findRefreshTokenByHash(newHash);
+  await tokenRepo.revokeRefreshToken(rec.id, newRec?.id || null);
+  return { user, ...tokens };
+}
+
+async function forgotPassword(email) {
+  const user = await userRepo.findByEmail(email.toLowerCase());
+  if (!user) return { token: null };
+  const token = crypto.randomBytes(32).toString('hex');
+  const expires_at = new Date(Date.now() + 60 * 60 * 1000);
+  await tokenRepo.savePasswordResetToken({
+    user_id: user.id, token_hash: hashToken(token), expires_at,
+  });
+  return { token };
+}
+
+async function resetPassword({ token, password }) {
+  const rec = await tokenRepo.findPasswordResetByHash(hashToken(token));
+  if (!rec) throw new AppError('Invalid or expired reset token', 400);
+  if (rec.used_at) throw new AppError('Token already used', 400);
+  if (new Date(rec.expires_at).getTime() <= Date.now()) throw new AppError('Token expired', 400);
+  const password_hash = await bcrypt.hash(password, 10);
+  await userRepo.updatePassword(rec.user_id, password_hash);
+  await tokenRepo.consumePasswordReset(rec.id);
+  await tokenRepo.revokeAllForUser(rec.user_id);
+  return true;
+}
+
+async function changePassword(user_id, { current_password, new_password }) {
+  const userRow = await db.queryOne('SELECT id, password_hash FROM users WHERE id = ? LIMIT 1', [user_id]);
+  if (!userRow) throw new AppError('User not found', 404);
+  const ok = await bcrypt.compare(current_password, userRow.password_hash);
+  if (!ok) throw new AppError('Current password is incorrect', 400);
+  const password_hash = await bcrypt.hash(new_password, 10);
+  await userRepo.updatePassword(user_id, password_hash);
+  await tokenRepo.revokeAllForUser(user_id);
+  return true;
+}
+
+async function me(user_id) {
+  const user = await userRepo.findById(user_id);
+  if (!user) throw new AppError('User not found', 404);
+  let profile = null;
+  if (user.role === ROLES.CANDIDATE) {
+    profile = await candidateRepo.findProfileByUserId(user_id);
+  } else if (user.role === ROLES.EMPLOYER) {
+    profile = await employerRepo.findByUserId(user_id);
+  }
+  return { user, profile };
+}
+
+module.exports = {
+  registerCandidate,
+  registerEmployer,
+  login,
+  logout,
+  rotateRefreshToken,
+  forgotPassword,
+  resetPassword,
+  changePassword,
+  me,
+  hashToken,
+};
