@@ -18,11 +18,13 @@ const candidateRoutes = require('./candidate.routes');
 const employerRoutes = require('./employer.routes');
 const publicRoutes = require('./public.routes');
 const adminRoutes = require('./admin.routes');
+const fileRoutes = require('./files.routes');
 
 router.use('/auth', authRoutes);
 router.use('/candidates', candidateRoutes);
 router.use('/employers', employerRoutes);
 router.use('/public', publicRoutes);
 router.use('/admin', adminRoutes);
+router.use('/files', fileRoutes);
 
 module.exports = router;

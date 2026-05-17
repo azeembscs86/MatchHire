@@ -75,6 +75,26 @@ const recommendedFilters = Joi.object({
   limit: Joi.number().integer().min(1).max(50).default(10),
 }).unknown(false);
 
+/** Body for /candidates/jobs/match: optional override filters. */
+const matchFilters = Joi.object({
+  country: Joi.string().max(120).allow('', null),
+  city: Joi.string().max(140).allow('', null),
+  role: Joi.string().max(200).allow('', null),
+  skills: Joi.alternatives(Joi.string().max(500), Joi.array().items(Joi.string().max(60))).allow(null),
+  experience_level: Joi.string().valid('entry', 'junior', 'mid', 'senior', 'lead', 'executive').allow('', null),
+  job_scope: Joi.string().valid('local', 'country', 'global_remote', 'hybrid').allow(null),
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(50).default(20),
+  include_below_threshold: Joi.boolean().default(false),
+}).unknown(false);
+
+/** Apply validation + persist match (POST body). */
+const validateAndApply = Joi.object({
+  cover_letter: Joi.string().max(5000).allow('', null),
+  expected_salary: Joi.number().min(0).allow(null),
+  resume_url: Joi.string().uri().max(500).allow('', null),
+}).unknown(false);
+
 module.exports = {
   profileUpdate,
   skillsUpdate,
@@ -82,4 +102,6 @@ module.exports = {
   applyToJob,
   listFilters,
   recommendedFilters,
+  matchFilters,
+  validateAndApply,
 };

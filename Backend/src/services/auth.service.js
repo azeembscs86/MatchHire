@@ -32,8 +32,11 @@ const tokenRepo = require('../repositories/token.repository');
 const candidateRepo = require('../repositories/candidate.repository');
 const companyRepo = require('../repositories/company.repository');
 const employerRepo = require('../repositories/employer.repository');
+const emailService = require('./email.service');
 const AppError = require('../utils/AppError');
 const { ROLES } = require('../constants/roles');
+
+const VERIFICATION_TTL_HOURS = 24;
 
 function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
@@ -62,6 +65,28 @@ function expiresInDays(spec, fallbackDays) {
     }
   }
   return new Date(Date.now() + fallbackDays * 24 * 3600 * 1000);
+}
+
+/**
+ * Issue a fresh email-verification token, persist its hash, and send the
+ * verification email through the email service. Returns the plaintext
+ * token + URL so the API can include them in dev mode (we do not expose
+ * either in production; the email is the canonical channel).
+ */
+async function issueEmailVerification(user, meta = {}) {
+  const token = crypto.randomBytes(32).toString('hex');
+  const token_hash = hashToken(token);
+  const expires_at = new Date(Date.now() + VERIFICATION_TTL_HOURS * 3600 * 1000);
+  await tokenRepo.invalidateEmailVerificationsForUser(user.id);
+  await tokenRepo.saveEmailVerificationToken({
+    user_id: user.id,
+    token_hash,
+    expires_at,
+    sent_to: user.email,
+    ip_address: meta.ip || null,
+  });
+  const { url } = await emailService.sendVerificationEmail({ user, token });
+  return { token, url, expires_at };
 }
 
 async function issueTokens(user, meta = {}) {
@@ -97,6 +122,7 @@ async function registerCandidate(payload, meta = {}) {
       phone: payload.phone || null,
       password_hash,
       role: ROLES.CANDIDATE,
+      status: 'pending',
     }, conn);
     await candidateRepo.upsertProfile(id, {
       headline: payload.headline || null,
@@ -110,8 +136,18 @@ async function registerCandidate(payload, meta = {}) {
 
   const user = await userRepo.findById(user_id);
   await candidateRepo.recomputeProfileStrength(user_id);
-  const tokens = await issueTokens(user, meta);
-  return { user, ...tokens };
+
+  // Email verification first - DO NOT issue session tokens until the
+  // user clicks the verification link. In dev, the link + plaintext
+  // token are returned so the frontend can present a "we sent you an
+  // email" screen with a copyable URL.
+  const verification = await issueEmailVerification(user, meta);
+  return {
+    user,
+    requires_verification: true,
+    verification_url: config.isProduction ? null : verification.url,
+    verification_expires_at: verification.expires_at,
+  };
 }
 
 async function registerEmployer(payload, meta = {}) {
@@ -127,6 +163,7 @@ async function registerEmployer(payload, meta = {}) {
       phone: payload.phone || null,
       password_hash,
       role: ROLES.EMPLOYER,
+      status: 'pending',
     }, conn);
     const company = await companyRepo.create({
       owner_user_id: user_id,
@@ -149,8 +186,14 @@ async function registerEmployer(payload, meta = {}) {
   });
 
   const user = await userRepo.findById(result.user_id);
-  const tokens = await issueTokens(user, meta);
-  return { user, company_id: result.company_id, ...tokens };
+  const verification = await issueEmailVerification(user, meta);
+  return {
+    user,
+    company_id: result.company_id,
+    requires_verification: true,
+    verification_url: config.isProduction ? null : verification.url,
+    verification_expires_at: verification.expires_at,
+  };
 }
 
 async function login({ email, password }, meta = {}) {
@@ -161,10 +204,58 @@ async function login({ email, password }, meta = {}) {
   const ok = await bcrypt.compare(password, userRow.password_hash);
   if (!ok) throw new AppError('Invalid email or password', 401);
 
+  // Email-verification gate: an account in `pending` (or with a NULL
+  // email_verified_at) must verify before it can sign in. The thrown
+  // error carries `details` so the frontend can offer "resend".
+  if (userRow.status === 'pending' || !userRow.email_verified_at) {
+    throw new AppError(
+      'Please verify your email before signing in.',
+      403,
+      { code: 'EMAIL_NOT_VERIFIED', email: userRow.email }
+    );
+  }
+
   await userRepo.touchLogin(userRow.id);
   const { password_hash, ...user } = userRow; // eslint-disable-line no-unused-vars
   const tokens = await issueTokens(user, meta);
   return { user, ...tokens };
+}
+
+/**
+ * Consume a verification token: mark the user as verified, return the
+ * activated profile. Reused by both the GET link click and the POST
+ * fallback the frontend uses if it captures the token from URL state.
+ */
+async function verifyEmail(token) {
+  if (!token) throw new AppError('Verification token required', 400);
+  const rec = await tokenRepo.findEmailVerificationByHash(hashToken(token));
+  if (!rec) throw new AppError('Invalid verification link', 400);
+  if (rec.used_at) throw new AppError('This verification link has already been used', 400);
+  if (new Date(rec.expires_at).getTime() <= Date.now()) {
+    throw new AppError('Verification link expired - request a new one', 400);
+  }
+  await tokenRepo.consumeEmailVerification(rec.id);
+  await userRepo.markEmailVerified(rec.user_id);
+  const user = await userRepo.findById(rec.user_id);
+  return { user };
+}
+
+/**
+ * Re-issue a verification token. Idempotent across requests - any
+ * outstanding tokens for the user are invalidated first so only the
+ * latest one works.
+ */
+async function resendVerification(email, meta = {}) {
+  const user = await userRepo.findByEmail(email.toLowerCase());
+  // Do NOT leak whether the email exists.
+  if (!user) return { sent: true };
+  if (user.email_verified_at) return { sent: true, already_verified: true };
+  const v = await issueEmailVerification(user, meta);
+  return {
+    sent: true,
+    verification_url: config.isProduction ? null : v.url,
+    verification_expires_at: v.expires_at,
+  };
 }
 
 async function logout(refresh_token) {
@@ -248,5 +339,7 @@ module.exports = {
   resetPassword,
   changePassword,
   me,
+  verifyEmail,
+  resendVerification,
   hashToken,
 };

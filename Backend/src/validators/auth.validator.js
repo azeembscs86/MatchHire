@@ -65,6 +65,18 @@ const changePassword = Joi.object({
   new_password: password,
 });
 
+const verifyEmail = Joi.object({
+  token: Joi.string().required(),
+});
+
+const verifyEmailParam = Joi.object({
+  token: Joi.string().required(),
+});
+
+const resendVerification = Joi.object({
+  email: Joi.string().email().required(),
+});
+
 module.exports = {
   registerCandidate,
   registerEmployer,
@@ -73,4 +85,7 @@ module.exports = {
   forgotPassword,
   resetPassword,
   changePassword,
+  verifyEmail,
+  verifyEmailParam,
+  resendVerification,
 };

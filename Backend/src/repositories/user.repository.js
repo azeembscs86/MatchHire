@@ -31,12 +31,14 @@ async function findById(id) {
   );
 }
 
-async function create({ full_name, email, phone = null, password_hash, role, avatar_url = null }, conn = null) {
+async function create({ full_name, email, phone = null, password_hash, role, status = 'pending' }, conn = null) {
   const exec = conn ? conn.execute.bind(conn) : (sql, params) => db.getPool().execute(sql, params);
+  // New accounts start in `pending` (status) with `email_verified_at NULL`.
+  // Verification flips both via userRepo.markEmailVerified().
   const [res] = await exec(
-    `INSERT INTO users (full_name, email, phone, password_hash, role, status, email_verified_at)
-     VALUES (?, ?, ?, ?, ?, 'active', NOW())`,
-    [full_name, email, phone, password_hash, role]
+    `INSERT INTO users (full_name, email, phone, password_hash, role, status)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [full_name, email, phone, password_hash, role, status]
   );
   return res.insertId;
 }
@@ -66,6 +68,15 @@ async function setStatus(id, status) {
 
 async function touchLogin(id) {
   await db.getPool().execute('UPDATE users SET last_login_at = NOW() WHERE id = ?', [id]);
+}
+
+async function markEmailVerified(id) {
+  await db.getPool().execute(
+    `UPDATE users SET email_verified_at = COALESCE(email_verified_at, NOW()),
+                      status = CASE WHEN status = 'pending' THEN 'active' ELSE status END
+     WHERE id = ?`,
+    [id]
+  );
 }
 
 async function emailExists(email) {
@@ -108,6 +119,7 @@ module.exports = {
   updatePassword,
   setStatus,
   touchLogin,
+  markEmailVerified,
   emailExists,
   listWithFilters,
   countByRole,

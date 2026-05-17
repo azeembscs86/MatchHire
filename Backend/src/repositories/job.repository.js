@@ -29,7 +29,8 @@ function slugify(s) {
 
 function jobsListSelect() {
   return `j.id, j.company_id, j.category_id, j.title, j.slug, j.description,
-          j.job_type, j.experience_level, j.location, j.country, j.is_remote,
+          j.job_type, j.experience_level, j.location, j.city, j.country, j.country_id, j.timezone, j.is_remote,
+          j.work_mode, j.is_global_remote,
           j.salary_min, j.salary_max, j.salary_currency, j.salary_period,
           j.skills_tags, j.application_deadline, j.vacancies, j.status,
           j.is_featured, j.views_count, j.applications_count, j.published_at, j.created_at,
@@ -259,9 +260,129 @@ async function totalCount() {
   return Number(row?.total || 0);
 }
 
+/**
+ * Location-priority listing.
+ *
+ *   city == filter.city           -> priority 0 (top)
+ *   country == filter.country     -> priority 1
+ *   is_global_remote || remote    -> priority 2
+ *   everything else               -> priority 3
+ *
+ * Plus the usual keyword/role/skills filters. Used by GET
+ * /public/jobs/location-based.
+ */
+async function listLocationBased({
+  country, city, role, skills, experience_level,
+  job_scope = 'hybrid', limit = 20, page = 1,
+}) {
+  const where = ["j.status = 'open'", "j.admin_status = 'approved'", "j.deleted_at IS NULL", "c.status = 'active'"];
+  const params = [];
+  if (role) { where.push('j.title LIKE ?'); params.push(`%${role}%`); }
+  if (experience_level) { where.push('j.experience_level = ?'); params.push(experience_level); }
+
+  const skillsList = Array.isArray(skills)
+    ? skills
+    : (typeof skills === 'string' ? skills.split(',').map((s) => s.trim()).filter(Boolean) : []);
+  if (skillsList.length > 0) {
+    where.push(`(${skillsList.map(() => 'j.skills_tags LIKE ?').join(' OR ')})`);
+    skillsList.forEach((s) => params.push(`%${s}%`));
+  }
+
+  // Scope filter (local/country/global_remote/hybrid).
+  if (job_scope === 'local' && city) {
+    where.push('j.city = ?'); params.push(city);
+  } else if (job_scope === 'country' && country) {
+    where.push('j.country = ?'); params.push(country);
+  } else if (job_scope === 'global_remote') {
+    where.push('(j.is_global_remote = 1 OR (j.work_mode = "remote" AND j.country IS NULL))');
+  }
+
+  // priority CASE for sorting
+  const priorityParams = [];
+  let priority = '999';
+  if (city || country) {
+    priority = `CASE
+      WHEN j.city = ? THEN 0
+      WHEN j.country = ? THEN 1
+      WHEN j.is_global_remote = 1 OR j.work_mode = 'remote' THEN 2
+      ELSE 3 END`;
+    priorityParams.push(city || '__none__', country || '__none__');
+  }
+
+  const offset = (page - 1) * limit;
+  const rows = await db.query(
+    `SELECT ${jobsListSelect()}, ${priority} AS priority
+     FROM jobs j
+     INNER JOIN companies c ON c.id = j.company_id
+     LEFT JOIN job_categories cat ON cat.id = j.category_id
+     WHERE ${where.join(' AND ')}
+     ORDER BY ${priority === '999' ? '' : 'priority ASC, '} j.is_featured DESC, j.published_at DESC
+     LIMIT ? OFFSET ?`,
+    [...priorityParams, ...params, Number(limit), Number(offset)]
+  );
+  const countRow = await db.queryOne(
+    `SELECT COUNT(*) AS total FROM jobs j
+     INNER JOIN companies c ON c.id = j.company_id
+     LEFT JOIN job_categories cat ON cat.id = j.category_id
+     WHERE ${where.join(' AND ')}`,
+    params
+  );
+  return { rows, total: Number(countRow?.total || 0) };
+}
+
+/**
+ * Load a "match candidate context": the row used by the match service.
+ * Composes user + candidate_profile + skills + preferences in one go.
+ */
+async function loadCandidateContext(user_id) {
+  const profile = await db.queryOne(
+    `SELECT u.id, u.full_name, u.email,
+            cp.headline, cp.summary, cp.current_title, cp.years_experience,
+            cp.location, cp.city, cp.country, cp.timezone, cp.open_to_remote,
+            cp.expected_salary_min, cp.expected_salary_max, cp.salary_currency
+     FROM users u
+     LEFT JOIN candidate_profiles cp ON cp.user_id = u.id
+     WHERE u.id = ? LIMIT 1`,
+    [user_id]
+  );
+  if (!profile) return null;
+  const skills = await db.query(
+    `SELECT s.name FROM candidate_skills cs INNER JOIN skills s ON s.id = cs.skill_id WHERE cs.candidate_user_id = ?`,
+    [user_id]
+  );
+  const prefs = await db.queryOne(
+    `SELECT desired_titles, preferred_locations, preferred_job_types, preferred_categories,
+            job_scope, remote_only
+     FROM preferences WHERE user_id = ? LIMIT 1`,
+    [user_id]
+  );
+  return {
+    ...profile,
+    skills,
+    preferred_categories: prefs?.preferred_categories || '',
+    desired_titles: prefs?.desired_titles || '',
+    preferred_locations: prefs?.preferred_locations || '',
+    preferred_job_types: prefs?.preferred_job_types || '',
+    job_scope: prefs?.job_scope || 'hybrid',
+    open_to_remote: profile.open_to_remote ?? (prefs?.remote_only ? 1 : 1),
+  };
+}
+
+async function findByIdRaw(id) {
+  return db.queryOne(
+    `SELECT ${jobsListSelect()}
+     FROM jobs j
+     INNER JOIN companies c ON c.id = j.company_id
+     LEFT JOIN job_categories cat ON cat.id = j.category_id
+     WHERE j.id = ? AND j.deleted_at IS NULL LIMIT 1`,
+    [id]
+  );
+}
+
 module.exports = {
   create,
   findById,
+  findByIdRaw,
   ownsJob,
   update,
   softDelete,
@@ -271,5 +392,7 @@ module.exports = {
   listByCompany,
   listAdmin,
   recommendedForUser,
+  listLocationBased,
+  loadCandidateContext,
   totalCount,
 };

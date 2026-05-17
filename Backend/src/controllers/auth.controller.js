@@ -75,3 +75,21 @@ exports.me = async (req, res) => {
   const data = await authService.me(req.user.id);
   return response.success(res, data, 'User profile fetched');
 };
+
+/** GET /auth/verify-email/:token — link target from the verification email. */
+exports.verifyEmailByLink = async (req, res) => {
+  const data = await authService.verifyEmail(req.params.token);
+  return response.success(res, data, 'Email verified successfully');
+};
+
+/** POST /auth/verify-email — accepts the token in the body (used by SPAs). */
+exports.verifyEmail = async (req, res) => {
+  const data = await authService.verifyEmail(req.body.token);
+  return response.success(res, data, 'Email verified successfully');
+};
+
+/** POST /auth/resend-verification-email — re-issues the verification token. */
+exports.resendVerification = async (req, res) => {
+  const data = await authService.resendVerification(req.body.email, meta(req));
+  return response.success(res, data, 'If the account exists and is unverified, a new email has been sent.');
+};

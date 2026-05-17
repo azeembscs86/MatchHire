@@ -87,3 +87,18 @@ exports.dashboardStats = async (req, res) => {
   const data = await service.dashboardStats(req.user.id);
   return response.success(res, data, 'Dashboard stats returned');
 };
+
+/** POST /candidates/jobs/match - skill-based ranked recommendations. */
+exports.matchJobs = async (req, res) => {
+  const data = await service.matchJobs(req.user.id, req.body || {});
+  return response.list(res, data.records, null, 'Ranked job matches');
+};
+
+/** POST /candidates/applications/:jobId/validate-and-apply */
+exports.validateAndApply = async (req, res) => {
+  const data = await service.applyWithValidation(req.user.id, Number(req.params.jobId), req.body || {});
+  if (!data.accepted) {
+    return response.error(res, data.message, 422, data);
+  }
+  return response.created(res, data, 'Application submitted with match score');
+};

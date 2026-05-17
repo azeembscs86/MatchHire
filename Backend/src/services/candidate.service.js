@@ -18,8 +18,11 @@ const jobRepo = require('../repositories/job.repository');
 const favRepo = require('../repositories/favorite.repository');
 const appRepo = require('../repositories/application.repository');
 const interviewRepo = require('../repositories/interview.repository');
+const matchRepo = require('../repositories/match.repository');
+const matchService = require('./match.service');
 const cache = require('../cache/cache.helper');
 const AppError = require('../utils/AppError');
+const db = require('../config/database');
 
 async function getProfile(user_id) {
   const profile = await candidateRepo.findProfileByUserId(user_id);
@@ -125,6 +128,123 @@ async function dashboardStats(user_id) {
   });
 }
 
+/**
+ * Skill-based job matching for the authenticated candidate.
+ *
+ * Pulls a candidate-shaped context once, then scores every open job
+ * matching the supplied filters and returns them sorted by descending
+ * match score. Only returns rows above the soft threshold by default;
+ * caller can override with `include_below_threshold`.
+ */
+async function matchJobs(user_id, payload = {}) {
+  const candidate = await jobRepo.loadCandidateContext(user_id);
+  if (!candidate) throw new AppError('Profile not found', 404);
+
+  const limit = Math.min(Number(payload.limit) || 20, 50);
+  const filters = {
+    country: payload.country || candidate.country,
+    city: payload.city || candidate.city,
+    role: payload.role,
+    skills: payload.skills,
+    experience_level: payload.experience_level,
+    job_scope: payload.job_scope || candidate.job_scope || 'hybrid',
+    page: payload.page || 1,
+    limit: 60, // over-fetch a little so post-scoring still has volume
+  };
+  const { rows } = await jobRepo.listLocationBased(filters);
+  const scored = rows
+    .map((job) => ({ job, m: matchService.scoreJob(job, candidate) }))
+    .sort((a, b) => b.m.score - a.m.score);
+  const filtered = payload.include_below_threshold
+    ? scored
+    : scored.filter((r) => r.m.score >= matchService.BORDERLINE_THRESHOLD);
+  const records = filtered.slice(0, limit).map(({ job, m }) => ({
+    ...job,
+    match_score: m.score,
+    reasons: m.reasons,
+    missing: m.missing,
+    decision: m.decision,
+  }));
+  return { records };
+}
+
+/**
+ * Apply-and-validate: score the candidate against the job first; if
+ * the match clears the threshold create the application AND store the
+ * match result, otherwise reject politely and record the attempt so
+ * admins can audit it.
+ */
+async function applyWithValidation(user_id, job_id, payload = {}) {
+  const job = await jobRepo.findByIdRaw(job_id);
+  if (!job) throw new AppError('Job not found', 404);
+  if (job.status !== 'open') throw new AppError('Job is no longer accepting applications', 400);
+
+  const candidate = await jobRepo.loadCandidateContext(user_id);
+  if (!candidate) throw new AppError('Complete your profile before applying', 400);
+
+  const verdict = matchService.validateApplication(job, candidate);
+
+  if (!verdict.allowed) {
+    await matchRepo.save({
+      application_id: null,
+      candidate_user_id: user_id,
+      job_id,
+      match_score: verdict.score,
+      decision: 'rejected',
+      reasons: verdict.reasons,
+      missing: verdict.missing,
+      rejection_message: verdict.message,
+    });
+    return {
+      accepted: false,
+      decision: 'rejected',
+      match_score: verdict.score,
+      reasons: verdict.reasons,
+      missing: verdict.missing,
+      message: verdict.message,
+    };
+  }
+
+  // Soft-accept / accept paths still create the application; the
+  // employer dashboard sees the match score next to it.
+  const existing = await appRepo.findByJobAndCandidate(job_id, user_id);
+  if (existing) throw new AppError('You already applied to this job', 409);
+
+  const application_id = await appRepo.create({
+    job_id,
+    candidate_user_id: user_id,
+    company_id: job.company_id,
+    cover_letter: payload.cover_letter || null,
+    resume_url: payload.resume_url || null,
+    expected_salary: payload.expected_salary ?? null,
+  });
+  await db.getPool().execute(
+    `UPDATE applications SET match_score = ? WHERE id = ?`,
+    [verdict.score, application_id]
+  );
+  await matchRepo.save({
+    application_id,
+    candidate_user_id: user_id,
+    job_id,
+    match_score: verdict.score,
+    decision: verdict.decision,
+    reasons: verdict.reasons,
+    missing: verdict.missing,
+  });
+  await cache.deleteCache(cache.Keys.jobDetail(job_id));
+  await cache.deleteByPattern(cache.Patterns.dashboardStats('candidate'));
+  await cache.deleteByPattern(cache.Patterns.dashboardStats('employer'));
+
+  return {
+    accepted: true,
+    decision: verdict.decision,
+    match_score: verdict.score,
+    reasons: verdict.reasons,
+    missing: verdict.missing,
+    application_id,
+  };
+}
+
 module.exports = {
   getProfile,
   updateProfile,
@@ -135,6 +255,8 @@ module.exports = {
   removeFavorite,
   listFavorites,
   applyToJob,
+  applyWithValidation,
   listApplications,
   dashboardStats,
+  matchJobs,
 };

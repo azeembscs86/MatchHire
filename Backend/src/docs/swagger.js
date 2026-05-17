@@ -73,12 +73,17 @@ function extractSwaggerBlocks(source) {
   while ((match = jsdoc.exec(source)) !== null) {
     const raw = match[1];
     if (!raw.includes('@swagger')) continue;
-    const yamlBody = raw
+    // Strip the JSDoc leader (`* `) from each line, then capture only
+    // the content AFTER the first `@swagger` keyword. Authors may
+    // include prose above the tag (for human readers); we don't want
+    // that prose ending up in the YAML parser.
+    const stripped = raw
       .split('\n')
       .map((line) => line.replace(/^\s*\*\s?/, ''))
-      .join('\n')
-      .replace(/^\s*@swagger\s*/m, '')
-      .trim();
+      .join('\n');
+    const idx = stripped.indexOf('@swagger');
+    if (idx < 0) continue;
+    const yamlBody = stripped.slice(idx + '@swagger'.length).trim();
     if (yamlBody) blocks.push(yamlBody);
   }
   return blocks;

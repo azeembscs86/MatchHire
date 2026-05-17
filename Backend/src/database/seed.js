@@ -64,6 +64,66 @@ async function upsertCategories(conn) {
   }
 }
 
+/**
+ * Reference data: countries + headline cities. Kept tight (10 countries,
+ * ~30 cities) so seed runs fast - extend with a real ISO/GeoNames import
+ * when a richer picker is needed.
+ */
+async function upsertCountriesAndCities(conn) {
+  const countries = [
+    ['US', 'United States', 'North America', 'USD'],
+    ['CA', 'Canada', 'North America', 'CAD'],
+    ['GB', 'United Kingdom', 'Europe', 'GBP'],
+    ['DE', 'Germany', 'Europe', 'EUR'],
+    ['NL', 'Netherlands', 'Europe', 'EUR'],
+    ['PK', 'Pakistan', 'Asia', 'PKR'],
+    ['IN', 'India', 'Asia', 'INR'],
+    ['AE', 'United Arab Emirates', 'Asia', 'AED'],
+    ['SG', 'Singapore', 'Asia', 'SGD'],
+    ['AU', 'Australia', 'Oceania', 'AUD'],
+  ];
+  for (const [code, name, continent, currency] of countries) {
+    await conn.execute(
+      `INSERT INTO countries (code, name, continent, currency, is_active)
+       VALUES (?, ?, ?, ?, 1)
+       ON DUPLICATE KEY UPDATE name = VALUES(name), continent = VALUES(continent), currency = VALUES(currency)`,
+      [code, name, continent, currency]
+    );
+  }
+
+  const cities = [
+    ['US', 'San Francisco', 'America/Los_Angeles', 37.7749, -122.4194],
+    ['US', 'New York', 'America/New_York', 40.7128, -74.006],
+    ['US', 'Austin', 'America/Chicago', 30.2672, -97.7431],
+    ['CA', 'Toronto', 'America/Toronto', 43.6532, -79.3832],
+    ['CA', 'Vancouver', 'America/Vancouver', 49.2827, -123.1207],
+    ['GB', 'London', 'Europe/London', 51.5074, -0.1278],
+    ['DE', 'Berlin', 'Europe/Berlin', 52.52, 13.405],
+    ['DE', 'Munich', 'Europe/Berlin', 48.1351, 11.582],
+    ['NL', 'Amsterdam', 'Europe/Amsterdam', 52.3676, 4.9041],
+    ['PK', 'Karachi', 'Asia/Karachi', 24.8607, 67.0011],
+    ['PK', 'Lahore', 'Asia/Karachi', 31.5204, 74.3587],
+    ['PK', 'Islamabad', 'Asia/Karachi', 33.6844, 73.0479],
+    ['IN', 'Bangalore', 'Asia/Kolkata', 12.9716, 77.5946],
+    ['IN', 'Mumbai', 'Asia/Kolkata', 19.076, 72.8777],
+    ['IN', 'Delhi', 'Asia/Kolkata', 28.7041, 77.1025],
+    ['AE', 'Dubai', 'Asia/Dubai', 25.2048, 55.2708],
+    ['SG', 'Singapore', 'Asia/Singapore', 1.3521, 103.8198],
+    ['AU', 'Sydney', 'Australia/Sydney', -33.8688, 151.2093],
+  ];
+  for (const [code, name, tz, lat, lng] of cities) {
+    const [rows] = await conn.execute('SELECT id FROM countries WHERE code = ? LIMIT 1', [code]);
+    const country_id = rows[0]?.id;
+    if (!country_id) continue;
+    await conn.execute(
+      `INSERT INTO cities (country_id, name, slug, timezone, latitude, longitude, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, 1)
+       ON DUPLICATE KEY UPDATE name = VALUES(name), timezone = VALUES(timezone)`,
+      [country_id, name, slugify(name), tz, lat, lng]
+    );
+  }
+}
+
 async function upsertSkills(conn) {
   const list = [
     ['JavaScript', 'frontend'], ['TypeScript', 'frontend'], ['React', 'frontend'],
@@ -194,18 +254,49 @@ async function getCategoryId(conn, name) {
   return rows[0]?.id || null;
 }
 
+async function findCountryId(conn, countryName) {
+  if (!countryName) return null;
+  const code = ({
+    USA: 'US', 'United States': 'US', UK: 'GB', 'United Kingdom': 'GB',
+    Canada: 'CA', Germany: 'DE', Netherlands: 'NL', Pakistan: 'PK',
+    India: 'IN', UAE: 'AE', 'United Arab Emirates': 'AE',
+    Singapore: 'SG', Australia: 'AU',
+  })[countryName] || null;
+  if (!code) return null;
+  const [rows] = await conn.execute('SELECT id FROM countries WHERE code = ? LIMIT 1', [code]);
+  return rows[0]?.id || null;
+}
+
+async function findCityTimezone(conn, country_id, cityName) {
+  if (!country_id || !cityName) return null;
+  const [rows] = await conn.execute(
+    'SELECT timezone FROM cities WHERE country_id = ? AND name = ? LIMIT 1',
+    [country_id, cityName]
+  );
+  return rows[0]?.timezone || null;
+}
+
 async function createJob(conn, company_id, posted_by_user_id, category_id, data) {
   const slug = slugify(`${data.title}-${company_id}-${Date.now()}`);
+  const country_id = await findCountryId(conn, data.country);
+  const timezone = await findCityTimezone(conn, country_id, data.city || data.location);
+  const work_mode = data.work_mode || (data.is_remote ? 'remote' : 'onsite');
+  const is_global_remote = data.is_global_remote != null
+    ? (data.is_global_remote ? 1 : 0)
+    : (work_mode === 'remote' && !country_id ? 1 : 0);
   const [res] = await conn.execute(
     `INSERT INTO jobs
        (company_id, posted_by_user_id, category_id, title, slug, description, responsibilities, requirements, benefits,
-        job_type, experience_level, location, country, is_remote, salary_min, salary_max, salary_currency, salary_period,
+        job_type, experience_level, location, city, country, country_id, timezone, is_remote, work_mode, is_global_remote,
+        salary_min, salary_max, salary_currency, salary_period,
         skills_tags, application_deadline, vacancies, status, is_featured, admin_status, published_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, 'approved', NOW())`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, 'approved', NOW())`,
     [
       company_id, posted_by_user_id, category_id, data.title, slug,
       data.description, data.responsibilities, data.requirements, data.benefits,
-      data.job_type, data.experience_level, data.location, data.country, data.is_remote ? 1 : 0,
+      data.job_type, data.experience_level,
+      data.location, data.city || null, data.country, country_id, timezone,
+      data.is_remote ? 1 : 0, work_mode, is_global_remote,
       data.salary_min, data.salary_max, data.salary_currency || 'USD', data.salary_period || 'year',
       (data.skills_tags || []).join(','), data.application_deadline || null,
       data.vacancies || 1, data.is_featured ? 1 : 0,
@@ -267,10 +358,11 @@ async function refreshJobCounts(conn) {
 async function run() {
   const conn = await getConnection();
   try {
-    logger.info('Seeding roles, categories, skills...');
+    logger.info('Seeding roles, categories, skills, countries, cities...');
     await upsertRoles(conn);
     await upsertCategories(conn);
     await upsertSkills(conn);
+    await upsertCountriesAndCities(conn);
 
     logger.info('Seeding admin users...');
     const superAdminId = await upsertUser(conn, {
@@ -396,7 +488,8 @@ async function run() {
       requirements: '5+ years of full-stack experience. Strong JS/TS fundamentals.',
       benefits: 'Equity, healthcare, remote-friendly, unlimited PTO.',
       job_type: 'full_time', experience_level: 'senior',
-      location: 'San Francisco', country: 'USA', is_remote: true,
+      location: 'San Francisco', city: 'San Francisco', country: 'USA',
+      is_remote: true, work_mode: 'hybrid',
       salary_min: 140000, salary_max: 190000,
       skills_tags: ['JavaScript', 'TypeScript', 'React', 'Node.js'],
       vacancies: 2, is_featured: true,
@@ -409,6 +502,7 @@ async function run() {
       benefits: 'Equity, healthcare, learning stipend.',
       job_type: 'full_time', experience_level: 'mid',
       location: 'Remote', country: 'USA', is_remote: true,
+      work_mode: 'remote', is_global_remote: true,
       salary_min: 120000, salary_max: 160000,
       skills_tags: ['Docker', 'Kubernetes', 'AWS'],
     });
@@ -419,7 +513,8 @@ async function run() {
       requirements: 'Python, ML frameworks, experience deploying models.',
       benefits: 'Top of market comp, equity, hybrid.',
       job_type: 'full_time', experience_level: 'senior',
-      location: 'New York', country: 'USA', is_remote: false,
+      location: 'New York', city: 'New York', country: 'USA',
+      is_remote: false, work_mode: 'onsite',
       salary_min: 150000, salary_max: 200000,
       skills_tags: ['Python', 'AWS'],
       is_featured: true,
@@ -431,7 +526,8 @@ async function run() {
       requirements: 'Figma mastery, strong portfolio.',
       benefits: 'Fully remote, async, generous time off.',
       job_type: 'full_time', experience_level: 'senior',
-      location: 'Remote', country: 'Global', is_remote: true,
+      location: 'Remote', country: null, is_remote: true,
+      work_mode: 'remote', is_global_remote: true,
       salary_min: 90000, salary_max: 130000,
       skills_tags: ['Figma', 'Product Strategy'],
     });
@@ -442,9 +538,38 @@ async function run() {
       requirements: 'Node.js, MySQL/Postgres, Redis. 3+ years.',
       benefits: 'Remote-first, async culture.',
       job_type: 'full_time', experience_level: 'mid',
-      location: 'Remote', country: 'Global', is_remote: true,
+      location: 'Remote', country: null, is_remote: true,
+      work_mode: 'remote', is_global_remote: true,
       salary_min: 80000, salary_max: 120000,
       skills_tags: ['Node.js', 'Express', 'Redis'],
+    });
+
+    // Pakistan-based postings so country-prioritised discovery has
+    // local results to surface for PK visitors.
+    await createJob(conn, globexId, employer3Id, seCat, {
+      title: 'Mid-Level Node.js Engineer',
+      description: 'Build APIs for our regional SaaS clients out of Karachi.',
+      responsibilities: 'Ship features. Review PRs. Mentor juniors.',
+      requirements: 'Node.js, MySQL, REST. 3+ years.',
+      benefits: 'Hybrid (3 days office), gym membership, generous PTO.',
+      job_type: 'full_time', experience_level: 'mid',
+      location: 'Karachi', city: 'Karachi', country: 'Pakistan',
+      is_remote: false, work_mode: 'hybrid',
+      salary_min: 18000, salary_max: 30000, salary_currency: 'USD',
+      skills_tags: ['Node.js', 'Express', 'MySQL'],
+    });
+    await createJob(conn, acmeId, employer1Id, seCat, {
+      title: 'Senior React Engineer · Lahore',
+      description: 'Lead the Acme client portal squad out of Lahore.',
+      responsibilities: 'Architect the client-facing app. Pair with PMs.',
+      requirements: 'React, TypeScript. 5+ years.',
+      benefits: 'Office in Gulberg, healthcare, equity.',
+      job_type: 'full_time', experience_level: 'senior',
+      location: 'Lahore', city: 'Lahore', country: 'Pakistan',
+      is_remote: false, work_mode: 'onsite',
+      salary_min: 25000, salary_max: 40000, salary_currency: 'USD',
+      skills_tags: ['React', 'TypeScript'],
+      is_featured: true,
     });
 
     logger.info('Seeding applications, favorites, interviews...');

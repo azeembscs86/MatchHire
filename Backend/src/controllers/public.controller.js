@@ -11,6 +11,7 @@
  */
 
 const service = require('../services/public.service');
+const geo = require('../services/geolocation.service');
 const response = require('../utils/response.helper');
 
 exports.listJobs = async (req, res) => {
@@ -79,4 +80,46 @@ exports.featuredJobs = async (req, res) => {
 exports.navigation = async (req, res) => {
   const data = service.navigation(req.user || null);
   return response.success(res, data, 'Navigation returned');
+};
+
+/**
+ * Location-prioritised job feed. Decorates each row with a match_score
+ * + reasons when called with a candidate token. Country/city are the
+ * primary signals; falls back to global-remote ranking when neither is
+ * provided.
+ */
+exports.locationBased = async (req, res) => {
+  const filters = {
+    country: req.query.country,
+    city: req.query.city,
+    role: req.query.role,
+    skills: req.query.skills,
+    experience_level: req.query.experience_level,
+    job_scope: req.query.job_scope || 'hybrid',
+    page: Number(req.query.page) || 1,
+    limit: Math.min(Number(req.query.limit) || 20, 100),
+  };
+  const data = await service.locationBasedJobs(filters, req.user?.id || null);
+  return response.list(res, data.records, data.pagination, 'Location-based jobs returned');
+};
+
+exports.countries = async (_req, res) => {
+  const data = await service.listCountries();
+  return response.success(res, { records: data }, 'Countries returned');
+};
+
+exports.cities = async (req, res) => {
+  const data = await service.listCities(Number(req.query.country_id));
+  return response.success(res, { records: data }, 'Cities returned');
+};
+
+/**
+ * IP-based geolocation. Used as a fallback when the browser denies
+ * the geolocation permission. The visitor's IP is read server-side
+ * from `X-Forwarded-For` / `req.ip`; the frontend never talks to
+ * ipapi directly.
+ */
+exports.geolocate = async (req, res) => {
+  const data = await geo.lookup(req);
+  return response.success(res, data, 'Geolocation resolved');
 };

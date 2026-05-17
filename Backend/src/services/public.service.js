@@ -18,9 +18,11 @@ const jobRepo = require('../repositories/job.repository');
 const companyRepo = require('../repositories/company.repository');
 const candidateRepo = require('../repositories/candidate.repository');
 const metaRepo = require('../repositories/meta.repository');
+const matchService = require('./match.service');
 const cache = require('../cache/cache.helper');
 const { buildPagination } = require('../utils/pagination');
 const AppError = require('../utils/AppError');
+const db = require('../config/database');
 
 function queryString(obj) {
   const entries = Object.entries(obj || {})
@@ -170,6 +172,38 @@ function navigation(user) {
   };
 }
 
+/**
+ * Location-based job listing. Sorts by city > country > global remote
+ * and decorates every row with a `match_score` + reason tags so the
+ * frontend can render the badges without making a second request.
+ */
+async function locationBasedJobs(filters, viewerUserId) {
+  const { rows, total } = await jobRepo.listLocationBased(filters);
+  let candidate = null;
+  if (viewerUserId) {
+    candidate = await jobRepo.loadCandidateContext(viewerUserId);
+  }
+  const decorated = rows.map((job) => {
+    if (!candidate) return { ...job, match_score: null, reasons: [], missing: [] };
+    const res = matchService.scoreJob(job, candidate);
+    return { ...job, match_score: res.score, reasons: res.reasons, missing: res.missing };
+  });
+  return { records: decorated, pagination: buildPagination(filters.page || 1, filters.limit || 20, total) };
+}
+
+/** Country / city lookup tables for the frontend pickers. */
+async function listCountries() {
+  return db.query(`SELECT id, code, name, continent, currency FROM countries WHERE is_active = 1 ORDER BY name ASC`);
+}
+async function listCities(country_id) {
+  if (!country_id) return [];
+  return db.query(
+    `SELECT id, country_id, name, slug, timezone, latitude, longitude
+     FROM cities WHERE country_id = ? AND is_active = 1 ORDER BY name ASC`,
+    [Number(country_id)]
+  );
+}
+
 module.exports = {
   listJobs,
   getJob,
@@ -181,4 +215,7 @@ module.exports = {
   skills,
   topCandidates,
   navigation,
+  locationBasedJobs,
+  listCountries,
+  listCities,
 };

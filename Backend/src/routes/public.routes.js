@@ -43,6 +43,34 @@ router.get('/jobs/search', validate(v.jobsQuery, 'query'), asyncHandler(controll
 
 /**
  * @swagger
+ * /public/jobs/location-based:
+ *   get:
+ *     tags: [Public]
+ *     summary: Location-prioritised job feed (city > country > global remote)
+ *     description: |
+ *       Ranks open jobs by relevance to the supplied location. With a
+ *       candidate bearer token, every record carries `match_score`,
+ *       `reasons[]`, and `missing[]` so the UI can render badges
+ *       without a second round-trip.
+ *     security: []
+ *     parameters:
+ *       - { name: country, in: query, schema: { type: string } }
+ *       - { name: city, in: query, schema: { type: string } }
+ *       - { name: role, in: query, schema: { type: string } }
+ *       - { name: skills, in: query, schema: { type: string }, description: comma-separated }
+ *       - { name: experience_level, in: query, schema: { type: string, enum: [entry, junior, mid, senior, lead, executive] } }
+ *       - { name: job_scope, in: query, schema: { type: string, enum: [local, country, global_remote, hybrid] } }
+ *       - { name: page, in: query, schema: { type: integer, default: 1 } }
+ *       - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+ *     responses:
+ *       '200': { $ref: '#/components/responses/PaginatedJobs' }
+ */
+// `/jobs/location-based` must precede `/jobs/:id` so Express does not
+// match `location-based` as the `:id` parameter.
+router.get('/jobs/location-based', optionalAuth, asyncHandler(controller.locationBased));
+
+/**
+ * @swagger
  * /public/jobs:
  *   get:
  *     tags: [Public]
@@ -227,5 +255,48 @@ router.get('/featured-jobs', asyncHandler(controller.featuredJobs));
  *                 user: null
  */
 router.get('/navigation', optionalAuth, asyncHandler(controller.navigation));
+
+/**
+ * @swagger
+ * /public/countries:
+ *   get:
+ *     tags: [Public]
+ *     summary: Country reference list (for the location picker)
+ *     security: []
+ *     responses:
+ *       '200': { description: Countries, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ */
+router.get('/countries', asyncHandler(controller.countries));
+
+/**
+ * @swagger
+ * /public/cities:
+ *   get:
+ *     tags: [Public]
+ *     summary: City reference list for a given country
+ *     security: []
+ *     parameters: [{ name: country_id, in: query, required: true, schema: { type: integer } }]
+ *     responses:
+ *       '200': { description: Cities, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ */
+router.get('/cities', asyncHandler(controller.cities));
+
+/**
+ * @swagger
+ * /public/geolocate:
+ *   get:
+ *     tags: [Public]
+ *     summary: Resolve the caller's location from their IP
+ *     description: |
+ *       Server-side proxy in front of ipapi.co. The browser never
+ *       contacts a third-party geolocation service directly; the
+ *       caller's IP is read from `X-Forwarded-For` / `req.ip` and
+ *       results are cached for an hour. Use this as a fallback when
+ *       browser geolocation is denied or unavailable.
+ *     security: []
+ *     responses:
+ *       '200': { description: Geolocation, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ */
+router.get('/geolocate', asyncHandler(controller.geolocate));
 
 module.exports = router;

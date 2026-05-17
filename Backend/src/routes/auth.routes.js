@@ -228,4 +228,62 @@ router.post('/change-password', requireAuth, validate(v.changePassword), asyncHa
  */
 router.post('/me', requireAuth, asyncHandler(controller.me));
 
+/**
+ * @swagger
+ * /auth/verify-email/{token}:
+ *   get:
+ *     tags: [Auth]
+ *     summary: Verify a new account via the link in the verification email
+ *     description: Public, idempotent within the lifetime of the token. Marks the user as verified, flips status from `pending` to `active`. The frontend can also call the POST variant if it owns the token.
+ *     security: []
+ *     parameters: [{ name: token, in: path, required: true, schema: { type: string } }]
+ *     responses:
+ *       '200': { description: Verified, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ *       '400': { $ref: '#/components/responses/GenericError' }
+ */
+router.get('/verify-email/:token', validate(v.verifyEmailParam, 'params'), asyncHandler(controller.verifyEmailByLink));
+
+/**
+ * @swagger
+ * /auth/verify-email:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Verify a new account by posting the token (SPA fallback)
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token]
+ *             properties: { token: { type: string } }
+ *     responses:
+ *       '200': { $ref: '#/components/responses/EmptySuccess' }
+ *       '400': { $ref: '#/components/responses/GenericError' }
+ */
+router.post('/verify-email', validate(v.verifyEmail), asyncHandler(controller.verifyEmail));
+
+/**
+ * @swagger
+ * /auth/resend-verification-email:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Re-issue a verification email
+ *     description: Always returns Success - we never leak whether the email exists.
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email]
+ *             properties: { email: { type: string, format: email } }
+ *     responses:
+ *       '200': { $ref: '#/components/responses/EmptySuccess' }
+ *       '422': { $ref: '#/components/responses/ValidationError' }
+ */
+router.post('/resend-verification-email', authLimiter, validate(v.resendVerification), asyncHandler(controller.resendVerification));
+
 module.exports = router;

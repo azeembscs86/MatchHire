@@ -66,6 +66,40 @@ async function consumePasswordReset(id) {
   );
 }
 
+/* ---------------- Email verification tokens ---------------- */
+
+async function saveEmailVerificationToken({ user_id, token_hash, expires_at, sent_to = null, ip_address = null }) {
+  const [res] = await db.getPool().execute(
+    `INSERT INTO email_verification_tokens (user_id, token_hash, expires_at, sent_to, ip_address)
+     VALUES (?, ?, ?, ?, ?)`,
+    [user_id, token_hash, expires_at, sent_to, ip_address]
+  );
+  return res.insertId;
+}
+
+async function findEmailVerificationByHash(token_hash) {
+  return db.queryOne(
+    `SELECT id, user_id, token_hash, expires_at, used_at
+     FROM email_verification_tokens
+     WHERE token_hash = ? LIMIT 1`,
+    [token_hash]
+  );
+}
+
+async function consumeEmailVerification(id) {
+  await db.getPool().execute(
+    `UPDATE email_verification_tokens SET used_at = NOW() WHERE id = ? AND used_at IS NULL`,
+    [id]
+  );
+}
+
+async function invalidateEmailVerificationsForUser(user_id) {
+  await db.getPool().execute(
+    `UPDATE email_verification_tokens SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL`,
+    [user_id]
+  );
+}
+
 module.exports = {
   saveRefreshToken,
   findRefreshTokenByHash,
@@ -74,4 +108,8 @@ module.exports = {
   savePasswordResetToken,
   findPasswordResetByHash,
   consumePasswordReset,
+  saveEmailVerificationToken,
+  findEmailVerificationByHash,
+  consumeEmailVerification,
+  invalidateEmailVerificationsForUser,
 };
