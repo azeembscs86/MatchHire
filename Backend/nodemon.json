@@ -1,0 +1,22 @@
+{
+  "_comment": "Nodemon dev-restart config. Watches every layer of src/ plus the env files so .env.local edits also rebound the server.",
+  "watch": [
+    "src",
+    ".env",
+    ".env.local",
+    ".env.production",
+    ".env.example"
+  ],
+  "ext": "js,json,env",
+  "ignore": [
+    "node_modules",
+    "dist",
+    "coverage",
+    "logs",
+    "*.log",
+    "*.test.js",
+    ".git"
+  ],
+  "delay": 250,
+  "verbose": false
+}

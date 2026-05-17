@@ -25,39 +25,57 @@ fixtures remain on any page.
 
 You need Node.js 18+, MySQL 8, and (optionally) Redis 6+.
 
-**1. Backend**
-
 ```bash
-cd Backend
-cp .env.example .env.local         # set DB + JWT + Redis credentials
-npm install
-npm run migrate                    # create all tables
-npm run seed                       # demo users, jobs, companies, applications
-npm run dev                        # API on http://localhost:3500
+# 1. install once - root + Backend + Frontend dependencies
+npm run install:all
+
+# 2. configure
+cp Backend/.env.example  Backend/.env.local       # set DB + JWT + Redis
+cp Frontend/.env.example Frontend/.env.local      # defaults to localhost:3500
+
+# 3. seed the database
+npm run migrate
+npm run seed
+
+# 4. boot everything in one terminal
+npm run dev
 ```
+
+`npm run dev` uses [`concurrently`](https://www.npmjs.com/package/concurrently)
+to run the Backend and Frontend dev servers side-by-side. Logs are
+prefixed `be` (cyan) and `fe` (magenta). If either crashes, both are
+killed so you don't end up with a half-started stack.
+
+**No manual restart needed:**
+
+- Backend uses **nodemon** (`Backend/nodemon.json` watches `src/`,
+  `.env`, `.env.local`, `.env.production`, `.env.example` for `.js`,
+  `.json`, `.env` changes). Save a controller / service / route / config
+  / env file and the server reloads automatically.
+- Frontend uses **Vite HMR**. Component / page / CSS / `.env.local`
+  edits push live into the browser without a full reload.
 
 Useful URLs once it's up:
 
 | URL | What |
 | --- | --- |
+| `http://localhost:5173`              | The React app |
 | `http://localhost:3500/health`       | Liveness probe + dependency status |
 | `http://localhost:3500/api-docs`     | Swagger UI (interactive) |
 | `http://localhost:3500/api-docs.json` | Raw OpenAPI 3.0 spec |
 | `http://localhost:3500/api/v1`       | Versioned API root |
 
-**2. Frontend**
-
-```bash
-cd Frontend
-cp .env.example .env.local         # default points at the backend above
-npm install
-npm run dev                        # SPA on http://localhost:5173
-```
-
 The Header reads the menu from `GET /public/navigation`, so links
 appear/disappear based on the signed-in role. Sign in with one of the
 demo accounts from `Backend/README.md > Demo accounts` (password
 `Password@123` for all).
+
+### Need just one side?
+
+```bash
+npm run dev:backend     # Backend only (nodemon)
+npm run dev:frontend    # Frontend only (Vite HMR)
+```
 
 ## Tech stack
 

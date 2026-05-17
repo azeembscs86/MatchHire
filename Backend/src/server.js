@@ -38,8 +38,20 @@ async function start() {
       logger.info(`Health check: http://localhost:${config.port}/health`);
     });
 
-    /** Graceful shutdown - drain HTTP, close DB pool and Redis client. */
-    const shutdown = async (signal) => {
+    /**
+     * Graceful shutdown - drain HTTP, close DB pool and Redis client.
+     *
+     * Listens to SIGINT (Ctrl+C), SIGTERM (orchestrators), and SIGUSR2
+     * (nodemon's restart signal). SIGUSR2 is registered with `once` so
+     * nodemon's own listener still fires after we exit and it can spawn
+     * the replacement process. Without this, nodemon restarts would
+     * orphan the previous server and bind to :3500 would fail with
+     * EADDRINUSE on every save during development.
+     */
+    let shuttingDown = false;
+    const shutdown = (signal) => {
+      if (shuttingDown) return;
+      shuttingDown = true;
       logger.info(`${signal} received, shutting down gracefully...`);
       server.close(async () => {
         try {
@@ -53,6 +65,7 @@ async function start() {
 
     process.on('SIGINT', () => shutdown('SIGINT'));
     process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.once('SIGUSR2', () => shutdown('SIGUSR2'));
     process.on('unhandledRejection', (reason) => {
       logger.error('Unhandled promise rejection', { reason: reason instanceof Error ? reason.message : reason });
     });

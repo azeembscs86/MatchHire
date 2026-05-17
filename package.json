@@ -1,0 +1,23 @@
+{
+  "name": "matchhire",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MatchHire full-stack workspace - run Backend (Express + MySQL + Redis) and Frontend (Vite + React) together.",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "dev": "concurrently --names \"be,fe\" --prefix-colors \"cyan,magenta\" --kill-others-on-fail \"npm run dev --prefix Backend\" \"npm run dev --prefix Frontend\"",
+    "dev:backend": "npm run dev --prefix Backend",
+    "dev:frontend": "npm run dev --prefix Frontend",
+    "start": "npm start --prefix Backend",
+    "build": "npm run build --prefix Frontend",
+    "migrate": "npm run migrate --prefix Backend",
+    "seed": "npm run seed --prefix Backend",
+    "install:all": "npm install && npm install --prefix Backend && npm install --prefix Frontend",
+    "lint": "npm run lint --prefix Backend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
