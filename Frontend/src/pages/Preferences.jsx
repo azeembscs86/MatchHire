@@ -20,9 +20,11 @@
  * page-level `useState` calls track values that participate in
  * cross-section logic (ranked priorities, salary range, deal list).
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ALL_PRIORITIES } from '../data/priorities.js';
+import { candidatesApi } from '../api/index.js';
+import { LoadingState } from '../components/AsyncState.jsx';
 
 const SECTIONS = [
   { id: 'priorities', n: 1, label: 'Top priorities' },
@@ -83,6 +85,9 @@ export default function Preferences() {
   const [rankedIds, setRankedIds] = useState(['wlb', 'comp', 'growth', 'remote', 'tech']);
   const [minSal, setMinSal] = useState(150);
   const [tgtSal, setTgtSal] = useState(200);
+  const [currency, setCurrency] = useState('USD');
+  const [remoteOnly, setRemoteOnly] = useState(false);
+  const [notifyEmail, setNotifyEmail] = useState(true);
   const [deals, setDeals] = useState([
     'No fully onsite roles',
     'Requires more than 4 hours of timezone overlap',
@@ -91,6 +96,59 @@ export default function Preferences() {
     'Crypto / Web3 only roles'
   ]);
   const [dealInput, setDealInput] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  const [savedAt, setSavedAt] = useState(null);
+
+  // Hydrate from /candidates/profile (preferences live alongside the profile).
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      try {
+        const data = await candidatesApi.profile();
+        if (cancelled) return;
+        const p = data?.preferences || {};
+        if (p.salary_min) setMinSal(Math.round(Number(p.salary_min) / 1000));
+        if (p.salary_max) setTgtSal(Math.round(Number(p.salary_max) / 1000));
+        if (p.salary_currency) setCurrency(p.salary_currency);
+        if (p.remote_only != null) setRemoteOnly(!!p.remote_only);
+        if (p.notify_email != null) setNotifyEmail(!!p.notify_email);
+      } catch {
+        /* keep defaults; page is still usable */
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  async function handleSave() {
+    if (saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await candidatesApi.updatePreferences({
+        desired_titles: [],
+        preferred_locations: [],
+        preferred_job_types: ['full_time'],
+        preferred_categories: [],
+        remote_only: remoteOnly,
+        salary_min: minSal * 1000,
+        salary_max: tgtSal * 1000,
+        salary_currency: currency,
+        notify_email: notifyEmail,
+        notify_push: false,
+      });
+      setSavedAt(new Date());
+    } catch (err) {
+      setSaveError(err);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const addRank = (id) => {
     if (rankedIds.includes(id)) return;
@@ -117,6 +175,16 @@ export default function Preferences() {
     setDeals([...deals, dealInput.trim()]);
     setDealInput('');
   };
+
+  if (loading) {
+    return (
+      <section className="view active" id="view-preferences">
+        <div className="container" style={{ padding: '48px 0' }}>
+          <LoadingState label="Loading your preferences…" />
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="view active" id="view-preferences">
@@ -458,13 +526,19 @@ export default function Preferences() {
             <div className="save-bar-info">
               <div className="ic">✓</div>
               <div>
-                <strong style={{ fontFamily: "'Fraunces',serif", fontSize: 15 }}>3 unsaved changes</strong>
-                <span style={{ display: 'block', fontSize: 12 }}>Your job feed will update within 60 seconds of saving.</span>
+                <strong style={{ fontFamily: "'Fraunces',serif", fontSize: 15 }}>
+                  {savedAt ? `Saved at ${savedAt.toLocaleTimeString()}` : 'Unsaved changes'}
+                </strong>
+                <span style={{ display: 'block', fontSize: 12 }}>
+                  {saveError ? saveError.message : 'Your job feed will update within 60 seconds of saving.'}
+                </span>
               </div>
             </div>
             <div className="save-bar-actions">
-              <button className="btn btn-ghost">Discard</button>
-              <button className="btn btn-coral" onClick={() => alert('Preferences saved (demo).')}>Save preferences →</button>
+              <button className="btn btn-ghost" type="button" disabled={saving}>Discard</button>
+              <button className="btn btn-coral" type="button" onClick={handleSave} disabled={saving}>
+                {saving ? 'Saving…' : 'Save preferences →'}
+              </button>
             </div>
           </div>
 

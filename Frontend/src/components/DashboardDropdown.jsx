@@ -1,16 +1,49 @@
 /**
  * DashboardDropdown
  *
- * Top-right menu that exposes the three dashboards (candidate hub,
- * company hub, admin console). Closes on outside click via a document
- * listener anchored to the wrapper ref — necessary because the menu
- * is rendered outside the trigger's positioning context and React's
- * onBlur doesn't bubble up from arbitrary children.
+ * Role-aware quick-launcher for the dashboards.  When the user's role
+ * is passed in (from the Header), we hide options they can't access:
+ *
+ *   - candidate         -> Candidate Hub only
+ *   - employer          -> Company Hub only
+ *   - admin/super_admin -> all three (admin oversight)
+ *   - undefined         -> shows everything (used before auth hydrates)
+ *
+ * The dropdown closes on outside click via a document listener anchored
+ * to the wrapper ref - the menu renders outside the trigger's
+ * positioning context, so React's onBlur doesn't bubble up.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-export default function DashboardDropdown() {
+const ALL_OPTIONS = [
+  {
+    role: 'candidate',
+    path: '/dashboard/candidate',
+    iconClass: 'lg-1',
+    glyph: '★',
+    title: 'Candidate Hub',
+    subtitle: 'Manage your job hunt',
+  },
+  {
+    role: 'employer',
+    path: '/dashboard/company',
+    iconClass: 'lg-2',
+    glyph: '◆',
+    title: 'Company Hub',
+    subtitle: 'Manage hiring & applicants',
+  },
+  {
+    role: 'admin',
+    path: '/dashboard/admin',
+    iconClass: 'lg-7',
+    glyph: '◉',
+    title: 'Admin Console',
+    subtitle: 'Platform administration',
+  },
+];
+
+export default function DashboardDropdown({ role }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
   const navigate = useNavigate();
@@ -23,6 +56,12 @@ export default function DashboardDropdown() {
     return () => document.removeEventListener('click', onDocClick);
   }, []);
 
+  const options = useMemo(() => {
+    if (!role) return ALL_OPTIONS;
+    if (role === 'admin' || role === 'super_admin') return ALL_OPTIONS;
+    return ALL_OPTIONS.filter((o) => o.role === role);
+  }, [role]);
+
   const go = (path) => {
     setOpen(false);
     navigate(path);
@@ -33,25 +72,22 @@ export default function DashboardDropdown() {
       <button
         className="dash-trigger"
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        type="button"
       >
         <span className="dot"></span>
         <span>Dashboards</span>
         <span style={{ fontSize: 10 }}>▾</span>
       </button>
       <div className={`dash-dropdown${open ? ' open' : ''}`}>
-        <div className="dash-opt" onClick={() => go('/dashboard/candidate')}>
-          <div className="dash-opt-icon lg-1">★</div>
-          <div><strong>Candidate Hub</strong><span>Manage your job hunt</span></div>
-        </div>
-        <div className="dash-opt" onClick={() => go('/dashboard/company')}>
-          <div className="dash-opt-icon lg-2">◆</div>
-          <div><strong>Company Hub</strong><span>Manage hiring & applicants</span></div>
-        </div>
-        <div className="dash-divider"></div>
-        <div className="dash-opt" onClick={() => go('/dashboard/admin')}>
-          <div className="dash-opt-icon lg-7">◉</div>
-          <div><strong>Admin Console</strong><span>Platform administration</span></div>
-        </div>
+        {options.map((o, i) => (
+          <div key={o.path}>
+            {i > 0 && o.role === 'admin' && <div className="dash-divider"></div>}
+            <div className="dash-opt" onClick={() => go(o.path)}>
+              <div className={`dash-opt-icon ${o.iconClass}`}>{o.glyph}</div>
+              <div><strong>{o.title}</strong><span>{o.subtitle}</span></div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

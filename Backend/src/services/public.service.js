@@ -102,6 +102,74 @@ async function topCandidates(limit = 8) {
   return cache.rememberCache(cache.Keys.topCandidates(), cache.TTL.CANDIDATES_LIST, () => candidateRepo.topCandidates(limit));
 }
 
+/**
+ * Dynamic, role-aware navigation menu.
+ *
+ * Returned shape:
+ *
+ *   {
+ *     primary: [ { key, label, to, end? } ],
+ *     actions: [ { key, label, kind: 'auth-signin' | 'auth-signup' | 'logout' | 'link', to? } ],
+ *     dashboard: { label, to } | null,
+ *     user: { id, full_name, role } | null
+ *   }
+ *
+ * Visibility rules (matches the project spec):
+ *   - Anonymous          - Home, Jobs, Companies, Candidates, For Employers + Sign in / Join free
+ *   - Candidate          - + My Profile, Preferences, Favorites + Candidate Dashboard
+ *   - Employer           - + Company Hub (Company Profile + Job Postings) + Company Dashboard
+ *   - Admin/Super admin  - + Admin Console
+ *
+ * Computed on the fly (not cached) because the payload depends on the
+ * bearer token; the body is small (sub-1KB) and easy to regenerate.
+ */
+function navigation(user) {
+  const primary = [
+    { key: 'home', label: 'Home', to: '/', end: true },
+    { key: 'jobs', label: 'Jobs', to: '/jobs' },
+    { key: 'companies', label: 'Companies', to: '/companies' },
+    { key: 'candidates', label: 'Candidates', to: '/candidates' },
+  ];
+
+  const role = user?.role || null;
+
+  if (role === 'candidate') {
+    primary.push(
+      { key: 'profile', label: 'My Profile', to: '/profile' },
+      { key: 'preferences', label: 'Preferences', to: '/preferences' },
+      { key: 'favorites', label: 'Favorites', to: '/favorites' },
+    );
+  } else if (role === 'employer') {
+    primary.push(
+      { key: 'company-profile', label: 'Company Profile', to: '/employer-onboarding' },
+      { key: 'company-jobs', label: 'Job Postings', to: '/dashboard/company' },
+    );
+  } else if (role === 'admin' || role === 'super_admin') {
+    primary.push({ key: 'admin-console', label: 'Admin Console', to: '/dashboard/admin' });
+  } else {
+    primary.push({ key: 'employer-onboarding', label: 'For Employers', to: '/employer-onboarding' });
+  }
+
+  let dashboard = null;
+  if (role === 'candidate') dashboard = { label: 'Candidate Dashboard', to: '/dashboard/candidate' };
+  else if (role === 'employer') dashboard = { label: 'Company Dashboard', to: '/dashboard/company' };
+  else if (role === 'admin' || role === 'super_admin') dashboard = { label: 'Admin Dashboard', to: '/dashboard/admin' };
+
+  const actions = user
+    ? [{ key: 'logout', label: 'Sign out', kind: 'logout' }]
+    : [
+        { key: 'signin', label: 'Sign in', kind: 'auth-signin' },
+        { key: 'signup', label: 'Join free', kind: 'auth-signup' },
+      ];
+
+  return {
+    primary,
+    actions,
+    dashboard,
+    user: user ? { id: user.id, full_name: user.full_name, role: user.role } : null,
+  };
+}
+
 module.exports = {
   listJobs,
   getJob,
@@ -112,4 +180,5 @@ module.exports = {
   categories,
   skills,
   topCandidates,
+  navigation,
 };

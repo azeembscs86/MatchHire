@@ -1,52 +1,124 @@
 /**
  * AuthModal
  *
- * Overlay used by every entry point that needs the user to be signed
- * in or signed up. Open/close state is driven by AuthModalContext, so
- * any component anywhere in the tree can pop the modal without
- * threading callbacks through.
+ * Overlay used wherever the user needs to sign in or sign up. Form
+ * submission goes through `AuthContext` -> `authApi` -> the MatchHire
+ * backend.  On success the modal closes and the rest of the tree
+ * re-renders against the authenticated session.
  *
- * The modal closes on Escape and on overlay click; the inner card
- * stops propagation so clicks inside don't dismiss it.
+ * Validation messages from the backend (HTTP 422 with `Errors: [...]`)
+ * are surfaced inline so the user can fix the offending field.
  *
- * Form submission is stubbed — calls `alert(...)` and closes. Hook
- * this up to your real auth backend (OAuth, email magic link, etc.)
- * by replacing `handleSubmit` and persisting the session somewhere
- * sensible (likely an AuthContext alongside this one).
+ * Open/close state remains owned by AuthModalContext so any part of
+ * the tree can pop the modal without prop-drilling a callback.
  */
 import { useEffect, useState } from 'react';
 import { useAuthModal } from '../context/AuthModalContext.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
 
-const GoogleIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 18 18">
-    <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" fill="#4285F4" />
-    <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853" />
-    <path d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05" />
-    <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335" />
-  </svg>
-);
-
-function SignIn({ onSwitch, onSubmit }) {
+function FormError({ error }) {
+  if (!error) return null;
   return (
-    <>
-      <h2>Welcome back.</h2>
-      <p>Sign in to continue your search or hiring.</p>
-      <button className="google-btn" onClick={onSubmit}><GoogleIcon />Continue with Google</button>
-      <div className="divider">or with email</div>
-      <div className="form-field"><label>Email</label><input type="email" placeholder="you@email.com" /></div>
-      <div className="form-field"><label>Password</label><input type="password" placeholder="••••••••" /></div>
-      <button className="btn btn-coral" onClick={onSubmit}>Sign in →</button>
-      <div className="form-foot">
-        New to MatchHire? <a href="#" onClick={(e) => { e.preventDefault(); onSwitch(); }}>Create free account</a>
-      </div>
-    </>
+    <div role="alert" style={{ background: '#fde9e3', color: '#b3361b', borderRadius: 8, padding: '10px 12px', fontSize: 13, marginBottom: 10 }}>
+      <strong>{error.message}</strong>
+      {Array.isArray(error.errors) && error.errors.length > 0 && (
+        <ul style={{ marginTop: 6, paddingLeft: 18 }}>
+          {error.errors.map((e, i) => (
+            <li key={i}>{e.field ? <code>{e.field}</code> : null} {e.message}</li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
-function SignUp({ onSubmit }) {
-  const [role, setRole] = useState('hiring');
+function SignIn({ onSwitch, onClose }) {
+  const { login } = useAuth();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (submitting) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      await login(email.trim(), password);
+      onClose();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
-    <>
+    <form onSubmit={handleSubmit}>
+      <h2>Welcome back.</h2>
+      <p>Sign in to continue your search or hiring.</p>
+      <FormError error={error} />
+      <div className="form-field">
+        <label>Email</label>
+        <input type="email" required placeholder="you@email.com" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+      </div>
+      <div className="form-field">
+        <label>Password</label>
+        <input type="password" required placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+      </div>
+      <button className="btn btn-coral" type="submit" disabled={submitting}>
+        {submitting ? 'Signing in…' : 'Sign in →'}
+      </button>
+      <div className="form-foot">
+        New to MatchHire? <a href="#" onClick={(e) => { e.preventDefault(); onSwitch(); }}>Create free account</a>
+      </div>
+    </form>
+  );
+}
+
+function SignUp({ onClose }) {
+  const { register } = useAuth();
+  const [role, setRole] = useState('hunting');
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [error, setError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const isEmployer = role === 'hiring';
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (submitting) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      if (isEmployer) {
+        await register('employer', {
+          full_name: fullName,
+          email: email.trim(),
+          password,
+          company: { name: companyName || `${fullName}'s Company` },
+        });
+      } else {
+        await register('candidate', {
+          full_name: fullName,
+          email: email.trim(),
+          password,
+        });
+      }
+      onClose();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
       <h2>Join MatchHire.</h2>
       <p>Tell us how you'll use the platform.</p>
       <div className="role-select">
@@ -65,16 +137,32 @@ function SignUp({ onSubmit }) {
           <span className="ricon">→</span><strong>I'm job hunting</strong><span>Find roles, build profile</span>
         </button>
       </div>
-      <button className="google-btn" onClick={onSubmit}><GoogleIcon />Continue with Google</button>
-      <div className="divider">or with email</div>
-      <div className="form-field"><label>Full name</label><input placeholder="Jane Doe" /></div>
-      <div className="form-field"><label>Email · we'll send a verification link</label><input type="email" placeholder="you@email.com" /></div>
-      <div className="form-field"><label>Password · 8+ characters</label><input type="password" placeholder="••••••••" /></div>
-      <button className="btn btn-coral" onClick={onSubmit}>Create account →</button>
+      <FormError error={error} />
+      <div className="form-field">
+        <label>Full name</label>
+        <input required placeholder="Jane Doe" value={fullName} onChange={(e) => setFullName(e.target.value)} autoComplete="name" />
+      </div>
+      {isEmployer && (
+        <div className="form-field">
+          <label>Company name</label>
+          <input required placeholder="Acme Technologies" value={companyName} onChange={(e) => setCompanyName(e.target.value)} autoComplete="organization" />
+        </div>
+      )}
+      <div className="form-field">
+        <label>Email · we'll send a verification link</label>
+        <input type="email" required placeholder="you@email.com" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+      </div>
+      <div className="form-field">
+        <label>Password · 8+ characters, letters and numbers</label>
+        <input type="password" required minLength={8} placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+      </div>
+      <button className="btn btn-coral" type="submit" disabled={submitting}>
+        {submitting ? 'Creating account…' : 'Create account →'}
+      </button>
       <div className="form-foot">
         By creating an account, you agree to our <a href="#">Terms</a> &amp; <a href="#">Privacy</a>
       </div>
-    </>
+    </form>
   );
 }
 
@@ -87,12 +175,6 @@ export default function AuthModal() {
     return () => document.removeEventListener('keydown', onKey);
   }, [open, closeAuth]);
 
-  const handleSubmit = (e) => {
-    e?.preventDefault?.();
-    alert('Demo only — wire up to a real auth backend.');
-    closeAuth();
-  };
-
   return (
     <div
       className={`modal-overlay${open ? ' open' : ''}`}
@@ -100,13 +182,13 @@ export default function AuthModal() {
       id="auth-modal"
     >
       <div className="modal">
-        <button className="modal-close" onClick={closeAuth}>×</button>
+        <button className="modal-close" onClick={closeAuth} aria-label="Close">×</button>
         <div className="modal-art">
           <div className="modal-art-content">
             <div className="logo" style={{ marginBottom: 32 }}>
-              <div className="logo-mark" style={{ background: 'var(--coral)' }}>H</div>
+              <div className="logo-mark" style={{ background: 'var(--coral)' }}>M</div>
               <div className="logo-text" style={{ color: 'var(--bone)' }}>
-                Hire<em style={{ color: 'var(--bone)', fontStyle: 'italic' }}>loom</em>
+                Match<em style={{ color: 'var(--bone)', fontStyle: 'italic' }}>Hire</em>
               </div>
             </div>
             <h2 className="display">Where careers find their <em style={{ fontStyle: 'italic', color: 'var(--coral)' }}>calling</em>.</h2>
@@ -123,17 +205,19 @@ export default function AuthModal() {
             <button
               className={`modal-tab${mode === 'signin' ? ' active' : ''}`}
               onClick={() => switchTab('signin')}
+              type="button"
             >Sign in</button>
             <button
               className={`modal-tab${mode === 'signup' ? ' active' : ''}`}
               onClick={() => switchTab('signup')}
+              type="button"
             >Create account</button>
           </div>
 
           <div id="auth-content">
             {mode === 'signin'
-              ? <SignIn onSwitch={() => switchTab('signup')} onSubmit={handleSubmit} />
-              : <SignUp onSubmit={handleSubmit} />}
+              ? <SignIn onSwitch={() => switchTab('signup')} onClose={closeAuth} />
+              : <SignUp onClose={closeAuth} />}
           </div>
         </div>
       </div>

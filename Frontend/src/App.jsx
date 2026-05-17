@@ -1,15 +1,29 @@
 /**
  * Route table for the MatchHire SPA.
  *
- * Every route is wrapped by `<Layout />`, which renders the persistent
- * shell (top bar, header, footer, auth modal) and a `<Outlet />` for
- * the active page. Unknown paths fall back to the home page.
+ * Public routes render under `<Layout />`. Authenticated routes are
+ * nested under `<ProtectedRoute />` so unauthenticated visitors get
+ * redirected to / (with the auth modal popped) and role-mismatched
+ * users get redirected to / silently.
  *
- * Keep this file flat and declarative — when a new page is added, it
- * should be a one-line entry here.
+ *   /                    public
+ *   /jobs                public
+ *   /companies           public
+ *   /candidates          public
+ *
+ *   /profile             candidate only
+ *   /preferences         candidate only
+ *   /favorites           candidate only
+ *
+ *   /employer-onboarding public (so guests can land on the marketing
+ *                        page); the form itself triggers signup
+ *   /dashboard/candidate candidate only
+ *   /dashboard/company   employer only
+ *   /dashboard/admin     admin / super_admin
  */
 import { Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout.jsx';
+import ProtectedRoute from './components/ProtectedRoute.jsx';
 import Home from './pages/Home.jsx';
 import Jobs from './pages/Jobs.jsx';
 import Companies from './pages/Companies.jsx';
@@ -31,19 +45,25 @@ export default function App() {
         <Route path="/jobs" element={<Jobs />} />
         <Route path="/companies" element={<Companies />} />
         <Route path="/candidates" element={<Candidates />} />
-
-        {/* Candidate-side flows */}
-        <Route path="/profile" element={<Profile />} />
-        <Route path="/preferences" element={<Preferences />} />
-        <Route path="/favorites" element={<Favorites />} />
-
-        {/* Employer-side flows */}
         <Route path="/employer-onboarding" element={<EmployerOnboarding />} />
 
-        {/* Dashboards */}
-        <Route path="/dashboard/candidate" element={<DashboardCandidate />} />
-        <Route path="/dashboard/company" element={<DashboardCompany />} />
-        <Route path="/dashboard/admin" element={<DashboardAdmin />} />
+        {/* Candidate-only flows */}
+        <Route element={<ProtectedRoute roles={['candidate']} />}>
+          <Route path="/profile" element={<Profile />} />
+          <Route path="/preferences" element={<Preferences />} />
+          <Route path="/favorites" element={<Favorites />} />
+          <Route path="/dashboard/candidate" element={<DashboardCandidate />} />
+        </Route>
+
+        {/* Employer-only flows */}
+        <Route element={<ProtectedRoute roles={['employer']} />}>
+          <Route path="/dashboard/company" element={<DashboardCompany />} />
+        </Route>
+
+        {/* Admin-only flows */}
+        <Route element={<ProtectedRoute roles={['admin', 'super_admin']} />}>
+          <Route path="/dashboard/admin" element={<DashboardAdmin />} />
+        </Route>
 
         {/* Catch-all: send unknown paths home rather than 404 */}
         <Route path="*" element={<Home />} />

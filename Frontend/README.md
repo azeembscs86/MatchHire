@@ -1,117 +1,142 @@
 # MatchHire — Frontend
 
-React SPA for the MatchHire career marketplace. Converted from the
-original static HTML prototype with the design system preserved 1:1.
+React SPA for the MatchHire career marketplace. Talks to the
+`Backend/` REST API for every piece of data; ships zero static
+fixtures (besides a short list of priority labels in `src/data/`).
+
+## Tech stack
+
+- **React 18** + **react-router-dom** for the UI and client routing.
+- **Vite** for dev server + production build.
+- **axios** as the HTTP client, wrapped by a centralised module
+  (`src/api/client.js`) that adds bearer auth, refresh-on-401, and
+  envelope unwrapping.
+- **Context** for cross-cutting state (`AuthContext`,
+  `AuthModalContext`, `FavoritesContext`).
+- Vanilla CSS modules with the original design tokens — no UI library.
 
 ## Run it
 
 ```bash
+cp .env.example .env.local         # set VITE_API_BASE_URL if needed
 npm install
-npm run dev        # dev server on http://localhost:5173
-npm run build      # production build → dist/
-npm run preview    # serve the production build locally
+npm run dev                        # http://localhost:5173
 ```
 
-Node 18+ is recommended.
+The backend must be running on whatever `VITE_API_BASE_URL` points to
+(default `http://localhost:3500/api/v1`). See [`../Backend/README.md`](../Backend/README.md).
 
 ## Folder layout
 
 ```
-Frontend/
-├── index.html              Vite entry HTML
-├── vite.config.js          Vite + React plugin config
-├── package.json
-└── src/
-    ├── main.jsx            App bootstrap (mounts React, providers, router)
-    ├── App.jsx             Route table for the SPA
-    ├── styles.css          Full design system (CSS variables + components)
-    │
-    ├── components/         Reusable presentational + chrome components
-    │   ├── Layout.jsx          Persistent shell wrapping all routes
-    │   ├── TopBar.jsx          Ink-black utility bar above the main nav
-    │   ├── Header.jsx          Sticky primary navigation
-    │   ├── Logo.jsx            Brand mark + word mark, links to home
-    │   ├── Footer.jsx          Global footer with site links
-    │   ├── AuthModal.jsx       Sign-in / sign-up overlay
-    │   ├── DashboardDropdown.jsx  Top-right Dashboards menu
-    │   ├── JobCard.jsx         Single job card with save toggle
-    │   ├── CompanyCard.jsx     Single company card
-    │   └── CandidateCard.jsx   Single candidate card
-    │
-    ├── context/            Cross-cutting client state (React Context)
-    │   ├── AuthModalContext.jsx    Drives the auth overlay
-    │   └── FavoritesContext.jsx    Saved-jobs set, persisted to localStorage
-    │
-    ├── data/               Static mock fixtures (stand-ins for an API)
-    │   ├── jobs.js
-    │   ├── companies.js
-    │   ├── candidates.js
-    │   └── priorities.js
-    │
-    └── pages/              One file per route, mounted by App.jsx
-        ├── Home.jsx
-        ├── Jobs.jsx
-        ├── Companies.jsx
-        ├── Candidates.jsx
-        ├── Profile.jsx
-        ├── Preferences.jsx
-        ├── Favorites.jsx
-        ├── EmployerOnboarding.jsx
-        ├── DashboardCandidate.jsx
-        ├── DashboardCompany.jsx
-        └── DashboardAdmin.jsx
+src/
+├── api/
+│   ├── client.js          axios instance + token store + envelope unwrap
+│   ├── adapters.js        view-model adapters (backend record → card prop shape)
+│   ├── auth.js            wrappers for /auth/*
+│   ├── public.js          wrappers for /public/*
+│   ├── candidates.js      wrappers for /candidates/*
+│   ├── employers.js       wrappers for /employers/*
+│   ├── admin.js           wrappers for /admin/*
+│   └── index.js           public surface (one import for any page)
+├── components/
+│   ├── AsyncState.jsx     Loading / Error / Empty state helpers
+│   ├── AuthModal.jsx      sign-in / sign-up overlay (calls AuthContext)
+│   ├── DashboardDropdown.jsx
+│   ├── Footer.jsx / Header.jsx / Layout.jsx / Logo.jsx / TopBar.jsx
+│   ├── JobCard.jsx / CompanyCard.jsx / CandidateCard.jsx
+│   └── ProtectedRoute.jsx role-gated route wrapper
+├── context/
+│   ├── AuthContext.jsx       session, login/register/logout, user state
+│   ├── AuthModalContext.jsx  open/close + active tab for the auth overlay
+│   └── FavoritesContext.jsx  API-backed saved-jobs set
+├── data/
+│   └── priorities.js         static config: priority labels (not user data)
+├── pages/                    one file per route
+│   ├── Home.jsx / Jobs.jsx / Companies.jsx / Candidates.jsx
+│   ├── Profile.jsx / Preferences.jsx / Favorites.jsx
+│   ├── EmployerOnboarding.jsx
+│   └── DashboardCandidate.jsx / DashboardCompany.jsx / DashboardAdmin.jsx
+├── App.jsx                   route table (public + ProtectedRoute groups)
+├── main.jsx                  provider chain + ReactDOM.createRoot
+└── styles.css                design system tokens + component CSS
 ```
 
-## Routes
+## API client
 
-| Path                      | Page                  | Notes                                |
-|---------------------------|-----------------------|--------------------------------------|
-| `/`                       | `Home`                | Hero, search, recommended jobs       |
-| `/jobs`                   | `Jobs`                | Filter sidebar + listing             |
-| `/companies`              | `Companies`           | Company grid                         |
-| `/candidates`             | `Candidates`          | Top-rated talent grid                |
-| `/profile`                | `Profile`             | Candidate profile builder            |
-| `/preferences`            | `Preferences`         | Priority ranking + match weighting   |
-| `/favorites`              | `Favorites`           | Saved jobs + collections + insights  |
-| `/employer-onboarding`    | `EmployerOnboarding`  | Company verification flow            |
-| `/dashboard/candidate`    | `DashboardCandidate`  | Candidate hub                        |
-| `/dashboard/company`      | `DashboardCompany`    | Hiring funnel + applicants           |
-| `/dashboard/admin`        | `DashboardAdmin`      | Platform admin console               |
+Everything HTTP-related is in `src/api/`. The barrel `src/api/index.js`
+re-exports the typed-ish wrappers so a page can just write:
 
-## State model
+```js
+import { publicApi, candidatesApi, employersApi, adminApi, authApi } from '../api';
+```
 
-State is intentionally lightweight — only what the UI actually needs.
+`call(...)` (used inside every wrapper) unwraps the MatchHire response
+envelope into the `Data` payload and throws a clean `Error` carrying
+`errors`/`httpStatus`/`status` on failure. Pages do not need to read
+`res.data.Response.responseCode` themselves.
 
-* **`FavoritesContext`** — a `Set` of job indexes, persisted to
-  `localStorage` under `matchhire:savedJobs`. Hydrated synchronously on
-  first render so cards render with the right heart state. Exposes
-  `toggleSave(idx)`, `isSaved(idx)`, and `count`.
-* **`AuthModalContext`** — controls whether the auth modal is open and
-  which tab (`signin` | `signup`) is active. Exposes `openAuth(mode)`,
-  `closeAuth()`, and `switchTab(mode)`.
-* **Local component state** — preferences ranking, sliders, toggles,
-  skill pills, and deal-breaker lists all live inside their owning page
-  via `useState`. Nothing exotic; nothing global it doesn't need to be.
+### Auth & token storage
 
-## Design system
+`AuthContext` persists access + refresh tokens in `localStorage` under
+the `matchhire:*` namespace and re-validates the access token on first
+mount by calling `POST /auth/me`. The axios response interceptor
+transparently refreshes on a 401 once per request and dispatches
+`matchhire:auth:logout` if refresh itself fails — `AuthContext`
+listens and clears state so the rest of the tree re-renders into the
+signed-out view.
 
-The original `assets/styles.css` is preserved verbatim in
-[src/styles.css](src/styles.css). Theme tokens live in the `:root` block
-at the top — edit colours, shadows, and spacing there.
+### Protected routes
 
-Typography: Fraunces (display, serif) + Geist (body, sans), loaded from
-Google Fonts in `index.html`.
+```jsx
+<Route element={<ProtectedRoute roles={['candidate']} />}>
+  <Route path="/profile" element={<Profile />} />
+</Route>
+```
 
-## Going from prototype to production
+While auth is hydrating, `ProtectedRoute` renders a light placeholder.
+For unauthenticated visitors it pops the auth modal and bounces to `/`
+without leaving the page tree.
 
-1. **API** — replace the mock fixtures in `src/data/` with a thin client
-   that talks to your backend. Keep the export shape so consumers don't
-   change.
-2. **Auth** — swap the demo `alert(...)` in `components/AuthModal.jsx`
-   for real OAuth + email flow, and persist the session somewhere
-   sensible (e.g. an `AuthContext`).
-3. **Persistence** — move favorites and preferences off `localStorage`
-   onto the API. Keep `FavoritesContext` as the call site; only the
-   provider internals change.
-4. **Forms** — every form currently calls `e.preventDefault()` and
-   shows an alert. Wire the submit handlers to real endpoints.
+## Dynamic navigation
+
+The Header calls `GET /public/navigation` on mount (and whenever the
+user changes). The backend returns `{ primary, actions, dashboard,
+user }` with links tailored to the caller's role, so the menu adjusts
+automatically — no client-side role branching needed for the link
+list. Action buttons are still owned by the Header so they can wire to
+`AuthContext.login/logout`.
+
+## Adding a new page
+
+1. Create the file under `src/pages/`. Use API helpers from
+   `src/api/` for any data; do not import static fixtures.
+2. Add a route to `App.jsx`. Wrap it in `<ProtectedRoute roles={[...]} />`
+   if it requires authentication.
+3. Use `LoadingState`, `ErrorState`, `EmptyState` from
+   `components/AsyncState.jsx` so the UX stays consistent.
+4. If the page needs a new menu entry, add it to the backend's
+   `services/public.service.js > navigation(user)` instead of the
+   Header — the menu is dynamic.
+
+## Environment
+
+| Var | Default | What it does |
+| --- | --- | --- |
+| `VITE_API_BASE_URL` | `http://localhost:3500/api/v1` | Base URL of the backend. No trailing slash. |
+
+Only variables prefixed `VITE_` are exposed to the browser. Put real
+secrets in the backend `.env`, not here.
+
+## Scripts
+
+| Script | Purpose |
+| --- | --- |
+| `npm run dev` | Vite dev server with HMR |
+| `npm run build` | Production build to `dist/` |
+| `npm run preview` | Serve the built bundle locally |
+| `npm run start` | Same as preview, bound to `--host` |
+
+## License
+
+MIT

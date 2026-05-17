@@ -1,17 +1,23 @@
 /**
  * JobCard
  *
- * Compact card for a single job, used on Home, Jobs, Favorites'
- * "similar" rail, and anywhere else jobs are listed. The heart in
- * the corner reads/writes FavoritesContext, so toggling here updates
- * every other card and the header badge in real time.
+ * Compact card for a single job. Used on Home, Jobs, Favorites' similar
+ * rail, and the company dashboard. The heart icon reads/writes
+ * `FavoritesContext` (API-backed) so toggling here updates every other
+ * card and the header badge in real time.
+ *
+ * The card itself is design-neutral - prop shape comes from
+ * `toJobCardShape(...)` in `api/adapters.js`, which maps backend records
+ * into the legacy field names (`co`, `l`, `cl`, `pay`, `tags`, ...).
  *
  * @param {object} props
- * @param {object} props.job       - Job shape from `data/jobs.js`.
- * @param {number} props.idx       - Stable index used as the
- *   favorite key (until real ids exist).
+ * @param {object} props.job        - View-model produced by `toJobCardShape`.
+ *                                    Must carry `id` (real job id, used
+ *                                    by favorites + apply).
  * @param {boolean} [props.featured] - Show the FEATURED ribbon when
- *   the job itself is marked `featured`.
+ *                                     `job.featured` is truthy.
+ * @param {function} [props.onApply] - Optional callback fired when the
+ *                                     Apply action is invoked.
  */
 import { useFavorites } from '../context/FavoritesContext.jsx';
 
@@ -30,15 +36,16 @@ function HeartIcon({ filled }) {
   );
 }
 
-export default function JobCard({ job, idx, featured = false }) {
+export default function JobCard({ job, featured = false, onApply }) {
   const { isSaved, toggleSave } = useFavorites();
-  const saved = isSaved(idx);
+  const saved = isSaved(job.id);
   return (
     <div className={`job-card${featured && job.featured ? ' featured' : ''}`}>
       <button
         className={`heart-btn${saved ? ' saved' : ''}`}
-        onClick={(e) => { e.stopPropagation(); toggleSave(idx); }}
+        onClick={(e) => { e.stopPropagation(); toggleSave(job.id); }}
         title={saved ? 'Remove from favorites' : 'Save to favorites'}
+        type="button"
       >
         <HeartIcon filled={saved} />
       </button>
@@ -52,12 +59,24 @@ export default function JobCard({ job, idx, featured = false }) {
       <div className="job-title">{job.title}</div>
       <div className="job-tags">
         {job.match && <span className="job-tag match">★ {job.match}</span>}
-        {job.tags.map((t) => <span key={t} className="job-tag">{t}</span>)}
+        {(job.tags || []).map((t) => <span key={t} className="job-tag">{t}</span>)}
       </div>
       <div className="job-foot">
         <div className="job-pay">{job.pay} <span>· {job.type}</span></div>
         <div className="job-time">{job.time}</div>
       </div>
+      {onApply && (
+        <div style={{ marginTop: 12 }}>
+          <button
+            className="btn btn-coral"
+            onClick={(e) => { e.stopPropagation(); onApply(job); }}
+            type="button"
+            style={{ width: '100%', padding: '8px 12px', fontSize: 13 }}
+          >
+            Apply now
+          </button>
+        </div>
+      )}
     </div>
   );
 }

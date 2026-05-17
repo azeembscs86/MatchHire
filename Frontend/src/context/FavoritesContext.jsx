@@ -1,18 +1,18 @@
 /**
- * FavoritesContext
+ * FavoritesContext (API-backed)
  *
- * Owns the set of job indexes the user has saved. Stored as a `Set`
- * for O(1) `has`/`add`/`delete` since `isSaved(idx)` is called by
- * every JobCard on every render.
+ * Owns the set of job ids the signed-in candidate has favorited. The
+ * source of truth is the MatchHire backend (`/candidates/favorites/*`),
+ * not localStorage.
  *
- * Persistence: written to `localStorage` so the saved state survives
- * full page reloads. Read synchronously on first render (via the
- * `useState` initialiser) so cards render with the correct heart
- * state from frame one — no flash of "unsaved" hearts.
+ *   - When no user is signed in, the set stays empty. JobCard's heart
+ *     icon shows the unsaved state; pressing it opens the auth modal.
+ *   - When a candidate signs in (or the page boots with a stored token)
+ *     we hydrate the set by calling `favorites/list`. Subsequent
+ *     toggles call `add` / `remove` and update the cache optimistically.
  *
- * The first-time default seeds 12 saved jobs to keep the Favorites
- * page non-empty for the demo; remove once a real backend is wired
- * up and a fresh user starts with an empty set.
+ * `count` is read by the header badge on every render, so we keep it
+ * O(1) by storing the set as a JS `Set` of job ids (numbers).
  */
 import {
   createContext,
@@ -22,67 +22,84 @@ import {
   useMemo,
   useState,
 } from 'react';
-
-const STORAGE_KEY = 'matchhire:savedJobs';
-const DEFAULT_SAVED = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+import { candidatesApi } from '../api/index.js';
+import { useAuth } from './AuthContext.jsx';
+import { useAuthModal } from './AuthModalContext.jsx';
 
 const FavoritesContext = createContext(null);
 
 export function FavoritesProvider({ children }) {
-  // Hydrate from localStorage on mount. Wrapped in try/catch because
-  // localStorage can throw (private mode, quota exceeded, disabled).
-  const [savedJobs, setSavedJobs] = useState(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return new Set(JSON.parse(raw));
-    } catch {
-      /* storage unavailable — fall through to defaults */
-    }
-    return new Set(DEFAULT_SAVED);
-  });
+  const { user, role } = useAuth();
+  const { openAuth } = useAuthModal();
+  const [savedJobs, setSavedJobs] = useState(() => new Set());
+  const [ready, setReady] = useState(false);
 
-  // Persist on every change. Set is serialised to an array since
-  // JSON.stringify can't represent a Set.
+  // Re-hydrate whenever the authenticated user changes. Non-candidates
+  // (employers, admins) don't have a favorites surface so we skip the
+  // network call and keep the set empty for them.
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify([...savedJobs]));
-    } catch {
-      /* storage unavailable — silently skip persistence */
+    let cancelled = false;
+    async function load() {
+      if (!user || role !== 'candidate') {
+        setSavedJobs(new Set());
+        setReady(true);
+        return;
+      }
+      try {
+        const data = await candidatesApi.favorites.list({ page: 1, limit: 100 });
+        if (cancelled) return;
+        const ids = (data?.records || []).map((r) => Number(r.id ?? r.job_id)).filter(Boolean);
+        setSavedJobs(new Set(ids));
+      } catch {
+        if (!cancelled) setSavedJobs(new Set());
+      } finally {
+        if (!cancelled) setReady(true);
+      }
     }
-  }, [savedJobs]);
+    setReady(false);
+    load();
+    return () => { cancelled = true; };
+  }, [user, role]);
 
-  /** Add or remove `idx` from the saved set. */
-  const toggleSave = useCallback((idx) => {
+  /** Optimistic toggle: update locally, then sync to the server. */
+  const toggleSave = useCallback(async (jobId) => {
+    if (!jobId && jobId !== 0) return;
+    const id = Number(jobId);
+    if (!user) { openAuth('signin'); return; }
+    if (role !== 'candidate') return;
+
+    const currentlySaved = savedJobs.has(id);
     setSavedJobs((prev) => {
       const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx);
-      else next.add(idx);
+      if (currentlySaved) next.delete(id); else next.add(id);
       return next;
     });
-  }, []);
+    try {
+      if (currentlySaved) await candidatesApi.favorites.remove(id);
+      else await candidatesApi.favorites.add(id);
+    } catch {
+      // Roll back on failure.
+      setSavedJobs((prev) => {
+        const next = new Set(prev);
+        if (currentlySaved) next.add(id); else next.delete(id);
+        return next;
+      });
+    }
+  }, [savedJobs, user, role, openAuth]);
 
-  /** Cheap membership check used by every JobCard render. */
-  const isSaved = useCallback((idx) => savedJobs.has(idx), [savedJobs]);
+  const isSaved = useCallback((jobId) => savedJobs.has(Number(jobId)), [savedJobs]);
 
-  // Memoise the context value so consumers only re-render when the
-  // underlying set actually changes.
   const value = useMemo(
-    () => ({ savedJobs, toggleSave, isSaved, count: savedJobs.size }),
-    [savedJobs, toggleSave, isSaved]
+    () => ({ savedJobs, toggleSave, isSaved, count: savedJobs.size, ready }),
+    [savedJobs, toggleSave, isSaved, ready]
   );
 
-  return (
-    <FavoritesContext.Provider value={value}>
-      {children}
-    </FavoritesContext.Provider>
-  );
+  return <FavoritesContext.Provider value={value}>{children}</FavoritesContext.Provider>;
 }
 
-/** Hook for reading + mutating the favorites set. */
+/** Hook for reading + mutating the saved-jobs set. */
 export function useFavorites() {
   const ctx = useContext(FavoritesContext);
-  if (!ctx) {
-    throw new Error('useFavorites must be used inside FavoritesProvider');
-  }
+  if (!ctx) throw new Error('useFavorites must be used inside FavoritesProvider');
   return ctx;
 }

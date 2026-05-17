@@ -1,11 +1,115 @@
 /**
- * DashboardAdmin page — "Admin Console".
+ * DashboardAdmin - "Admin Console".
  *
- * Platform-operator surface: aggregate metrics (users, companies,
- * MRR), pending verifications queue, system-health panel, recent
- * users table, and a flagged-content timeline.
+ * Platform-operator surface for admin and super_admin roles. Data sources:
+ *
+ *   /admin/dashboard/stats           aggregate users / jobs / companies / applications
+ *   /admin/companies/pending         queue of companies awaiting verification
+ *   /admin/users (filtered)          recent users (page 1, limit 6)
+ *   /admin/health-summary            DB / Redis / uptime
+ *   /admin/audit-logs                audit feed for the "flagged content" rail
+ *
+ * Approve / reject actions are wired to /admin/companies/:id/verify and
+ * remove the row from the queue on success.
  */
+import { useEffect, useState } from 'react';
+import { adminApi } from '../api/index.js';
+import { useAuth } from '../context/AuthContext.jsx';
+import { LoadingState, ErrorState } from '../components/AsyncState.jsx';
+
+function initials(name = '') {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || '··';
+}
+
+function relative(iso) {
+  if (!iso) return '';
+  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+  return `${Math.floor(diff / 604800)}w ago`;
+}
+
+function userStatusPill(status) {
+  switch (status) {
+    case 'active': return { cls: 'pill-verified', label: 'Verified' };
+    case 'pending': return { cls: 'pill-pending', label: 'Pending' };
+    case 'suspended': return { cls: 'pill-flagged', label: 'Suspended' };
+    case 'inactive': return { cls: 'pill-rejected', label: 'Inactive' };
+    default: return { cls: 'pill-verified', label: status || '—' };
+  }
+}
+
 export default function DashboardAdmin() {
+  const { logout } = useAuth();
+  const [stats, setStats] = useState(null);
+  const [pending, setPending] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [audit, setAudit] = useState([]);
+  const [health, setHealth] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [busyCompanyId, setBusyCompanyId] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const [statsData, pendingData, usersData, auditData, healthData] = await Promise.all([
+          adminApi.dashboardStats(),
+          adminApi.companies.pending({ page: 1, limit: 6 }),
+          adminApi.users.list({ page: 1, limit: 6 }),
+          adminApi.auditLogs({ page: 1, limit: 6 }).catch(() => ({ records: [] })),
+          adminApi.healthSummary().catch(() => null),
+        ]);
+        if (cancelled) return;
+        setStats(statsData || null);
+        setPending(pendingData?.records || []);
+        setUsers(usersData?.records || []);
+        setAudit(auditData?.records || []);
+        setHealth(healthData || null);
+      } catch (err) {
+        if (!cancelled) setError(err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  async function verify(companyId, action) {
+    setBusyCompanyId(companyId);
+    try {
+      await adminApi.companies.verify(companyId, {
+        verification_status: action === 'approve' ? 'verified' : 'rejected',
+      });
+      setPending((list) => list.filter((c) => c.id !== companyId));
+    } catch (_e) {
+      /* keep the row; user can retry */
+    } finally {
+      setBusyCompanyId(null);
+    }
+  }
+
+  if (loading) {
+    return (
+      <section className="view active" id="view-dash-admin" style={{ background: 'var(--bone)' }}>
+        <div className="container" style={{ padding: '48px 0' }}>
+          <LoadingState label="Loading admin console…" />
+        </div>
+      </section>
+    );
+  }
+
+  const totalUsers = stats?.users?.total ?? 0;
+  const totalCompanies = stats?.companies?.total ?? 0;
+  const totalJobs = stats?.jobs?.total ?? 0;
+  const totalApps = stats?.applications?.total ?? 0;
+
   return (
     <section className="view active" id="view-dash-admin" style={{ background: 'var(--bone)' }}>
       <div className="dash-layout">
@@ -19,19 +123,17 @@ export default function DashboardAdmin() {
           </div>
           <ul className="dash-nav">
             <li><a className="active"><span className="ic">●</span> Overview</a></li>
-            <li><a><span className="ic">✓</span> Verifications <span className="badge">17</span></a></li>
-            <li><a><span className="ic">⚑</span> Reports & Flags <span className="badge">8</span></a></li>
+            <li><a><span className="ic">✓</span> Verifications <span className="badge">{pending.length}</span></a></li>
+            <li><a><span className="ic">⚑</span> Audit logs <span className="badge">{audit.length}</span></a></li>
             <div className="dash-nav-section">Manage</div>
-            <li><a><span className="ic">◉</span> Users · 240K</a></li>
-            <li><a><span className="ic">◆</span> Companies · 12.4K</a></li>
-            <li><a><span className="ic">▤</span> Job Listings · 48K</a></li>
-            <li><a><span className="ic">★</span> Featured Content</a></li>
+            <li><a><span className="ic">◉</span> Users · {Number(totalUsers).toLocaleString()}</a></li>
+            <li><a><span className="ic">◆</span> Companies · {Number(totalCompanies).toLocaleString()}</a></li>
+            <li><a><span className="ic">▤</span> Job Listings · {Number(totalJobs).toLocaleString()}</a></li>
             <div className="dash-nav-section">System</div>
-            <li><a><span className="ic">▲</span> Analytics</a></li>
-            <li><a><span className="ic">$</span> Billing & Revenue</a></li>
+            <li><a><span className="ic">▲</span> Health summary</a></li>
             <li><a><span className="ic">⎙</span> Logs & Audit</a></li>
             <li><a><span className="ic">⚙</span> Settings</a></li>
-            <li><a><span className="ic">⤓</span> Sign out</a></li>
+            <li><a onClick={logout} style={{ cursor: 'pointer' }}><span className="ic">⤓</span> Sign out</a></li>
           </ul>
         </aside>
 
@@ -39,217 +141,165 @@ export default function DashboardAdmin() {
           <div className="dash-topbar">
             <div>
               <h1>Admin <span className="ital">console</span>.</h1>
-              <p>17 companies awaiting verification · 8 user reports flagged · all systems normal</p>
+              <p>
+                {pending.length} compan{pending.length === 1 ? 'y' : 'ies'} awaiting verification ·
+                {' '}{audit.length} recent audit event{audit.length === 1 ? '' : 's'} ·
+                {' '}{health?.database?.status === 'up' ? 'all systems normal' : 'check health summary'}
+              </p>
             </div>
             <div className="dash-topbar-actions">
-              <button className="btn btn-ghost">Audit log</button>
-              <button className="btn btn-coral">Run system check</button>
+              <button className="btn btn-ghost" type="button">Audit log</button>
             </div>
           </div>
+
+          {error && <ErrorState error={error} />}
 
           <div className="stat-row">
             <div className="stat-card dark">
               <div className="stat-label" style={{ color: 'rgba(245,240,230,.6)' }}>Total users<div className="stat-icon">◉</div></div>
-              <div className="stat-value">240,891</div>
-              <div className="stat-trend">↑ 4,221 this week</div>
+              <div className="stat-value">{Number(totalUsers).toLocaleString()}</div>
+              <div className="stat-trend">All-time</div>
             </div>
             <div className="stat-card">
-              <div className="stat-label">Active companies<div className="stat-icon">◆</div></div>
-              <div className="stat-value">12,402</div>
-              <div className="stat-trend">↑ 87 this week</div>
+              <div className="stat-label">Companies<div className="stat-icon">◆</div></div>
+              <div className="stat-value">{Number(totalCompanies).toLocaleString()}</div>
+              <div className="stat-trend">{pending.length} pending</div>
             </div>
             <div className="stat-card">
-              <div className="stat-label">Live job listings<div className="stat-icon">▤</div></div>
-              <div className="stat-value">48,209</div>
-              <div className="stat-trend">↑ 3,247 this week</div>
+              <div className="stat-label">Job listings<div className="stat-icon">▤</div></div>
+              <div className="stat-value">{Number(totalJobs).toLocaleString()}</div>
+              <div className="stat-trend">Across all companies</div>
             </div>
             <div className="stat-card">
-              <div className="stat-label">MRR · USD<div className="stat-icon">$</div></div>
-              <div className="stat-value">$1.84M</div>
-              <div className="stat-trend">↑ 12.4% MoM</div>
+              <div className="stat-label">Applications<div className="stat-icon">$</div></div>
+              <div className="stat-value">{Number(totalApps).toLocaleString()}</div>
+              <div className="stat-trend">Platform-wide</div>
             </div>
           </div>
 
           <div className="dash-row split">
             <div className="dash-panel">
               <div className="dash-panel-head">
-                <h3>Pending verifications <small>· 17 awaiting review</small></h3>
-                <a href="#">View queue →</a>
+                <h3>Pending verifications <small>· {pending.length} awaiting review</small></h3>
+                <a>View queue →</a>
               </div>
-              <div className="verify-list">
-                <div className="verify-card">
-                  <div className="co-logo lg-3">A</div>
-                  <div className="verify-info">
-                    <strong>Atlas Robotics Inc.</strong>
-                    <small>atlasrobotics.io · Hardware · 24 employees · Submitted 2h ago</small>
-                  </div>
-                  <div className="verify-actions">
-                    <button className="v-reject">Reject</button>
-                    <button className="v-approve">✓ Approve</button>
-                  </div>
+              {pending.length === 0 ? (
+                <p className="muted" style={{ padding: '12px 0' }}>No companies waiting for verification right now.</p>
+              ) : (
+                <div className="verify-list">
+                  {pending.map((c) => (
+                    <div key={c.id} className="verify-card">
+                      <div className="co-logo lg-3">{(c.name || '·')[0]}</div>
+                      <div className="verify-info">
+                        <strong>{c.name}</strong>
+                        <small>
+                          {[c.slug || '', c.industry, c.location || c.country].filter(Boolean).join(' · ')}
+                          {c.created_at ? ` · Submitted ${relative(c.created_at)}` : ''}
+                        </small>
+                      </div>
+                      <div className="verify-actions">
+                        <button
+                          className="v-reject"
+                          type="button"
+                          disabled={busyCompanyId === c.id}
+                          onClick={() => verify(c.id, 'reject')}
+                        >
+                          Reject
+                        </button>
+                        <button
+                          className="v-approve"
+                          type="button"
+                          disabled={busyCompanyId === c.id}
+                          onClick={() => verify(c.id, 'approve')}
+                        >
+                          ✓ Approve
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div className="verify-card">
-                  <div className="co-logo lg-4">N</div>
-                  <div className="verify-info">
-                    <strong>Northwind Studios</strong>
-                    <small>northwind.studio · Game Dev · 12 employees · Submitted 6h ago</small>
-                  </div>
-                  <div className="verify-actions">
-                    <button className="v-reject">Reject</button>
-                    <button className="v-approve">✓ Approve</button>
-                  </div>
-                </div>
-                <div className="verify-card">
-                  <div className="co-logo lg-5">P</div>
-                  <div className="verify-info">
-                    <strong>Pulse Diagnostics</strong>
-                    <small>pulsedx.com · Healthtech · 78 employees · Submitted 1d ago</small>
-                  </div>
-                  <div className="verify-actions">
-                    <button className="v-reject">Reject</button>
-                    <button className="v-approve">✓ Approve</button>
-                  </div>
-                </div>
-                <div className="verify-card">
-                  <div className="co-logo lg-6">M</div>
-                  <div className="verify-info">
-                    <strong>Meridian Capital</strong>
-                    <small>meridiancap.com · Fintech · 312 employees · Submitted 1d ago</small>
-                  </div>
-                  <div className="verify-actions">
-                    <button className="v-reject">Reject</button>
-                    <button className="v-approve">✓ Approve</button>
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
 
             <div className="dash-panel">
               <div className="dash-panel-head">
                 <h3>System health</h3>
-                <span style={{ fontSize: 11, letterSpacing: '.05em', color: 'var(--sage)', fontWeight: 600 }}>● ALL SYSTEMS NORMAL</span>
+                <span style={{ fontSize: 11, letterSpacing: '.05em', color: health?.database?.status === 'up' ? 'var(--sage)' : 'var(--coral)', fontWeight: 600 }}>
+                  ● {health?.database?.status === 'up' ? 'ALL SYSTEMS NORMAL' : 'CHECK STATUS'}
+                </span>
               </div>
-              <div className="health-row"><span>API uptime · 30d</span><strong>99.98%</strong></div>
-              <div className="health-row"><span>Avg response time</span><strong>184ms</strong></div>
-              <div className="health-row"><span>Database</span><span className="health-status">Operational</span></div>
-              <div className="health-row"><span>Search index</span><span className="health-status">Operational</span></div>
-              <div className="health-row"><span>Email delivery</span><span className="health-status warn">Degraded · 92%</span></div>
-              <div className="health-row"><span>Payment gateway</span><span className="health-status">Operational</span></div>
-              <div className="health-row"><span>Storage · 84% used</span><strong style={{ color: 'var(--gold)' }}>8.4 / 10 TB</strong></div>
-              <div className="health-row"><span>Background jobs</span><strong>2,401 / hr</strong></div>
-              <div style={{ marginTop: 18, padding: 14, background: 'var(--bone)', borderRadius: 10, fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>
-                <strong style={{ color: 'var(--ink)', fontFamily: "'Fraunces',serif", display: 'block', marginBottom: 4 }}>Last incident</strong>
-                Resolved May 4 · Email delivery delays from SendGrid endpoint, ~14 min impact
-              </div>
+              <div className="health-row"><span>API</span><span className="health-status">{health?.api?.status || 'up'}</span></div>
+              <div className="health-row"><span>Database</span><span className={`health-status${health?.database?.status === 'up' ? '' : ' warn'}`}>{health?.database?.status || '—'}</span></div>
+              <div className="health-row"><span>Redis cache</span><span className={`health-status${(health?.redis?.status || '').startsWith('up') ? '' : ' warn'}`}>{health?.redis?.status || '—'}</span></div>
+              <div className="health-row"><span>Uptime</span><strong>{health?.uptime_seconds != null ? `${Math.floor(health.uptime_seconds / 60)}m` : '—'}</strong></div>
+              <div className="health-row"><span>Node</span><strong>{health?.node_version || '—'}</strong></div>
             </div>
           </div>
 
           <div className="dash-row split">
             <div className="dash-panel">
               <div className="dash-panel-head">
-                <h3>Recent users <small>· last 24h</small></h3>
-                <a href="#">Manage all →</a>
+                <h3>Recent users <small>· last signups</small></h3>
+                <a>Manage all →</a>
               </div>
-              <table className="dash-table">
-                <thead>
-                  <tr><th>User</th><th>Role</th><th>Joined</th><th>Status</th><th></th></tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td><div className="table-co"><div className="cand-tiny lg-1">SK</div><div><strong>Sara Khan</strong><small>sara.k@gmail.com</small></div></div></td>
-                    <td><small>Candidate</small></td>
-                    <td>2h ago</td>
-                    <td><span className="pill pill-verified">Verified</span></td>
-                    <td><div className="row-actions"><button className="icon-btn">→</button></div></td>
-                  </tr>
-                  <tr>
-                    <td><div className="table-co"><div className="cand-tiny lg-2">M</div><div><strong>Acme Corp</strong><small>hr@acme.io</small></div></div></td>
-                    <td><small>Employer</small></td>
-                    <td>4h ago</td>
-                    <td><span className="pill pill-pending">Pending</span></td>
-                    <td><div className="row-actions"><button className="icon-btn">→</button></div></td>
-                  </tr>
-                  <tr>
-                    <td><div className="table-co"><div className="cand-tiny lg-3">JD</div><div><strong>James Doe</strong><small>j.doe@outlook.com</small></div></div></td>
-                    <td><small>Candidate</small></td>
-                    <td>6h ago</td>
-                    <td><span className="pill pill-verified">Verified</span></td>
-                    <td><div className="row-actions"><button className="icon-btn">→</button></div></td>
-                  </tr>
-                  <tr>
-                    <td><div className="table-co"><div className="cand-tiny lg-7">RX</div><div><strong>spammy_user_42</strong><small>x@temp.io</small></div></div></td>
-                    <td><small>Candidate</small></td>
-                    <td>9h ago</td>
-                    <td><span className="pill pill-flagged">Flagged</span></td>
-                    <td><div className="row-actions"><button className="icon-btn danger">×</button></div></td>
-                  </tr>
-                  <tr>
-                    <td><div className="table-co"><div className="cand-tiny lg-4">EM</div><div><strong>Elena Martin</strong><small>elena@studio.com</small></div></div></td>
-                    <td><small>Candidate</small></td>
-                    <td>11h ago</td>
-                    <td><span className="pill pill-verified">Verified</span></td>
-                    <td><div className="row-actions"><button className="icon-btn">→</button></div></td>
-                  </tr>
-                  <tr>
-                    <td><div className="table-co"><div className="cand-tiny lg-5">QQ</div><div><strong>Quill &amp; Quire</strong><small>jobs@quillco.com</small></div></div></td>
-                    <td><small>Employer</small></td>
-                    <td>14h ago</td>
-                    <td><span className="pill pill-pending">Pending</span></td>
-                    <td><div className="row-actions"><button className="icon-btn">→</button></div></td>
-                  </tr>
-                </tbody>
-              </table>
+              {users.length === 0 ? (
+                <p className="muted" style={{ padding: '12px 0' }}>No users yet.</p>
+              ) : (
+                <table className="dash-table">
+                  <thead>
+                    <tr><th>User</th><th>Role</th><th>Joined</th><th>Status</th><th></th></tr>
+                  </thead>
+                  <tbody>
+                    {users.map((u) => {
+                      const pill = userStatusPill(u.status);
+                      return (
+                        <tr key={u.id}>
+                          <td>
+                            <div className="table-co">
+                              <div className="cand-tiny lg-1">{initials(u.full_name)}</div>
+                              <div>
+                                <strong>{u.full_name || 'User'}</strong>
+                                <small>{u.email}</small>
+                              </div>
+                            </div>
+                          </td>
+                          <td><small>{u.role}</small></td>
+                          <td>{relative(u.created_at)}</td>
+                          <td><span className={`pill ${pill.cls}`}>{pill.label}</span></td>
+                          <td><div className="row-actions"><button className="icon-btn">→</button></div></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
 
             <div className="dash-panel">
               <div className="dash-panel-head">
-                <h3>Flagged content <small>· 8 new</small></h3>
-                <a href="#" style={{ color: 'var(--coral)' }}>Review →</a>
+                <h3>Audit feed <small>· recent admin actions</small></h3>
               </div>
-              <div className="timeline">
-                <div className="tl-item">
-                  <div className="tl-dot coral">⚑</div>
-                  <div className="tl-content">
-                    <strong>Spam job posting reported</strong>
-                    <span><em>Crypto Recruiters LLC</em> · 4 user reports · 1h ago</span>
-                  </div>
+              {audit.length === 0 ? (
+                <p className="muted" style={{ padding: '12px 0' }}>No audit events yet.</p>
+              ) : (
+                <div className="timeline">
+                  {audit.map((a) => (
+                    <div key={a.id} className="tl-item">
+                      <div className="tl-dot coral">⚑</div>
+                      <div className="tl-content">
+                        <strong>{a.action.replace(/_/g, ' ')}</strong>
+                        <span>
+                          {[
+                            a.entity_type && a.entity_id ? `${a.entity_type}#${a.entity_id}` : null,
+                            a.admin_name || a.admin_email,
+                            relative(a.created_at),
+                          ].filter(Boolean).join(' · ')}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div className="tl-item">
-                  <div className="tl-dot coral">⚑</div>
-                  <div className="tl-content">
-                    <strong>Fake company suspected</strong>
-                    <span>Domain mismatch · Auto-flagged · 3h ago</span>
-                  </div>
-                </div>
-                <div className="tl-item">
-                  <div className="tl-dot gold">⚠</div>
-                  <div className="tl-content">
-                    <strong>User account locked</strong>
-                    <span>5 failed logins · spammy_user_42 · 4h ago</span>
-                  </div>
-                </div>
-                <div className="tl-item">
-                  <div className="tl-dot gold">!</div>
-                  <div className="tl-content">
-                    <strong>Salary range below threshold</strong>
-                    <span>Job under min wage rules · 6h ago</span>
-                  </div>
-                </div>
-                <div className="tl-item">
-                  <div className="tl-dot sage">✓</div>
-                  <div className="tl-content">
-                    <strong>Auto-resolved 3 spam reports</strong>
-                    <span>Pattern matched known spam ring · 8h ago</span>
-                  </div>
-                </div>
-                <div className="tl-item">
-                  <div className="tl-dot">⎙</div>
-                  <div className="tl-content">
-                    <strong>GDPR data export request</strong>
-                    <span>User: anna@example.com · 1d ago</span>
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
           </div>
         </div>

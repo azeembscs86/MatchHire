@@ -343,6 +343,37 @@ Defaults set on Joi schemas (e.g. `Joi.number().default(10)`) flow into the cont
 
 ---
 
+## 12b. Dynamic navigation (Frontend integration)
+
+The header in the React frontend reads the menu from
+`GET /public/navigation` (the only `optionalAuth` route on the public
+namespace). The backend service returns a shape the frontend can map
+straight to `<NavLink>` items:
+
+```json
+{
+  "primary":   [{ "key": "...", "label": "...", "to": "...", "end": true }],
+  "actions":   [{ "key": "...", "label": "...", "kind": "auth-signin | auth-signup | logout | link", "to": "..." }],
+  "dashboard": { "label": "...", "to": "..." } | null,
+  "user":      { "id": ..., "full_name": "...", "role": "..." } | null
+}
+```
+
+Visibility rules (matches the project spec):
+
+| Role          | Menu additions                                                   |
+| ------------- | ---------------------------------------------------------------- |
+| Anonymous     | Home, Jobs, Companies, Candidates, For Employers + Sign in/Join |
+| Candidate     | + My Profile, Preferences, Favorites + Candidate Dashboard       |
+| Employer      | + Company Profile, Job Postings + Company Dashboard              |
+| Admin         | + Admin Console + Admin Dashboard                                |
+
+The payload is generated on every request (not cached) because it is
+role-aware and very small. To add a new menu entry, edit
+`src/services/public.service.js > navigation(user)`. **Do not branch
+in the frontend Header** — keep the menu canonically owned by the
+backend so the same logic flows to mobile / SSR / future clients.
+
 ## 13. Swagger usage
 
 The OpenAPI 3.0 spec is generated at startup by [src/docs/swagger.js](../src/docs/swagger.js).

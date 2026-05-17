@@ -70,3 +70,13 @@ exports.featuredJobs = async (req, res) => {
   const data = await service.listJobs({ is_featured: true, page: 1, limit: Math.min(Number(req.query.limit) || 8, 24) });
   return response.success(res, { records: data.records }, 'Featured jobs returned');
 };
+
+/**
+ * Role-aware navigation menu. Uses `optionalAuth` upstream so the
+ * controller sees `req.user` when a valid token is present and `null`
+ * otherwise - one endpoint serves both anonymous and authenticated UIs.
+ */
+exports.navigation = async (req, res) => {
+  const data = service.navigation(req.user || null);
+  return response.success(res, data, 'Navigation returned');
+};
