@@ -1,7 +1,7 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 const mysql = require('mysql2/promise');
 const config = require('../config/env');
 const logger = require('../utils/logger');

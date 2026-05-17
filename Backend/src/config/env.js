@@ -12,7 +12,7 @@
  * always provide JWT_SECRET / DB_PASSWORD / etc.
  */
 
-const path = require('path');
+const path = require('node:path');
 const dotenv = require('dotenv');
 
 const NODE_ENV = process.env.NODE_ENV || 'local';

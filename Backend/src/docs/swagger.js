@@ -3,22 +3,29 @@
 /**
  * Swagger / OpenAPI entrypoint
  * ----------------------------
- * Builds the OpenAPI 3.0 document for the MatchHire API by:
+ * Builds the OpenAPI 3.0 document for the MatchHire API.
  *
- *  1. Merging the domain schemas in `src/docs/schemas/*.schema.js` into the
- *     `components.schemas`, `components.responses`, and `components.examples`
- *     buckets.
- *  2. Scanning every route file under `src/routes/` for `@swagger` JSDoc
- *     blocks (via `swagger-jsdoc`) and merging the resulting paths.
+ * Pipeline:
+ *   1. Merge the per-domain schema bundles from `src/docs/schemas/*.schema.js`
+ *      into `components.schemas`, `components.responses`, and
+ *      `components.examples`.
+ *   2. Scan every `src/routes/*.js` file for JSDoc blocks that contain
+ *      `@swagger` and parse the YAML body into the `paths` object.
  *
- * The final spec is mounted at `/api-docs` by `app.js` and is also served
- * raw on `/api-docs.json` for tooling.
+ * The scanner is intentionally tiny and dependency-light - no
+ * `swagger-jsdoc` (which dragged in deprecated `inflight`, `lodash.get`,
+ * `lodash.isequal`, old `glob`, and triggered DEP0169 `url.parse()` at
+ * runtime). We use only `node:fs`, `node:path`, and `js-yaml`.
  *
- * Run as `node src/docs/swagger.js` to print the generated spec to stdout.
+ * The final spec is mounted at `/api-docs` by `app.js` and served raw on
+ * `/api-docs.json`.  Run as `node src/docs/swagger.js` to dump the spec
+ * to stdout.
  */
 
-const path = require('path');
-const swaggerJSDoc = require('swagger-jsdoc');
+const fs = require('node:fs');
+const path = require('node:path');
+const yaml = require('js-yaml');
+
 const config = require('../config/env');
 
 const commonSchema = require('./schemas/common.schema');
@@ -28,7 +35,10 @@ const employerSchema = require('./schemas/employer.schema');
 const adminSchema = require('./schemas/admin.schema');
 const publicSchema = require('./schemas/public.schema');
 
-/** Merge `{schemas, responses, examples}` blocks from each domain schema. */
+/**
+ * Merge the `{schemas, responses, examples}` blocks exported by each
+ * domain schema file into a single components object.
+ */
 function mergeComponents(parts) {
   const out = { schemas: {}, responses: {}, examples: {} };
   for (const part of parts) {
@@ -44,8 +54,72 @@ const components = mergeComponents([
   commonSchema, authSchema, candidateSchema, employerSchema, adminSchema, publicSchema,
 ]);
 
-/** Static OpenAPI definition: metadata, servers, security, tags, components. */
-const definition = {
+/**
+ * Extract all `@swagger` JSDoc blocks from a single source file.
+ * Returns an array of YAML strings (one per JSDoc block).
+ *
+ * Recognises the conventional layout:
+ *   /**
+ *    * @swagger
+ *    * /some/path:
+ *    *   post:
+ *    *     ...
+ *    *\/
+ */
+function extractSwaggerBlocks(source) {
+  const blocks = [];
+  const jsdoc = /\/\*\*([\s\S]*?)\*\//g;
+  let match;
+  while ((match = jsdoc.exec(source)) !== null) {
+    const raw = match[1];
+    if (!raw.includes('@swagger')) continue;
+    const yamlBody = raw
+      .split('\n')
+      .map((line) => line.replace(/^\s*\*\s?/, ''))
+      .join('\n')
+      .replace(/^\s*@swagger\s*/m, '')
+      .trim();
+    if (yamlBody) blocks.push(yamlBody);
+  }
+  return blocks;
+}
+
+/**
+ * Scan every `*.js` file in the routes directory and parse the YAML
+ * inside each `@swagger` block. Each parsed object is shaped like an
+ * OpenAPI `paths` fragment and merged into the final `paths` object.
+ */
+function collectPaths() {
+  const routesDir = path.resolve(__dirname, '..', 'routes');
+  const paths = {};
+  if (!fs.existsSync(routesDir)) return paths;
+
+  const files = fs.readdirSync(routesDir)
+    .filter((f) => f.endsWith('.js'))
+    .map((f) => path.join(routesDir, f));
+
+  for (const file of files) {
+    const source = fs.readFileSync(file, 'utf8');
+    const blocks = extractSwaggerBlocks(source);
+    for (const block of blocks) {
+      let parsed;
+      try {
+        parsed = yaml.load(block, { filename: file });
+      } catch (err) {
+        const rel = path.relative(process.cwd(), file);
+        throw new Error(`Failed to parse @swagger block in ${rel}: ${err.message}`);
+      }
+      if (!parsed || typeof parsed !== 'object') continue;
+      for (const [pathName, ops] of Object.entries(parsed)) {
+        paths[pathName] = { ...(paths[pathName] || {}), ...ops };
+      }
+    }
+  }
+  return paths;
+}
+
+/** Static OpenAPI 3.0 root: metadata, servers, security, tags, components. */
+const baseDefinition = {
   openapi: '3.0.3',
   info: {
     title: 'MatchHire Job Portal API',
@@ -69,10 +143,14 @@ const definition = {
   },
   servers: [
     { url: `http://localhost:${config.port}${config.apiPrefix}`, description: 'Local development' },
-    { url: `{scheme}://{host}${config.apiPrefix}`, description: 'Custom', variables: {
-      scheme: { default: 'https', enum: ['https', 'http'] },
-      host: { default: 'api.matchhire.example.com' },
-    } },
+    {
+      url: `{scheme}://{host}${config.apiPrefix}`,
+      description: 'Custom',
+      variables: {
+        scheme: { default: 'https', enum: ['https', 'http'] },
+        host: { default: 'api.matchhire.example.com' },
+      },
+    },
   ],
   tags: [
     { name: 'Auth', description: 'Authentication and account flows' },
@@ -97,12 +175,11 @@ const definition = {
   security: [{ bearerAuth: [] }],
 };
 
-/** Glob-style list of files swagger-jsdoc scans for `@swagger` blocks. */
-const apis = [
-  path.resolve(__dirname, '..', 'routes', '*.js'),
-];
-
-const swaggerSpec = swaggerJSDoc({ definition, apis });
+/** Final, fully assembled OpenAPI 3.0 spec. */
+const swaggerSpec = {
+  ...baseDefinition,
+  paths: collectPaths(),
+};
 
 if (require.main === module) {
   process.stdout.write(JSON.stringify(swaggerSpec, null, 2));
