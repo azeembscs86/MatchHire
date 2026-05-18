@@ -123,3 +123,16 @@ exports.geolocate = async (req, res) => {
   const data = await geo.lookup(req);
   return response.success(res, data, 'Geolocation resolved');
 };
+
+/**
+ * Trending jobs feed. Reads the Redis sorted set populated by view /
+ * favorite / apply events; falls back to "newest published" jobs
+ * when Redis is offline so the home page always has content.
+ */
+exports.trendingJobs = async (req, res) => {
+  const scope = req.query.scope || 'global';
+  const value = req.query.value || null;
+  const limit = Math.min(Number(req.query.limit) || 8, 24);
+  const data = await service.trendingJobs({ scope, value, limit });
+  return response.success(res, { records: data }, 'Trending jobs returned');
+};

@@ -34,7 +34,14 @@ async function send({ to, subject, text, html }) {
   return { ok: true, deliveredAt: new Date(), html: !!html };
 }
 
-/** Verification email - returns the URL so the API can include it in dev. */
+/**
+ * Verification email - returns the URL so the API can include it in dev.
+ *
+ * This function is also invoked directly by the email queue's worker.
+ * The producer side (auth.service.issueEmailVerification) routes
+ * through `emailQueue.add('send-verification', ...)` first, which
+ * either pushes to Redis or falls back to this function inline.
+ */
 async function sendVerificationEmail({ user, token }) {
   const url = `${FRONT_END_BASE}/verify-email/${token}`;
   await send({

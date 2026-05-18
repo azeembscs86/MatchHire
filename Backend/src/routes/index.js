@@ -19,6 +19,8 @@ const employerRoutes = require('./employer.routes');
 const publicRoutes = require('./public.routes');
 const adminRoutes = require('./admin.routes');
 const fileRoutes = require('./files.routes');
+const searchRoutes = require('./search.routes');
+const reindexRoutes = require('./index.routes');
 
 router.use('/auth', authRoutes);
 router.use('/candidates', candidateRoutes);
@@ -26,5 +28,7 @@ router.use('/employers', employerRoutes);
 router.use('/public', publicRoutes);
 router.use('/admin', adminRoutes);
 router.use('/files', fileRoutes);
+router.use('/search', searchRoutes);
+router.use('/index', reindexRoutes);
 
 module.exports = router;

@@ -65,9 +65,30 @@ router.get('/jobs/search', validate(v.jobsQuery, 'query'), asyncHandler(controll
  *     responses:
  *       '200': { $ref: '#/components/responses/PaginatedJobs' }
  */
-// `/jobs/location-based` must precede `/jobs/:id` so Express does not
-// match `location-based` as the `:id` parameter.
+// `/jobs/location-based` and `/jobs/trending` must precede `/jobs/:id`
+// so Express does not match `location-based` / `trending` as the
+// `:id` path parameter.
 router.get('/jobs/location-based', optionalAuth, asyncHandler(controller.locationBased));
+
+/**
+ * @swagger
+ * /public/jobs/trending:
+ *   get:
+ *     tags: [Public]
+ *     summary: Trending jobs (Redis sorted set, MySQL fallback)
+ *     description: |
+ *       Ranks open jobs by recent activity (view + save + apply
+ *       weights) within an optional country/city scope. Falls back to
+ *       "newest published" when Redis is offline.
+ *     security: []
+ *     parameters:
+ *       - { name: scope, in: query, schema: { type: string, enum: [global, country, city], default: global } }
+ *       - { name: value, in: query, schema: { type: string }, description: country or city name when scope is set }
+ *       - { name: limit, in: query, schema: { type: integer, default: 8, maximum: 24 } }
+ *     responses:
+ *       '200': { description: Trending jobs, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ */
+router.get('/jobs/trending', asyncHandler(controller.trendingJobs));
 
 /**
  * @swagger

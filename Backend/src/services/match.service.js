@@ -31,6 +31,8 @@
  * rejection message if not.
  */
 
+const cache = require('./cache.service');
+
 const LEVEL_TO_YEARS = {
   entry: 0, junior: 1, mid: 3, senior: 6, lead: 9, executive: 12,
 };
@@ -172,8 +174,28 @@ function validateApplication(job, candidate) {
   };
 }
 
+/**
+ * Cached scorer used by hot paths (match recommendations + apply
+ * validation). The cache key includes both the candidate and job
+ * id; invalidation happens through `cache.invalidate.candidate*`
+ * and `cache.invalidate.job(...)` whenever upstream data shifts.
+ *
+ * When Redis is unavailable this falls back to the unc ached
+ * `scoreJob`. Either way the algorithm is the same.
+ */
+async function scoreJobCached(job, candidate) {
+  if (!job?.id || !candidate?.id) return scoreJob(job, candidate);
+  const key = cache.Keys.matchScore(candidate.id, job.id);
+  const hit = await cache.get(key);
+  if (hit) return hit;
+  const result = scoreJob(job, candidate);
+  await cache.set(key, result, cache.TTL.MATCH_SCORE);
+  return result;
+}
+
 module.exports = {
   scoreJob,
+  scoreJobCached,
   validateApplication,
   ACCEPT_THRESHOLD,
   BORDERLINE_THRESHOLD,

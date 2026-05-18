@@ -19,6 +19,7 @@ const companyRepo = require('../repositories/company.repository');
 const candidateRepo = require('../repositories/candidate.repository');
 const metaRepo = require('../repositories/meta.repository');
 const matchService = require('./match.service');
+const trendingService = require('./trending.service');
 const cache = require('../cache/cache.helper');
 const { buildPagination } = require('../utils/pagination');
 const AppError = require('../utils/AppError');
@@ -45,13 +46,31 @@ async function getJob(id) {
   const cached = await cache.getCache(key);
   if (cached) {
     await jobRepo.incrementViews(id);
+    // Bump trending sorted set on every view (Redis no-ops if offline).
+    trendingService.bumpEvent({
+      jobId: id, event: 'view', country: cached.country, city: cached.city,
+    }).catch(() => {});
     return cached;
   }
   const job = await jobRepo.findById(id);
   if (!job || job.status === 'archived') throw new AppError('Job not found', 404);
   await jobRepo.incrementViews(id);
+  trendingService.bumpEvent({
+    jobId: id, event: 'view', country: job.country, city: job.city,
+  }).catch(() => {});
   await cache.setCache(key, job, cache.TTL.JOB_DETAIL);
   return job;
+}
+
+/**
+ * Trending jobs feed used by the home page rail. Returns hydrated job
+ * rows ranked by the Redis sorted set (view + save + apply weights);
+ * falls back to "newest published" when Redis is offline.
+ */
+async function trendingJobs({ scope = 'global', value = null, limit = 8 } = {}) {
+  const lim = Math.min(Math.max(1, Number(limit) || 8), 24);
+  const rows = await trendingService.top({ scope, value, limit: lim });
+  return rows;
 }
 
 async function listCompanies(filters) {
@@ -218,4 +237,5 @@ module.exports = {
   locationBasedJobs,
   listCountries,
   listCities,
+  trendingJobs,
 };

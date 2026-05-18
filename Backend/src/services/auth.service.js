@@ -33,6 +33,7 @@ const candidateRepo = require('../repositories/candidate.repository');
 const companyRepo = require('../repositories/company.repository');
 const employerRepo = require('../repositories/employer.repository');
 const emailService = require('./email.service');
+const emailQueue = require('../queues/email.queue');
 const AppError = require('../utils/AppError');
 const { ROLES } = require('../constants/roles');
 
@@ -85,7 +86,12 @@ async function issueEmailVerification(user, meta = {}) {
     sent_to: user.email,
     ip_address: meta.ip || null,
   });
-  const { url } = await emailService.sendVerificationEmail({ user, token });
+  // Send through the email queue when Redis/BullMQ is up - otherwise
+  // the queue wrapper falls back to inline send. Either way the URL
+  // is computed locally so the dev API response can include it.
+  const FRONT = process.env.FRONTEND_BASE_URL || 'http://localhost:5173';
+  const url = `${FRONT}/verify-email/${token}`;
+  await emailQueue.add('send-verification', { user: { id: user.id, email: user.email, full_name: user.full_name }, token });
   return { token, url, expires_at };
 }
 

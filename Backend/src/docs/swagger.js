@@ -163,6 +163,7 @@ const baseDefinition = {
     { name: 'Candidates', description: 'Authenticated candidate endpoints (all POST)' },
     { name: 'Employers', description: 'Authenticated employer endpoints (all POST)' },
     { name: 'Admin', description: 'Admin / super_admin moderation endpoints (all POST)' },
+    { name: 'Search', description: 'Full-text + filtered search (ElasticSearch with MySQL fallback)' },
   ],
   components: {
     securitySchemes: {
