@@ -9,6 +9,12 @@
     "migrate": "node src/database/migrate.js",
     "migrate:rollback": "node src/database/migrate.js rollback",
     "seed": "node src/database/seed.js",
+    "seed:bulk": "node src/database/seed.bulk.js",
+    "seed:bulk:rollback": "node src/database/seed.bulk.js rollback",
+    "seed:industries": "node src/database/seed.industries.js",
+    "seed:industries:rollback": "node src/database/seed.industries.js rollback",
+    "seed:expand": "node src/database/seed.expand.js",
+    "seed:skills": "node src/database/seed.skills.js",
     "docs": "node src/docs/swagger.js",
     "lint": "eslint src",
     "test": "jest --passWithNoTests"
@@ -27,9 +33,9 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@elastic/elasticsearch": "^8.19.1",
+    "@elastic/elasticsearch": "^8.15.0",
     "bcryptjs": "^2.4.3",
-    "bullmq": "^5.76.10",
+    "bullmq": "^5.20.0",
     "compression": "^1.7.4",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
@@ -44,6 +50,7 @@
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
     "mysql2": "^3.11.4",
+    "nodemailer": "^8.0.7",
     "pdf-parse": "^1.1.4",
     "swagger-ui-express": "^5.0.1",
     "winston": "^3.15.0"

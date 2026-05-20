@@ -14,7 +14,7 @@ const resumeController = require('../controllers/resume.controller');
 const validate = require('../middlewares/validate.middleware');
 const { requireAuth } = require('../middlewares/auth.middleware');
 const { requireCandidate } = require('../middlewares/role.middleware');
-const { resumeUpload } = require('../middlewares/upload.middleware');
+const { resumeUpload, imageUploadSingle } = require('../middlewares/upload.middleware');
 const asyncHandler = require('../utils/asyncHandler');
 const v = require('../validators/candidate.validator');
 const pubV = require('../validators/public.validator');
@@ -163,23 +163,139 @@ router.post('/profile/update', validate(v.profileUpdate), asyncHandler(controlle
  * @swagger
  * /candidates/skills:
  *   post:
- *     tags: [Candidates]
- *     summary: Replace the candidate's full set of skills
+ *     tags: [Skills]
+ *     summary: Set or append candidate skills (multi-select + custom)
+ *     description: |
+ *       Two modes:
+ *
+ *         - `mode: "set"` (default) — REPLACES the candidate's full
+ *           skill set. Enforces 3..30 skills.
+ *         - `mode: "add"` — APPENDS without disturbing existing
+ *           skills. Enforces total <= 30. Used by the picker's
+ *           "Add custom skill" action.
+ *
+ *       Each entry is either:
+ *
+ *         - `{ skill_id, proficiency?, years_experience? }` (picked
+ *            from the catalogue), OR
+ *         - `{ name, proficiency?, years_experience? }` (free-text;
+ *            the catalogue is searched case-insensitively and a new
+ *            row is created if no match is found).
+ *
+ *       Duplicate prevention is enforced both client-side (the
+ *       picker de-dupes) and database-side
+ *       (`UNIQUE(candidate_user_id, skill_id)`).
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
- *           schema: { $ref: '#/components/schemas/CandidateSkillsUpdate' }
- *           example:
- *             skills:
- *               - { skill_id: 1, proficiency: "advanced", years_experience: 6 }
- *               - { skill_id: 4, proficiency: "expert", years_experience: 7 }
+ *           schema:
+ *             type: object
+ *             required: [skills]
+ *             properties:
+ *               mode:
+ *                 type: string
+ *                 enum: [set, add]
+ *                 default: set
+ *               skills:
+ *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 30
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     skill_id:         { type: integer }
+ *                     name:             { type: string, maxLength: 80 }
+ *                     proficiency:      { type: string, enum: [beginner, intermediate, advanced, expert] }
+ *                     years_experience: { type: number, minimum: 0, maximum: 60 }
+ *           examples:
+ *             setFromCatalogue:
+ *               summary: Replace the whole set with catalogue picks
+ *               value:
+ *                 mode: set
+ *                 skills:
+ *                   - { skill_id: 12, proficiency: 'advanced', years_experience: 5 }
+ *                   - { skill_id: 14, proficiency: 'expert',   years_experience: 6 }
+ *                   - { skill_id: 31, proficiency: 'intermediate', years_experience: 2 }
+ *             addCustom:
+ *               summary: Add a single free-text custom skill
+ *               value:
+ *                 mode: add
+ *                 skills:
+ *                   - { name: 'Strapi CMS', proficiency: 'intermediate', years_experience: 1 }
  *     responses:
- *       '200': { description: Skills updated, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
- *       '422': { $ref: '#/components/responses/ValidationError' }
+ *       '200':
+ *         description: Skills saved
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/SuccessEnvelope' }
+ *       '422':
+ *         description: Bounds violation (<3 on set, >30 total) or invalid entry
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ValidationEnvelope' }
  */
 router.post('/skills', validate(v.skillsUpdate), asyncHandler(controller.updateSkills));
+
+/**
+ * @swagger
+ * /candidates/skills/list:
+ *   post:
+ *     tags: [Skills]
+ *     summary: Return the authenticated candidate's skill set
+ *     description: |
+ *       Convenience endpoint so the SkillsPicker doesn't have to
+ *       hit `/candidates/profile` (which returns the full read
+ *       model) when it only needs the skill array.
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       '200':
+ *         description: Skills
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/SuccessEnvelope' }
+ *             example:
+ *               Response: { responseCode: 1, status: 'Success', message: 'Skills returned' }
+ *               Data:
+ *                 skills:
+ *                   - { id: 12, name: 'React.js', proficiency: 'advanced', years_experience: 5 }
+ */
+router.post('/skills/list', asyncHandler(controller.listMySkills));
+
+/**
+ * @swagger
+ * /candidates/skills/{skill_id}:
+ *   delete:
+ *     tags: [Skills]
+ *     summary: Remove a single skill from the authenticated candidate's set
+ *     description: |
+ *       Most authenticated mutations in this codebase are POST per
+ *       project rule; this DELETE matches the public product spec
+ *       and is paired with a POST alias at
+ *       `/candidates/skills/{skill_id}/remove` for projects that
+ *       prefer to stay POST-only.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: skill_id, in: path, required: true, schema: { type: integer } }]
+ *     responses:
+ *       '200': { $ref: '#/components/responses/EmptySuccess' }
+ *       '404': { $ref: '#/components/responses/NotFoundError' }
+ */
+router.delete('/skills/:skill_id', asyncHandler(controller.removeSkill));
+
+/**
+ * @swagger
+ * /candidates/skills/{skill_id}/remove:
+ *   post:
+ *     tags: [Skills]
+ *     summary: POST alias of DELETE /candidates/skills/{skill_id}
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: skill_id, in: path, required: true, schema: { type: integer } }]
+ *     responses:
+ *       '200': { $ref: '#/components/responses/EmptySuccess' }
+ *       '404': { $ref: '#/components/responses/NotFoundError' }
+ */
+router.post('/skills/:skill_id/remove', asyncHandler(controller.removeSkill));
 
 /**
  * @swagger
@@ -406,5 +522,184 @@ router.post('/applications/:jobId/validate-and-apply',
   validate(v.validateAndApply),
   asyncHandler(controller.validateAndApply)
 );
+
+/**
+ * @swagger
+ * /candidates/profile-match:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: Profile completion + recommended skills/titles + AI suggestions
+ *     description: |
+ *       Diagnostic endpoint used by the candidate dashboard / Home page.
+ *       Returns the profile completion percentage, the list of missing
+ *       profile fields, recommended skills (sampled from current market
+ *       demand on similar roles), recommended job titles, and AI-style
+ *       profile + career improvement copy.
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema: { type: object }
+ *     responses:
+ *       '200':
+ *         description: Profile match payload
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/SuccessEnvelope' }
+ *             example:
+ *               Response: { responseCode: 1, status: 'Success', message: 'Profile match returned' }
+ *               Data:
+ *                 profileCompletion: 65
+ *                 missingFields:
+ *                   - { field: 'linkedin_url', label: 'LinkedIn URL' }
+ *                   - { field: 'resume_url', label: 'uploaded resume' }
+ *                 skills:
+ *                   - { id: 1, name: 'Node.js', proficiency: 'advanced' }
+ *                 recommendedSkills:
+ *                   - { name: 'Docker', demand: 18 }
+ *                   - { name: 'AWS', demand: 14 }
+ *                 recommendedJobTitles: ['Backend Engineer', 'API Developer', 'Node.js Developer']
+ *                 aiSuggestions:
+ *                   profileImprovement: ['Add a LinkedIn URL', 'List at least 5 skills']
+ *                   careerImprovement: 'You are positioned for senior roles. Adding Docker, AWS, Kubernetes would open up...'
+ *                   missingSkillSuggestion: 'You can improve your match by learning Docker, AWS, and Kubernetes.'
+ *                 profileStrengthBands: { weak: false, partial: true, strong: false }
+ *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ */
+router.post('/profile-match', asyncHandler(controller.profileMatch));
+
+/**
+ * @swagger
+ * /candidates/profile-image:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: Upload or replace the candidate's profile image
+ *     description: |
+ *       Multipart upload, field name `image`. JPG / PNG / WEBP only,
+ *       up to 2MB. Magic-number sniff + extension whitelist defend
+ *       against renamed executables. Any prior image is soft-deleted
+ *       on disk so it's recoverable. Returns the storage path AND a
+ *       fresh 7-day signed URL the SPA can render immediately.
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               image: { type: string, format: binary }
+ *     responses:
+ *       '200':
+ *         description: Uploaded
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/SuccessEnvelope' }
+ *             example:
+ *               Response: { responseCode: 1, status: 'Success', message: 'Profile image uploaded' }
+ *               Data:
+ *                 profile_image: 'profile-images/9c3a...8e.jpg'
+ *                 image_url: '/api/v1/files/profile-images/9c3a...8e.jpg?exp=1747876800&sig=...'
+ *       '413':
+ *         description: Image exceeds the 2MB limit
+ *       '415':
+ *         description: Unsupported image type
+ */
+router.post(
+  '/profile-image',
+  imageUploadSingle('image'),
+  asyncHandler(controller.uploadProfileImage)
+);
+
+/**
+ * @swagger
+ * /candidates/profile-image:
+ *   delete:
+ *     tags: [Candidates]
+ *     summary: Remove the candidate's profile image
+ *     description: |
+ *       Clears `candidate_profiles.profile_image` + `users.avatar_url`
+ *       and soft-deletes the file. Returns the now-empty image
+ *       fields so the SPA can switch to the default avatar without
+ *       a second fetch.
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       '200': { $ref: '#/components/responses/EmptySuccess' }
+ *       '404':
+ *         description: No image to remove
+ */
+router.delete('/profile-image', asyncHandler(controller.deleteProfileImage));
+
+/**
+ * @swagger
+ * /candidates/profile-completion:
+ *   get:
+ *     tags: [Candidates]
+ *     summary: Per-section profile completion breakdown
+ *     description: |
+ *       Returns the overall 0-100 completion score and an array of
+ *       sections, each with its own weight, earned points, percent,
+ *       complete flag, and a human-readable hint when not yet
+ *       complete. Sections (per spec):
+ *
+ *         - profile_image (10%)
+ *         - basic_info (15%)
+ *         - contact_info (10%)
+ *         - skills_expertise (15%)
+ *         - work_experience (15%)
+ *         - education (10%)
+ *         - resume_upload (10%)
+ *         - job_preferences (10%)
+ *         - social_links (5%)
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       '200':
+ *         description: Completion breakdown
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/SuccessEnvelope' }
+ *             example:
+ *               Response: { responseCode: 1, status: 'Success', message: 'Profile completion returned' }
+ *               Data:
+ *                 score: 62
+ *                 totals: { earned: 62, max: 100 }
+ *                 sections:
+ *                   - { key: profile_image, label: 'Profile image', weight: 10, earned: 0, percent: 0, complete: false, hint: 'Upload your profile image to improve profile visibility.' }
+ *                   - { key: basic_info, label: 'Basic info', weight: 15, earned: 15, percent: 100, complete: true, hint: null }
+ */
+router.get('/profile-completion', asyncHandler(controller.profileCompletion));
+
+/**
+ * @swagger
+ * /candidates/review-profile:
+ *   get:
+ *     tags: [Candidates]
+ *     summary: Composite read for the Review Profile page
+ *     description: |
+ *       One round-trip aggregation: user, profile, signed image URL,
+ *       skills, preferences, resume metadata, parsed-resume preview,
+ *       per-section completion breakdown, and a flat `missing[]`
+ *       list for the page's empty-state banner.
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       '200':
+ *         description: Review profile payload
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/SuccessEnvelope' }
+ *             example:
+ *               Response: { responseCode: 1, status: 'Success', message: 'Review profile returned' }
+ *               Data:
+ *                 user: { id: 1492, full_name: 'Azeem Akram', email: 'azeem.akram78@gmail.com', role: 'candidate' }
+ *                 profile: { headline: 'Senior Full-Stack Engineer', current_title: 'Senior Full-Stack Engineer' }
+ *                 image_url: '/api/v1/files/profile-images/abc.jpg?exp=...&sig=...'
+ *                 skills: [{ id: 12, name: 'React.js' }]
+ *                 preferences: { desired_titles: 'Full-Stack Engineer' }
+ *                 resume: { id: 7, original_name: 'cv.pdf' }
+ *                 completion: { score: 62, sections: [] }
+ *                 missing: [{ key: 'profile_image', label: 'Profile image', hint: 'Upload your profile image to improve profile visibility.' }]
+ */
+router.get('/review-profile', asyncHandler(controller.reviewProfile));
 
 module.exports = router;

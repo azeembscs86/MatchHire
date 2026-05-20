@@ -12,6 +12,11 @@
  */
 
 const service = require('../services/candidate.service');
+const profileMatchService = require('../services/profileMatch.service');
+const skillService = require('../services/skill.service');
+const profileImageService = require('../services/profileImage.service');
+const reviewProfileService = require('../services/reviewProfile.service');
+const candidateRepo = require('../repositories/candidate.repository');
 const response = require('../utils/response.helper');
 const { buildPagination } = require('../utils/pagination');
 
@@ -27,10 +32,99 @@ exports.updateProfile = async (req, res) => {
   return response.success(res, data, 'Profile updated successfully');
 };
 
-/** Replace the full set of candidate skills (idempotent). */
+/**
+ * POST /candidates/skills
+ *
+ * Two shapes supported:
+ *   - `{ skills: [...], mode: 'set' }` (default) — replaces the
+ *     entire skill set. Enforces the 3..30 bound.
+ *   - `{ skills: [...], mode: 'add' }` — appends without disturbing
+ *     existing skills. Useful for the "Add custom skill" path on
+ *     the picker.
+ *
+ * Each entry can be either `{ skill_id, proficiency?, years_experience? }`
+ * (autocomplete pick) or `{ name, proficiency?, years_experience? }`
+ * (free-text custom skill — ensured-or-created in the catalogue).
+ */
 exports.updateSkills = async (req, res) => {
-  const data = await service.updateSkills(req.user.id, req.body.skills);
-  return response.success(res, { skills: data }, 'Skills updated successfully');
+  const mode = (req.body?.mode || 'set').toLowerCase();
+  const skills = req.body?.skills || [];
+  const updated = mode === 'add'
+    ? await skillService.addSkillsForCandidate(req.user.id, skills)
+    : await skillService.setSkillsForCandidate(req.user.id, skills);
+  return response.success(
+    res,
+    { skills: updated, mode },
+    mode === 'add' ? 'Skills added' : 'Skills updated successfully'
+  );
+};
+
+/**
+ * DELETE /candidates/skills/:skill_id
+ * Single-skill removal. The convention in this project for
+ * authenticated APIs is POST-only, so this DELETE is registered
+ * alongside a POST alias (see candidate.routes.js).
+ */
+exports.removeSkill = async (req, res) => {
+  const skillId = Number(req.params.skill_id || req.params.skillId);
+  const skills = await skillService.removeSkillForCandidate(req.user.id, skillId);
+  return response.success(res, { skills }, 'Skill removed');
+};
+
+/** GET-equivalent: returns the authed candidate's current skill set. */
+exports.listMySkills = async (req, res) => {
+  const skills = await skillService.listForCandidate(req.user.id);
+  return response.success(res, { skills }, 'Skills returned');
+};
+
+/**
+ * POST /candidates/profile-image (multipart, field `image`)
+ * Uploads or replaces the candidate's profile image. Returns the
+ * relative storage path AND a fresh signed URL the frontend can
+ * render immediately.
+ */
+exports.uploadProfileImage = async (req, res) => {
+  const data = await profileImageService.uploadForUser(req.user.id, req.file);
+  return response.success(res, data, 'Profile image uploaded');
+};
+
+/**
+ * DELETE /candidates/profile-image
+ * Removes the candidate's profile image. The underlying file is
+ * soft-deleted on disk (renamed with a `.deleted-<ts>` suffix) so an
+ * accidental click is recoverable by an admin.
+ */
+exports.deleteProfileImage = async (req, res) => {
+  const data = await profileImageService.removeForUser(req.user.id);
+  return response.success(res, data, 'Profile image removed');
+};
+
+/**
+ * GET /candidates/profile-completion
+ * Returns the per-section breakdown of the profile completion
+ * score: { score: 0..100, sections: [...], totals: { earned, max } }.
+ * The frontend renders the progress bar from `score` and per-section
+ * hints from each `sections[].hint`.
+ *
+ * Note: this is a GET on an authenticated endpoint — a small,
+ * explicit exception to the project's "POST-only when authed" rule,
+ * matching the product spec verbatim.
+ */
+exports.profileCompletion = async (req, res) => {
+  const data = await candidateRepo.computeCompletionBreakdown(req.user.id);
+  return response.success(res, data, 'Profile completion returned');
+};
+
+/**
+ * GET /candidates/review-profile
+ * Composite read for the Review Profile page — user, profile,
+ * image URL, skills, preferences, resume, parsed-resume preview,
+ * completion breakdown, and a flat `missing` list for the empty-
+ * state banner.
+ */
+exports.reviewProfile = async (req, res) => {
+  const data = await reviewProfileService.build(req.user.id);
+  return response.success(res, data, 'Review profile returned');
 };
 
 /** Upsert candidate job preferences (titles, locations, salary range, etc). */
@@ -92,6 +186,17 @@ exports.dashboardStats = async (req, res) => {
 exports.matchJobs = async (req, res) => {
   const data = await service.matchJobs(req.user.id, req.body || {});
   return response.list(res, data.records, null, 'Ranked job matches');
+};
+
+/**
+ * POST /candidates/profile-match
+ *
+ * Read-only diagnostic: profile completion percentage, missing fields,
+ * recommended skills/titles, and AI-style profile + career suggestions.
+ */
+exports.profileMatch = async (req, res) => {
+  const data = await profileMatchService.buildProfileMatch(req.user.id);
+  return response.success(res, data, 'Profile match returned');
 };
 
 /** POST /candidates/applications/:jobId/validate-and-apply */

@@ -96,16 +96,43 @@ router.post('/register/employer', authLimiter, validate(v.registerEmployer), asy
  * /auth/login:
  *   post:
  *     tags: [Auth]
- *     summary: Login with email + password
+ *     summary: Login with email + password (Remember Me supported)
+ *     description: |
+ *       When `rememberMe` is true the backend issues a 90-day refresh
+ *       token and the frontend persists the session in `localStorage`
+ *       so it survives browser restarts. When false (default) the
+ *       refresh token uses the env-default TTL (typically 7d) and the
+ *       frontend keeps tokens in `sessionStorage` so closing the tab
+ *       ends the session.
  *     security: []
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
- *           schema: { $ref: '#/components/schemas/LoginRequest' }
- *           example: { email: "david@candidate.com", password: "Password@123" }
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:      { type: string, format: email }
+ *               password:   { type: string }
+ *               rememberMe: { type: boolean, default: false, description: "Keep me signed in across browser restarts" }
+ *           example: { email: "david@candidate.com", password: "Password@123", rememberMe: true }
  *     responses:
- *       '200': { $ref: '#/components/responses/AuthLoginSuccess' }
+ *       '200':
+ *         description: Login successful
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/SuccessEnvelope' }
+ *             example:
+ *               Response: { responseCode: 1, status: 'Success', message: 'Login successful' }
+ *               Data:
+ *                 user: { id: 1, full_name: 'David Kim', email: 'david@candidate.com', role: 'candidate', remember_me_enabled: 1 }
+ *                 access_token: 'eyJhbGciOi...'
+ *                 refresh_token: '1f2c...e74'
+ *                 refresh_token_expires_at: '2026-08-18T00:00:00.000Z'
+ *                 token_type: 'Bearer'
+ *                 expires_in: '7d'
+ *                 remember_me: true
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
  *       '403': { $ref: '#/components/responses/ForbiddenError' }
  *       '422': { $ref: '#/components/responses/ValidationError' }
@@ -155,19 +182,85 @@ router.post('/refresh-token', authLimiter, validate(v.refreshToken), asyncHandle
  * /auth/forgot-password:
  *   post:
  *     tags: [Auth]
- *     summary: Begin a password reset flow
+ *     summary: Begin a password reset flow (email link)
+ *     description: |
+ *       Generates a single-use, 15-minute reset token, invalidates
+ *       any prior tokens for the user, and sends the reset link via
+ *       Gmail SMTP. The response is **identical** whether the email
+ *       exists or not, so this endpoint cannot be used to enumerate
+ *       accounts. In non-production the reset URL + plaintext token
+ *       are echoed back on the `Data` block for dev convenience.
  *     security: []
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
- *           schema: { $ref: '#/components/schemas/ForgotPasswordRequest' }
+ *           schema:
+ *             type: object
+ *             required: [email]
+ *             properties:
+ *               email: { type: string, format: email }
  *           example: { email: "david@candidate.com" }
  *     responses:
- *       '200': { $ref: '#/components/responses/EmptySuccess' }
+ *       '200':
+ *         description: Generic response (does not reveal account existence)
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/SuccessEnvelope' }
+ *             example:
+ *               Response: { responseCode: 1, status: 'Success', message: 'If this email exists, password reset instructions have been sent.' }
+ *               Data: { reset_url: null, reset_token: null, expires_at: null }
  *       '422': { $ref: '#/components/responses/ValidationError' }
+ *       '429':
+ *         description: Rate-limited (auth limiter)
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorEnvelope' }
  */
 router.post('/forgot-password', authLimiter, validate(v.forgotPassword), asyncHandler(controller.forgotPassword));
+
+/**
+ * @swagger
+ * /auth/verify-reset-token:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Verify a password reset token is still valid (read-only)
+ *     description: |
+ *       Used by the SPA `/reset-password/:token` page on mount to
+ *       decide whether to render the new-password form or redirect
+ *       the user to `/forgot-password` with an "expired" banner.
+ *       Does NOT consume the token.
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token]
+ *             properties:
+ *               token: { type: string }
+ *           example: { token: "abc123..." }
+ *     responses:
+ *       '200':
+ *         description: Token valid
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/SuccessEnvelope' }
+ *             example:
+ *               Response: { responseCode: 1, status: 'Success', message: 'Reset token is valid' }
+ *               Data: { valid: true, expires_at: '2026-05-20T01:15:00.000Z' }
+ *       '400':
+ *         description: Token invalid, used, or expired
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+ *             example:
+ *               Response: { responseCode: 0, status: 'Error', message: 'Reset link expired' }
+ *               Data: { reason: 'expired' }
+ *       '422': { $ref: '#/components/responses/ValidationError' }
+ */
+router.post('/verify-reset-token', authLimiter, validate(v.verifyResetToken), asyncHandler(controller.verifyResetToken));
 
 /**
  * @swagger
@@ -175,6 +268,11 @@ router.post('/forgot-password', authLimiter, validate(v.forgotPassword), asyncHa
  *   post:
  *     tags: [Auth]
  *     summary: Reset a password using a one-time token
+ *     description: |
+ *       Consumes the reset token, hashes the new password (bcrypt
+ *       cost 10), stamps `password_changed_at`, revokes ALL refresh
+ *       tokens for the user (signing out other devices), and sends a
+ *       "password changed" confirmation email out-of-band.
  *     security: []
  *     requestBody:
  *       required: true
@@ -184,7 +282,11 @@ router.post('/forgot-password', authLimiter, validate(v.forgotPassword), asyncHa
  *           example: { token: "abc123...", password: "NewPassword@123" }
  *     responses:
  *       '200': { $ref: '#/components/responses/EmptySuccess' }
- *       '400': { $ref: '#/components/responses/GenericError' }
+ *       '400':
+ *         description: Token invalid, used, or expired
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorEnvelope' }
  *       '422': { $ref: '#/components/responses/ValidationError' }
  */
 router.post('/reset-password', authLimiter, validate(v.resetPassword), asyncHandler(controller.resetPassword));

@@ -43,6 +43,33 @@ export const candidatesApi = {
     return call(api.post(`/candidates/applications/${jobId}/validate-and-apply`, body));
   },
 
+  /** Profile completion + recommended skills/titles + AI suggestions. */
+  profileMatch() { return call(api.post('/candidates/profile-match')); },
+
+  /**
+   * Per-section completion breakdown (image/basic/contact/skills/...).
+   * Drives the ProfileCompletionCard's progress bar + hints.
+   */
+  profileCompletion() { return call(api.get('/candidates/profile-completion')); },
+
+  /** Composite read for the /profile/review page. */
+  reviewProfile() { return call(api.get('/candidates/review-profile')); },
+
+  /**
+   * Upload (or replace) the profile image. `file` is the browser
+   * File object — multer expects field name `image`.
+   */
+  uploadProfileImage(file) {
+    const fd = new FormData();
+    fd.append('image', file);
+    return call(api.post('/candidates/profile-image', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }));
+  },
+
+  /** Remove the candidate's profile image. */
+  deleteProfileImage() { return call(api.delete('/candidates/profile-image')); },
+
   resume: {
     list() { return call(api.post('/candidates/resume/list')); },
     /** Multipart upload. `file` is the browser File object. */

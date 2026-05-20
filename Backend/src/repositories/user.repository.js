@@ -25,7 +25,8 @@ async function findByEmail(email) {
 
 async function findById(id) {
   return db.queryOne(
-    `SELECT id, full_name, email, phone, role, status, email_verified_at, avatar_url, created_at, last_login_at
+    `SELECT id, full_name, email, phone, role, status, email_verified_at, avatar_url,
+            created_at, last_login_at, password_changed_at, remember_me_enabled
      FROM users WHERE id = ? AND deleted_at IS NULL LIMIT 1`,
     [id]
   );
@@ -59,7 +60,22 @@ async function updateById(id, fields) {
 }
 
 async function updatePassword(id, password_hash) {
-  await db.getPool().execute('UPDATE users SET password_hash = ? WHERE id = ?', [password_hash, id]);
+  await db.getPool().execute(
+    'UPDATE users SET password_hash = ?, password_changed_at = NOW() WHERE id = ?',
+    [password_hash, id]
+  );
+}
+
+/**
+ * Record the user's latest "Remember me" preference at login time so
+ * the frontend can default the checkbox the next time they sign in
+ * (read via /auth/me).
+ */
+async function setRememberMe(id, enabled) {
+  await db.getPool().execute(
+    'UPDATE users SET remember_me_enabled = ? WHERE id = ?',
+    [enabled ? 1 : 0, id]
+  );
 }
 
 async function setStatus(id, status) {
@@ -117,6 +133,7 @@ module.exports = {
   create,
   updateById,
   updatePassword,
+  setRememberMe,
   setStatus,
   touchLogin,
   markEmailVerified,

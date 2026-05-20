@@ -77,6 +77,24 @@ npm run dev:backend     # Backend only (nodemon)
 npm run dev:frontend    # Frontend only (Vite HMR)
 ```
 
+### Full stack via Docker Compose
+
+If you want MySQL + Redis + ElasticSearch in one command (so you can exercise the search and queue paths end-to-end):
+
+```bash
+docker compose up -d              # mysql, redis, elasticsearch, backend, frontend
+docker compose --profile full up -d kibana   # optional Kibana UI at :5601
+```
+
+Ports exposed on localhost: `3306` MySQL, `6379` Redis, `9200` ElasticSearch, `5601` Kibana, `3500` API, `5173` SPA. The first boot needs a migrate + seed (run them inside the backend container):
+
+```bash
+docker compose exec backend npm run migrate
+docker compose exec backend npm run seed
+```
+
+The same `npm run dev` flow keeps working without Docker — Redis and ES are both optional. When either is down the API logs a warning and falls back to MySQL.
+
 ## Tech stack
 
 ### Backend
@@ -101,6 +119,51 @@ npm run dev:frontend    # Frontend only (Vite HMR)
 | HTTP | axios (centralised client w/ bearer + refresh interceptor) |
 | State | React Context (Auth / AuthModal / Favorites) |
 | Styling | Hand-written CSS — design system tokens preserved 1:1 |
+
+## Performance + search infrastructure
+
+This milestone ships the **infrastructure layer** for production-grade search and caching. The new modules are self-contained building blocks that don't touch existing service code — wire them into your flows whenever you need them.
+
+- **Redis services + helpers** — `services/cache.service.js` (read-through, sorted sets, hash helpers, domain invalidators), `helpers/cacheKey.helper.js` (canonical keys + TTLs), `services/session.service.js` (multi-device session metadata), `services/trending.service.js` (weighted sorted sets, MySQL fallback).
+- **BullMQ queues** — `queues/email.queue.js`, `queues/resume.queue.js`, `queues/notification.queue.js`, `queues/match.queue.js`. Every producer falls back to inline execution when Redis is offline so the user-facing flow never breaks.
+- **ElasticSearch integration** — `config/elasticsearch.js` (lazy client + idempotent index mappings with edge-ngram autocomplete), `indexers/{job,candidate,resume}.indexer.js` (single + bulk reindex), `services/search.service.js` (fuzzy multi-match relevance with MySQL fallback), `services/searchAnalytics.service.js` (append-only event capture).
+- **Live endpoints** (mounted under `/api/v1/`):
+  - `GET /search/jobs`, `/search/candidates`, `/search/companies`, `/search/skills/autocomplete`
+  - `POST /search/analytics`
+  - `POST /index/jobs/reindex`, `/index/candidates/reindex`, `/index/resumes/reindex` (admin)
+- **Frontend building blocks** — `src/api/search.js`, `src/hooks/useDebounce.js`, `src/components/SkillAutocomplete.jsx` — drop-in for any page that wants debounced search or autocomplete.
+
+Full strategy + invalidation tables live in [Backend/docs/DEVELOPER_GUIDE.md §26 (Redis) and §27 (ElasticSearch)](Backend/docs/DEVELOPER_GUIDE.md).
+
+## Smart matching, AI recommendations, Home & Jobs pages
+
+The May 2026 release adds an **auth-aware homepage + smart-jobs feed**
+on top of the existing public surface. URLs:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/v1/home` | Full homepage payload: hero stats, categories, top companies, latest jobs, **recommendedJobs** (only when authed), **latestMatchedJobs**, **aiSuggestions** (career + profile + recommended titles), CTAs |
+| `GET /api/v1/jobs` | Guests: standard listing. Candidates: ONLY jobs above the 40% match threshold, ranked by match% desc, with `matchPercentage`, `matchedSkills`, `missingSkills`, `aiRecommendationLabel`, `aiSummary` on every row |
+| `GET /api/v1/jobs/recommended` | Candidate-only personalised rail; guests fall through to featured jobs (`personalised: false`) |
+| `GET /api/v1/jobs/:id` | Job detail; for candidates the response carries the same match decoration |
+| `POST /api/v1/candidates/profile-match` | Profile completion %, missing fields, market-demand recommended skills, AI suggestions |
+
+The matching engine lives in [`Backend/src/services/match.service.js`](Backend/src/services/match.service.js) (deterministic 0..100 scoring) and is wrapped by [`jobMatch.service.js`](Backend/src/services/jobMatch.service.js) (batch ranking + threshold + decoration). The AI copy generator is in [`ai.service.js`](Backend/src/services/ai.service.js) — rule-based today, **provider-pluggable** for OpenAI later (set `AI_PROVIDER=openai` + `AI_API_KEY=…` in env).
+
+Threshold: **40%** for logged-in candidates. Override with `?threshold=N&include_below_threshold=true` for diagnostics.
+
+### Seed data for testing matches
+
+```bash
+cd Backend
+npm run migrate
+npm run seed:industries       # canonical 22-industry set (truncates, preserves admins)
+npm run seed:expand           # +50 companies / candidates / jobs across new categories (Healthcare, Pharmacy, Teaching, Legal, Cybersecurity, Data & AI, …)
+```
+
+`seed:expand` is **additive** and idempotent — safe to re-run.
+
+Full architecture, scoring rubric, threshold rules, and frontend integration are documented in [Backend/docs/DEVELOPER_GUIDE.md §28 (Smart matching)](Backend/docs/DEVELOPER_GUIDE.md).
 
 ## What's in the box (global job portal)
 

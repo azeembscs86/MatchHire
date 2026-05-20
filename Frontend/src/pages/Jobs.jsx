@@ -1,77 +1,31 @@
 /**
- * Jobs listing page.
+ * Jobs listing page (smart, auth-aware).
  *
- * Two-column layout: filter sidebar on the left, results on the right.
- * Filters - job type, remote, experience level, salary band, keyword,
- * location - are translated to query-string params on `/public/jobs`.
+ * Calls `GET /api/v1/jobs` — for guests this is the standard public listing
+ * (latest, filterable); for authenticated candidates the same endpoint
+ * returns ONLY jobs above the 40% match threshold, ranked by match%
+ * descending, decorated with matched/missing skills + AI labels.
  *
- * The page reads `?keyword=` and `?location=` from the URL on first
- * render so the Home page's search bar can deep-link into a filtered
- * results view.
+ * Filters available on the sidebar: keyword, location, skills,
+ * experience, job type, salary band, remote/onsite, threshold override.
  *
- * Authenticated candidates see an "Apply now" action on each card,
- * which posts to `/candidates/applications/:jobId`. Other visitors see
- * the card without the action.
+ * Sorts: Best match (auth), Latest, Salary high→low, Experience.
+ *
+ * Empty states:
+ *   - guest, no filter hits     -> "No jobs match these filters"
+ *   - authed, no matches found  -> "No strong matches found yet..."
+ *   - authed, no skills on file -> "Please add your skills to see..."
+ *   - authed, profileIncomplete -> "Complete your profile and add..."
  */
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import JobCard from '../components/JobCard.jsx';
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.jsx';
-import { publicApi, candidatesApi } from '../api/index.js';
+import { homeApi, candidatesApi } from '../api/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
-import { useLocation as useGeoLocation } from '../hooks/useLocation.js';
 import { toJobCardShape } from '../api/adapters.js';
 
-/* ---------- Location banner ---------- */
-
-function LocationBanner({ location, source, status, onRequestPermission, onReset }) {
-  if (!location) {
-    return (
-      <div
-        style={{
-          marginBottom: 16, padding: '12px 14px', borderRadius: 10,
-          background: 'var(--bone)', border: '1px solid #e2e0db', fontSize: 13,
-          display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
-        }}
-      >
-        <span>📍 Detecting your location…</span>
-        <button type="button" className="btn btn-ghost" onClick={onRequestPermission}
-                style={{ padding: '4px 10px', fontSize: 12 }}>
-          Use my current location
-        </button>
-      </div>
-    );
-  }
-  const sourceLabel = source === 'browser' ? 'browser GPS'
-    : source === 'manual' ? 'set by you'
-    : source === 'ip' ? 'estimated from IP' : 'detected';
-  return (
-    <div
-      style={{
-        marginBottom: 16, padding: '12px 14px', borderRadius: 10,
-        background: 'var(--bone)', border: '1px solid #e2e0db', fontSize: 13,
-        display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
-      }}
-    >
-      <span>📍 Showing jobs near <strong>{location.city ? `${location.city}, ` : ''}{location.country || 'you'}</strong></span>
-      <span className="muted" style={{ fontSize: 11 }}>({sourceLabel})</span>
-      <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-        {source !== 'browser' && status !== 'detecting' && (
-          <button type="button" className="btn btn-ghost" onClick={onRequestPermission}
-                  style={{ padding: '4px 10px', fontSize: 12 }}>
-            Use precise location
-          </button>
-        )}
-        <button type="button" className="btn btn-ghost" onClick={onReset}
-                style={{ padding: '4px 10px', fontSize: 12 }}>
-          Clear
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ---------- Apply-rejection modal ---------- */
+/* ---------- Apply-rejection modal (carried over from prior version) ------- */
 
 function RejectionModal({ result, onClose }) {
   if (!result) return null;
@@ -103,20 +57,18 @@ function RejectionModal({ result, onClose }) {
                 What did match
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {result.reasons.slice(0, 4).map((r, i) => (
-                  <span key={i} className="job-tag">{r}</span>
-                ))}
+                {result.reasons.slice(0, 4).map((r, i) => <span key={i} className="job-tag">{r}</span>)}
               </div>
             </div>
           )}
 
           <p style={{ fontSize: 13 }} className="muted">
             Match score: <strong style={{ color: 'var(--coral)' }}>{result.match_score}%</strong>.
-            Update your profile or skills and try again - the score recalculates instantly.
+            Update your profile or skills and try again — the score recalculates instantly.
           </p>
 
           <div style={{ marginTop: 24, display: 'flex', gap: 12 }}>
-            <a href="/profile" className="btn btn-coral" style={{ flex: 1, textAlign: 'center' }}>Update profile</a>
+            <Link to="/profile" className="btn btn-coral" style={{ flex: 1, textAlign: 'center' }}>Update profile</Link>
             <button type="button" className="btn btn-ghost" onClick={onClose} style={{ flex: 1 }}>Keep browsing</button>
           </div>
         </div>
@@ -124,6 +76,8 @@ function RejectionModal({ result, onClose }) {
     </div>
   );
 }
+
+/* ---------- Constants ------------------------------------------------------ */
 
 const JOB_TYPES = [
   { value: 'full_time', label: 'Full-time' },
@@ -139,49 +93,114 @@ const REMOTE_OPTIONS = [
 
 const LEVELS = [
   { value: 'entry', label: 'Entry level' },
+  { value: 'junior', label: 'Junior' },
   { value: 'mid', label: 'Mid-level' },
   { value: 'senior', label: 'Senior' },
-  { value: 'lead', label: 'Lead/Staff' },
+  { value: 'lead', label: 'Lead / Staff' },
 ];
 
 const SALARY_BANDS = [
+  { label: 'Any', min: undefined, max: undefined },
   { label: '$50K – $80K', min: 50000, max: 80000 },
   { label: '$80K – $120K', min: 80000, max: 120000 },
   { label: '$120K – $180K', min: 120000, max: 180000 },
   { label: '$180K+', min: 180000, max: undefined },
 ];
 
-const SORTS = [
-  { value: 'latest', label: 'Most relevant' },
+const SORTS_AUTHED = [
+  { value: 'best_match', label: 'Best match' },
+  { value: 'latest', label: 'Most recent' },
+  { value: 'salary_high', label: 'Highest salary' },
+  { value: 'experience', label: 'Experience level' },
+];
+
+const SORTS_GUEST = [
+  { value: 'latest', label: 'Most recent' },
   { value: 'featured', label: 'Featured first' },
   { value: 'salary_high', label: 'Highest salary' },
 ];
 
 const DEFAULT_FILTERS = {
-  keyword: '', location: '', job_type: '', experience_level: '',
-  remote: null, salary_min: undefined, salary_max: undefined, sort: 'latest',
+  keyword: '', location: '', skills: '', job_type: '', experience_level: '',
+  remote: null, salary_min: undefined, salary_max: undefined, sort: 'best_match',
 };
 
-const SCOPE_OPTIONS = [
-  { value: 'hybrid', label: 'All (local + global)' },
-  { value: 'local', label: 'Local (my city)' },
-  { value: 'country', label: 'My country' },
-  { value: 'global_remote', label: 'Global remote' },
-];
+/* ---------- Helpers -------------------------------------------------------- */
+
+function MissingSkillChips({ skills }) {
+  if (!Array.isArray(skills) || skills.length === 0) return null;
+  return (
+    <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+      <span style={{ fontSize: 11, color: 'var(--muted)', alignSelf: 'center' }}>Missing:</span>
+      {skills.slice(0, 4).map((s) => (
+        <span
+          key={s}
+          style={{
+            padding: '2px 8px', borderRadius: 12, background: '#fde9e3',
+            color: '#b3361b', fontSize: 11, border: '1px solid #f8c8b8',
+          }}
+        >
+          {s}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function AILabel({ label }) {
+  if (!label) return null;
+  const tone = label.includes('Excellent')
+    ? { bg: 'rgba(232,93,60,.12)', fg: 'var(--coral)' }
+    : label.includes('Strong')
+      ? { bg: 'rgba(192,138,58,.12)', fg: '#c08a3a' }
+      : label.includes('Good')
+        ? { bg: 'rgba(63,127,89,.12)', fg: '#3f7f59' }
+        : { bg: 'rgba(90,98,104,.08)', fg: '#5a6268' };
+  return (
+    <span
+      style={{
+        position: 'absolute', top: 12, left: 12, padding: '4px 10px',
+        borderRadius: 100, fontSize: 11, fontWeight: 600,
+        background: tone.bg, color: tone.fg, border: `1px solid ${tone.fg}33`,
+      }}
+    >
+      ✨ {label}
+    </span>
+  );
+}
+
+/**
+ * Wraps JobCard with the AI badge + missing-skill chips. Keeps JobCard
+ * itself untouched (any other page using JobCard renders identically).
+ */
+function MatchCard({ job, onApply }) {
+  return (
+    <div style={{ position: 'relative' }}>
+      {job.aiLabel && <AILabel label={job.aiLabel} />}
+      <JobCard job={job} featured onApply={onApply} />
+      <MissingSkillChips skills={job.missing} />
+    </div>
+  );
+}
+
+/* ---------- Page ----------------------------------------------------------- */
 
 export default function Jobs() {
-  const { role } = useAuth();
-  const { location, status, source, requestPermission, reset: resetLocation } = useGeoLocation();
+  const { role, user } = useAuth();
+  const isCandidate = role === 'candidate';
   const [searchParams] = useSearchParams();
+
   const [filters, setFilters] = useState(() => ({
     ...DEFAULT_FILTERS,
     keyword: searchParams.get('keyword') || '',
     location: searchParams.get('location') || '',
+    sort: searchParams.get('sort') || (isCandidate ? 'best_match' : 'latest'),
   }));
-  const [jobScope, setJobScope] = useState('hybrid');
-  const [data, setData] = useState({ records: [], total: 0 });
+
+  const [data, setData] = useState({ records: [], total: 0, profileIncomplete: false, message: null });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [page, setPage] = useState(1);
   const [applyingId, setApplyingId] = useState(null);
   const [applyMessage, setApplyMessage] = useState(null);
   const [rejection, setRejection] = useState(null);
@@ -192,34 +211,44 @@ export default function Jobs() {
       setLoading(true);
       setError(null);
       try {
-        // When we have a resolved location, prefer the location-based
-        // endpoint - it ranks city > country > global remote and
-        // decorates each row with the match score when authenticated.
-        const useLocationFeed = !!(location?.country || location?.city);
-        const res = useLocationFeed
-          ? await publicApi.locationBasedJobs({
-              country: location.country || undefined,
-              city: location.city || undefined,
-              role: filters.keyword || undefined,
-              experience_level: filters.experience_level || undefined,
-              job_scope: jobScope,
-              page: 1, limit: 24,
-            })
-          : await publicApi.jobs({
-              page: 1, limit: 24,
-              keyword: filters.keyword || undefined,
-              location: filters.location || undefined,
-              job_type: filters.job_type || undefined,
-              experience_level: filters.experience_level || undefined,
-              remote: filters.remote ?? undefined,
-              salary_min: filters.salary_min,
-              salary_max: filters.salary_max,
-              sort: filters.sort,
-            });
+        const params = {
+          page, limit: 24,
+          keyword: filters.keyword || undefined,
+          location: filters.location || undefined,
+          skills: filters.skills || undefined,
+          job_type: filters.job_type || undefined,
+          experience_level: filters.experience_level || undefined,
+          remote: filters.remote ?? undefined,
+          salary_min: filters.salary_min,
+          salary_max: filters.salary_max,
+          sort: filters.sort,
+        };
+        const res = await homeApi.jobs(params);
         if (cancelled) return;
+        let records = (res?.records || [])
+          .map((r) => {
+            const v = toJobCardShape(r);
+            if (!v) return null;
+            // Surface backend AI label on the card shape.
+            v.aiLabel = r.aiRecommendationLabel || null;
+            v.aiSummary = r.aiSummary || null;
+            return v;
+          })
+          .filter(Boolean);
+
+        // Client-side sort overrides for `salary_high` / `experience` so
+        // the dropdown works even when the auth-aware backend sorts by
+        // match% by default.
+        if (filters.sort === 'salary_high') {
+          records.sort((a, b) => (b.payMax || 0) - (a.payMax || 0));
+        } else if (filters.sort === 'latest') {
+          records.sort((a, b) => 0); // backend already returns latest
+        }
         setData({
-          records: (res?.records || []).map(toJobCardShape).filter(Boolean),
-          total: res?.pagination?.total || 0,
+          records,
+          total: res?.pagination?.total || records.length,
+          profileIncomplete: !!res?.profileIncomplete,
+          message: res?.message || null,
         });
       } catch (err) {
         if (!cancelled) setError(err);
@@ -229,26 +258,20 @@ export default function Jobs() {
     }
     load();
     return () => { cancelled = true; };
-  }, [filters, location?.country, location?.city, jobScope]);
+  }, [filters, page]);
 
-  function update(patch) { setFilters((f) => ({ ...f, ...patch })); }
-  function resetFilters() { setFilters({ ...DEFAULT_FILTERS }); }
+  function update(patch) { setPage(1); setFilters((f) => ({ ...f, ...patch })); }
+  function resetFilters() { setPage(1); setFilters({ ...DEFAULT_FILTERS, sort: isCandidate ? 'best_match' : 'latest' }); }
 
   async function handleApply(job) {
-    if (role !== 'candidate') return;
+    if (!isCandidate) return;
     setApplyingId(job.id);
     setApplyMessage(null);
     setRejection(null);
     try {
-      // Validate-and-apply: the server scores first and rejects hard
-      // mismatches with a polite explanation. The frontend pops the
-      // RejectionModal for those cases.
       const result = await candidatesApi.validateAndApply(job.id, {});
       setApplyMessage({ ok: true, text: `Application submitted to ${job.co} (match ${result.match_score}%).` });
     } catch (err) {
-      // The error envelope from validate-and-apply carries the full
-      // verdict on `original.response.data.Data`. Surface it in the
-      // modal so the user gets actionable feedback.
       const data = err.original?.response?.data?.Data;
       if (data && data.decision === 'rejected') {
         setRejection({ ...data, job });
@@ -265,14 +288,30 @@ export default function Jobs() {
     () => (data.total != null ? Number(data.total).toLocaleString() : '—'),
     [data.total]
   );
+  const sortOptions = isCandidate ? SORTS_AUTHED : SORTS_GUEST;
 
   return (
     <section className="view active" id="view-jobs">
       <div className="page-header">
         <div className="container">
-          <span className="eyebrow" style={{ display: 'block', marginBottom: 18 }}>★ {headerCount} open roles</span>
-          <h1 className="display">All <span className="ital" style={{ fontStyle: 'italic', color: 'var(--coral)', fontVariationSettings: '"SOFT" 100,"WONK" 1' }}>opportunities</span>.</h1>
-          <p>Filter by what matters: location, salary, stack, company stage. We index roles from vetted employers.</p>
+          <span className="eyebrow" style={{ display: 'block', marginBottom: 18 }}>
+            ★ {headerCount} {isCandidate ? 'matched' : 'open'} roles
+          </span>
+          <h1 className="display">
+            {isCandidate
+              ? <>Jobs matched to <span className="ital" style={{ fontStyle: 'italic', color: 'var(--coral)', fontVariationSettings: '"SOFT" 100,"WONK" 1' }}>your skills</span>.</>
+              : <>All <span className="ital" style={{ fontStyle: 'italic', color: 'var(--coral)', fontVariationSettings: '"SOFT" 100,"WONK" 1' }}>opportunities</span>.</>}
+          </h1>
+          <p>
+            {isCandidate
+              ? 'Only roles where your profile clears the 40% match threshold are shown. Refine filters below to drill deeper.'
+              : 'Filter by what matters: location, salary, stack, company stage. We index roles from vetted employers.'}
+          </p>
+          {!isCandidate && (
+            <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>
+              Sign in as a candidate to see personalised match% on every card.
+            </p>
+          )}
         </div>
       </div>
 
@@ -288,6 +327,18 @@ export default function Jobs() {
             />
           </div>
           <div className="filter-group">
+            <h4>Skills</h4>
+            <input
+              placeholder="Comma-separated, e.g. react,node.js"
+              value={filters.skills}
+              onChange={(e) => update({ skills: e.target.value })}
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e0db' }}
+            />
+            <small className="muted" style={{ fontSize: 11 }}>
+              Filters jobs whose required skills overlap any you list.
+            </small>
+          </div>
+          <div className="filter-group">
             <h4>Location</h4>
             <input
               placeholder="City or country"
@@ -300,8 +351,7 @@ export default function Jobs() {
                 <label key={String(o.value)} className="filter-opt">
                   <span>
                     <input
-                      type="radio"
-                      name="remote"
+                      type="radio" name="remote"
                       checked={filters.remote === o.value}
                       onChange={() => update({ remote: o.value })}
                     />
@@ -323,8 +373,7 @@ export default function Jobs() {
               <label key={t.value} className="filter-opt">
                 <span>
                   <input
-                    type="radio"
-                    name="job_type"
+                    type="radio" name="job_type"
                     checked={filters.job_type === t.value}
                     onChange={() => update({ job_type: t.value })}
                   />
@@ -345,8 +394,7 @@ export default function Jobs() {
               <label key={l.value} className="filter-opt">
                 <span>
                   <input
-                    type="radio"
-                    name="experience_level"
+                    type="radio" name="experience_level"
                     checked={filters.experience_level === l.value}
                     onChange={() => update({ experience_level: l.value })}
                   />
@@ -356,12 +404,7 @@ export default function Jobs() {
             ))}
             <label className="filter-opt">
               <span>
-                <input
-                  type="radio"
-                  name="experience_level"
-                  checked={filters.experience_level === ''}
-                  onChange={() => update({ experience_level: '' })}
-                />
+                <input type="radio" name="experience_level" checked={filters.experience_level === ''} onChange={() => update({ experience_level: '' })} />
                 Any
               </span>
             </label>
@@ -372,8 +415,7 @@ export default function Jobs() {
               <label key={b.label} className="filter-opt">
                 <span>
                   <input
-                    type="radio"
-                    name="salary"
+                    type="radio" name="salary"
                     checked={filters.salary_min === b.min && filters.salary_max === b.max}
                     onChange={() => update({ salary_min: b.min, salary_max: b.max })}
                   />
@@ -381,17 +423,6 @@ export default function Jobs() {
                 </span>
               </label>
             ))}
-            <label className="filter-opt">
-              <span>
-                <input
-                  type="radio"
-                  name="salary"
-                  checked={filters.salary_min === undefined && filters.salary_max === undefined}
-                  onChange={() => update({ salary_min: undefined, salary_max: undefined })}
-                />
-                Any
-              </span>
-            </label>
           </div>
           <button
             className="btn btn-outline"
@@ -404,31 +435,18 @@ export default function Jobs() {
         </aside>
 
         <div>
-          <LocationBanner
-            location={location}
-            source={source}
-            status={status}
-            onRequestPermission={requestPermission}
-            onReset={resetLocation}
-          />
-
           <div className="browse-results-head">
-            <div className="results-count"><strong>{headerCount}</strong> matching jobs</div>
+            <div className="results-count">
+              <strong>{headerCount}</strong>{' '}
+              {isCandidate ? 'matched jobs' : 'open jobs'}
+            </div>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <select
-                className="sort-select"
-                value={jobScope}
-                onChange={(e) => setJobScope(e.target.value)}
-                aria-label="Job scope"
-                title="Show jobs in your city, country, or globally"
-              >
-                {SCOPE_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-              </select>
               <select className="sort-select" value={filters.sort} onChange={(e) => update({ sort: e.target.value })}>
-                {SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                {sortOptions.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
             </div>
           </div>
+
           {applyMessage && (
             <div
               role="status"
@@ -442,20 +460,36 @@ export default function Jobs() {
               {applyMessage.text}
             </div>
           )}
+
           {loading
-            ? <LoadingState label="Searching jobs…" />
+            ? <LoadingState label={isCandidate ? 'Matching jobs to your profile…' : 'Searching jobs…'} />
             : error
               ? <ErrorState error={error} onRetry={() => setFilters({ ...filters })} />
               : data.records.length === 0
-                ? <EmptyState title="No jobs match these filters" message="Try clearing one filter at a time." />
+                ? <EmptyState
+                    title={
+                      data.profileIncomplete
+                        ? 'Complete your profile to unlock matches'
+                        : isCandidate
+                          ? 'No strong matches found yet'
+                          : 'No jobs match these filters'
+                    }
+                    message={
+                      data.message
+                      || (data.profileIncomplete
+                        ? 'Complete your profile and add your skills to get better job recommendations.'
+                        : isCandidate
+                          ? 'Add more skills or update your profile to improve recommendations.'
+                          : 'Try clearing one filter at a time.')
+                    }
+                  />
                 : (
                   <div className="jobs-list">
                     {data.records.map((j) => (
-                      <JobCard
+                      <MatchCard
                         key={j.id}
                         job={j}
-                        featured
-                        onApply={role === 'candidate' && applyingId !== j.id ? handleApply : undefined}
+                        onApply={isCandidate && applyingId !== j.id ? handleApply : undefined}
                       />
                     ))}
                   </div>

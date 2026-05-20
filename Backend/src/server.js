@@ -16,15 +16,15 @@ const config = require('./config/env');
 const logger = require('./utils/logger');
 const db = require('./config/database');
 const redis = require('./config/redis');
-const queues = require('./queues');
-const emailQueue = require('./queues/email.queue');
-const resumeQueue = require('./queues/resume.queue');
-const notificationQueue = require('./queues/notification.queue');
-const matchQueue = require('./queues/match.queue');
-const elasticsearch = require('./config/elasticsearch');
+const { assertMailConfig } = require('./config/mail.config');
 
 async function start() {
   try {
+    // Mail config check runs before opening the HTTP listener so production
+    // fails fast if SMTP creds are missing. Local/dev logs a warning and
+    // continues so the rest of the API stays usable without SMTP.
+    assertMailConfig();
+
     const dbOk = await db.ping();
     if (!dbOk) {
       logger.warn('Database not reachable on startup - the API will attempt reconnection on demand.');
@@ -34,20 +34,8 @@ async function start() {
 
     await redis.init();
     if (!redis.isReady()) {
-      logger.warn('Redis not connected - cache + queue operations will fall back inline.');
-    } else {
-      // Start BullMQ workers when Redis is up. Each registerWorker is
-      // idempotent and logs a single info line per queue.
-      emailQueue.startWorker();
-      resumeQueue.startWorker();
-      notificationQueue.startWorker();
-      matchQueue.startWorker();
+      logger.warn('Redis not connected - cache operations will fall back to MySQL only.');
     }
-
-    // ElasticSearch is optional - boot the client, log readiness.
-    // All search queries fall back to MySQL when ES is unavailable.
-    try { await elasticsearch.init(); }
-    catch (err) { logger.warn('ElasticSearch init failed - search will fall back to MySQL', { error: err.message }); }
 
     const server = app.listen(config.port, () => {
       logger.info(`MatchHire API listening on http://localhost:${config.port}${config.apiPrefix} [${config.nodeEnv}]`);
@@ -73,8 +61,6 @@ async function start() {
       logger.info(`${signal} received, shutting down gracefully...`);
       server.close(async () => {
         try {
-          await queues.closeAll();
-          await elasticsearch.close();
           await db.close();
           await redis.close();
         } catch (err) { logger.warn('Error during shutdown', { error: err.message }); }

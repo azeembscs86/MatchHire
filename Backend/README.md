@@ -241,13 +241,14 @@ All routes are versioned under `/api/v1`. The Swagger UI at `/api-docs` is the a
 | --- | --- | --- | --- |
 | POST | `/register/candidate` | Public | Creates user + candidate profile, returns tokens |
 | POST | `/register/employer` | Public | Creates user + company + employer profile |
-| POST | `/login` | Public | Returns access + refresh tokens |
+| POST | `/login` | Public | Returns access + refresh tokens. Accepts `rememberMe` (true → 90-day refresh + localStorage on frontend; false → env-default refresh + sessionStorage) |
 | POST | `/logout` | Public | Revokes the supplied refresh token |
 | POST | `/refresh-token` | Public | Rotates token pair |
-| POST | `/forgot-password` | Public | Issues a one-hour reset token |
-| POST | `/reset-password` | Public | Exchanges token for new password |
-| POST | `/change-password` | Required | Revokes all refresh tokens on success |
-| POST | `/me` | Required | Returns user + role-specific profile |
+| POST | `/forgot-password` | Public | Sends 15-min reset link via Gmail SMTP. Response is identical for known + unknown emails (anti-enumeration) |
+| POST | `/verify-reset-token` | Public | **New** — read-only token validity check (does not consume) |
+| POST | `/reset-password` | Public | Exchanges token for new password; revokes ALL refresh tokens; sends confirmation email |
+| POST | `/change-password` | Required | Revokes all refresh tokens on success; sends confirmation email |
+| POST | `/me` | Required | Returns user + role-specific profile (includes `remember_me_enabled`) |
 
 ### Public - `/api/v1/public` (GET, cached)
 
@@ -266,6 +267,15 @@ All routes are versioned under `/api/v1`. The Swagger UI at `/api-docs` is the a
 | GET | `/featured-companies` | Home page block |
 | GET | `/featured-jobs` | Home page block |
 
+### Home (auth-aware, GET) - `/api/v1`
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| GET | `/home` | Full homepage aggregate (hero stats, categories, top companies, latest + recommended jobs, AI suggestions). Guest payload is cached 15m; authed payload is per-user. |
+| GET | `/jobs` | Smart auth-aware list. Guests get the standard listing. Candidates get jobs filtered to the 40% threshold and ranked by match% descending. |
+| GET | `/jobs/recommended` | Personalised recommendations for candidates (`personalised: true`). Guests get the featured-jobs feed (`personalised: false`). |
+| GET | `/jobs/:id` | Job detail. For candidates the response carries `matchPercentage`, `matchedSkills`, `missingSkills`, `aiRecommendationLabel`, `aiSummary`. |
+
 ### Candidates - `/api/v1/candidates` (role: `candidate`, all POST)
 
 | Method | Path | Body |
@@ -274,12 +284,15 @@ All routes are versioned under `/api/v1`. The Swagger UI at `/api-docs` is the a
 | POST | `/profile/update` | CandidateProfileUpdate |
 | POST | `/skills` | `{ skills: [{ skill_id, proficiency, years_experience }] }` |
 | POST | `/preferences` | CandidatePreferencesUpdate |
-| POST | `/recommended-jobs` | `{ limit }` |
+| POST | `/recommended-jobs` | `{ limit }` (legacy SQL-scored variant; new endpoint is `GET /jobs/recommended`) |
+| POST | `/profile-match` | (none) - profile completion %, missing fields, recommended skills/titles, AI suggestions |
 | POST | `/favorites/:jobId/add` | (none) |
 | POST | `/favorites/:jobId/remove` | (none) |
 | POST | `/favorites/list` | `{ page, limit }` |
 | POST | `/applications/list` | `{ page, limit, status? }` |
 | POST | `/applications/:jobId` | `{ cover_letter?, expected_salary?, resume_url? }` |
+| POST | `/applications/:jobId/validate-and-apply` | scored apply (rejects below-threshold candidates with a polite reason) |
+| POST | `/jobs/match` | `{ country?, city?, role?, skills?, experience_level?, job_scope?, limit?, include_below_threshold? }` |
 | POST | `/dashboard/stats` | (none) |
 
 ### Employers - `/api/v1/employers` (role: `employer`, all POST)
@@ -313,6 +326,42 @@ All routes are versioned under `/api/v1`. The Swagger UI at `/api-docs` is the a
 | POST | `/reports` | (none) |
 | POST | `/audit-logs` | `{ page, limit }` |
 | POST | `/health-summary` | (none) |
+
+## Smart matching & AI recommendation
+
+The smart matching surface introduced in May 2026 is built on three thin layers:
+
+1. **`services/match.service.js`** — deterministic 0..100 scoring engine. Components:
+   - **skills_match** (up to 30 pts → effectively the 50% weight) — overlap of job `skills_tags` with candidate skills, normalised by required count
+   - **role_match** (25 pts) — keyword overlap between job title and candidate's current_title / headline
+   - **experience** (15 pts) — does the candidate clear the job's experience band?
+   - **location_match** (15 pts) — city > country > remote-compatible
+   - **salary_match** (10 pts) — candidate's expected range overlaps the job's range
+   - **category_match** (5 pts) — job's category is one of candidate's preferred_categories
+
+2. **`services/jobMatch.service.js`** — high-level coordinator. Loads the candidate context once, scores a batch of jobs, decorates each with `matchPercentage`, `matchedSkills`, `missingSkills`, `matchReasons`, `aiRecommendationLabel`, `aiSummary`. Applies the 40% threshold (configurable per call) and ranks by score descending.
+
+3. **`services/ai.service.js`** — AI-style copy generator. Today it runs locally (rule-based) and is provider-pluggable: set `AI_PROVIDER=openai` + `AI_API_KEY=…` in env and a remote provider can take over inside `summariseMatch()` without touching any caller. Falls back to the rule-based output on any provider failure so the user-facing flow never breaks. Surfaces used:
+   - `labelForScore(score)` → `Excellent Match | Strong Match | Good Match | Partial Match | Low Match`
+   - `summariseMatch(...)` → one-sentence reason
+   - `missingSkillSuggestion(...)` → "You can improve your match by learning X, Y."
+   - `careerImprovement(...)` / `profileImprovement(...)` → coaching text
+   - `recommendedJobTitles(...)` → titles derived from the candidate's skills
+
+**Thresholds**
+
+| Audience | Default min match | Source |
+| --- | --- | --- |
+| Logged-in candidates | 40% | `jobMatch.LOGGED_IN_THRESHOLD` |
+| Guests | none (latest active jobs) | `home.controller > listJobs` |
+
+Guests never receive personalised data — `/jobs` and `/jobs/recommended` short-circuit to the standard public list. Override the threshold for diagnostics with `?threshold=0&include_below_threshold=true`.
+
+**How to extend AI suggestions**
+
+- Add new entries to `TITLE_MAP` in `ai.service.js` to introduce more skill→title hints.
+- Add new tip strings inside `PROFILE_FIELDS` for additional missing-field coaching.
+- To swap in OpenAI: implement the network call inside `summariseMatch()` behind the `isRemote()` guard. Keep the rule-based output as the fallback path.
 
 ## Authentication Flow
 
@@ -390,10 +439,47 @@ The same flows are available in Swagger UI - much faster to explore there.
 | `npm start` | Production start |
 | `npm run migrate` | Apply pending migrations |
 | `npm run migrate:rollback` | Roll back the most recent batch |
-| `npm run seed` | Insert demo data |
+| `npm run seed` | Insert demo data (small curated set) |
+| `npm run seed:bulk` | Legacy bulk seeder (~240 of each type) |
+| `npm run seed:industries` | Multi-industry seeder (TRUNCATE + 22 industries × 10 + 18 professions + 220 jobs) |
+| `npm run seed:industries:rollback` | Truncate the seeded tables (preserves admins) |
+| `npm run seed:expand` | **Additive** +50 companies / candidates / jobs and tops up the new categories + skills (Healthcare, Pharmacy, Teaching, Legal, Cybersecurity, Data & AI, …). Safe to re-run. |
 | `npm run docs` | Print the OpenAPI 3.0 spec to stdout |
 | `npm run lint` | ESLint |
 | `npm test` | Jest |
+
+### How to test smart matching end-to-end
+
+```bash
+# 1) Fresh DB schema + base data
+npm run migrate
+npm run seed:industries     # canonical multi-industry set (truncates first)
+npm run seed:expand         # adds +50 companies/candidates/jobs across new categories
+
+# 2) Boot the API
+npm run dev
+
+# 3) Guest jobs feed (no personalisation)
+curl 'http://localhost:3500/api/v1/jobs?limit=5'
+
+# 4) Sign in as a candidate and pull personalised matches
+TOKEN=$(curl -s -X POST http://localhost:3500/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"david@candidate.com","password":"Password@123"}' \
+  | node -e "process.stdin.on('data',d=>{const o=JSON.parse(d);console.log(o.Data.access_token)})")
+
+# 5) Personalised home payload (note matchPercentage on recommendedJobs)
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:3500/api/v1/home | head -c 2000
+
+# 6) Personalised /jobs feed (only > 40% match)
+curl -s -H "Authorization: Bearer $TOKEN" 'http://localhost:3500/api/v1/jobs?limit=5' | head -c 1500
+
+# 7) Recommended jobs rail
+curl -s -H "Authorization: Bearer $TOKEN" 'http://localhost:3500/api/v1/jobs/recommended?limit=8'
+
+# 8) Profile match diagnostic
+curl -s -X POST -H "Authorization: Bearer $TOKEN" http://localhost:3500/api/v1/candidates/profile-match
+```
 
 ## Further reading
 

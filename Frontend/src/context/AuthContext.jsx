@@ -64,12 +64,24 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener('matchhire:auth:logout', onLogout);
   }, []);
 
-  const login = useCallback(async (email, password) => {
-    const data = await authApi.login(email, password);
+  /**
+   * Sign in.
+   *
+   * @param {string} email
+   * @param {string} password
+   * @param {boolean} [rememberMe=false]   When true, tokens are
+   *   persisted in localStorage (session survives browser restart)
+   *   and the backend issues a 90-day refresh token. When false,
+   *   tokens live in sessionStorage and a typical 7-day refresh
+   *   token applies — closing the tab ends the session.
+   */
+  const login = useCallback(async (email, password, rememberMe = false) => {
+    const data = await authApi.login(email, password, rememberMe);
     tokens.set({
       access_token: data.access_token,
       refresh_token: data.refresh_token,
       user: data.user,
+      rememberMe,
     });
     setUser(data.user || null);
     return data.user;
@@ -88,10 +100,15 @@ export function AuthProvider({ children }) {
         verificationUrl: data.verification_url || null,
       };
     }
+    // Fresh registrations default to a session-only persistence so a
+    // shared/public browser doesn't keep a brand-new account signed
+    // in indefinitely. The user can flip "Remember me" on their next
+    // sign-in.
     tokens.set({
       access_token: data.access_token,
       refresh_token: data.refresh_token,
       user: data.user,
+      rememberMe: false,
     });
     setUser(data.user || null);
     return { user: data.user, requiresVerification: false };

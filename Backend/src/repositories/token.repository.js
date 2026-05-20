@@ -51,6 +51,23 @@ async function savePasswordResetToken({ user_id, token_hash, expires_at }) {
   return res.insertId;
 }
 
+/**
+ * Burn every outstanding (unused, unexpired) reset token for a user.
+ * Called from `forgotPassword` before issuing a new one so a stolen
+ * token from a prior request can't be replayed once the legitimate
+ * owner triggers a fresh reset.
+ */
+async function invalidatePriorResetTokensForUser(user_id) {
+  await db.getPool().execute(
+    `UPDATE password_reset_tokens
+        SET used_at = NOW()
+      WHERE user_id = ?
+        AND used_at IS NULL
+        AND expires_at > NOW()`,
+    [user_id]
+  );
+}
+
 async function findPasswordResetByHash(token_hash) {
   return db.queryOne(
     `SELECT id, user_id, token_hash, expires_at, used_at FROM password_reset_tokens
@@ -108,6 +125,7 @@ module.exports = {
   savePasswordResetToken,
   findPasswordResetByHash,
   consumePasswordReset,
+  invalidatePriorResetTokensForUser,
   saveEmailVerificationToken,
   findEmailVerificationByHash,
   consumeEmailVerification,

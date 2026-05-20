@@ -29,6 +29,7 @@ import Jobs from './pages/Jobs.jsx';
 import Companies from './pages/Companies.jsx';
 import Candidates from './pages/Candidates.jsx';
 import Profile from './pages/Profile.jsx';
+import ReviewProfile from './pages/ReviewProfile.jsx';
 import Preferences from './pages/Preferences.jsx';
 import Favorites from './pages/Favorites.jsx';
 import EmployerOnboarding from './pages/EmployerOnboarding.jsx';
@@ -37,6 +38,8 @@ import DashboardCompany from './pages/DashboardCompany.jsx';
 import DashboardAdmin from './pages/DashboardAdmin.jsx';
 import VerifyEmail from './pages/VerifyEmail.jsx';
 import VerifyPending from './pages/VerifyPending.jsx';
+import ForgotPassword from './pages/ForgotPassword.jsx';
+import ResetPassword from './pages/ResetPassword.jsx';
 
 export default function App() {
   return (
@@ -53,9 +56,14 @@ export default function App() {
         <Route path="/verify-email/:token" element={<VerifyEmail />} />
         <Route path="/verify-email" element={<VerifyPending />} />
 
+        {/* Password reset flow (both pages are public — the token is in the URL) */}
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password/:token" element={<ResetPassword />} />
+
         {/* Candidate-only flows */}
         <Route element={<ProtectedRoute roles={['candidate']} />}>
           <Route path="/profile" element={<Profile />} />
+          <Route path="/profile/review" element={<ReviewProfile />} />
           <Route path="/preferences" element={<Preferences />} />
           <Route path="/favorites" element={<Favorites />} />
           <Route path="/dashboard/candidate" element={<DashboardCandidate />} />

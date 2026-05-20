@@ -32,14 +32,23 @@ const profileUpdate = Joi.object({
   is_public: Joi.boolean(),
 }).min(1);
 
+// Entries can be either an existing skill (skill_id) or a custom
+// free-text skill (name) the service will ensure-or-create. Joi
+// `xor` enforces "exactly one of skill_id|name", giving a clear
+// validation error if a caller sends neither (or both).
+const skillEntry = Joi.object({
+  skill_id: Joi.number().integer().positive(),
+  name: Joi.string().trim().min(1).max(80),
+  proficiency: Joi.string().valid('beginner', 'intermediate', 'advanced', 'expert').default('intermediate'),
+  years_experience: Joi.number().min(0).max(60).default(0),
+}).xor('skill_id', 'name');
+
 const skillsUpdate = Joi.object({
-  skills: Joi.array().items(
-    Joi.object({
-      skill_id: Joi.number().integer().positive().required(),
-      proficiency: Joi.string().valid('beginner', 'intermediate', 'advanced', 'expert').default('intermediate'),
-      years_experience: Joi.number().min(0).max(60).default(0),
-    })
-  ).max(50).required(),
+  // 'set' (default) replaces the full set; 'add' appends to it.
+  mode: Joi.string().valid('set', 'add').default('set'),
+  // 1..30 for `add`, 3..30 for `set` (service enforces the
+  // mode-specific min so we keep the validator simple).
+  skills: Joi.array().items(skillEntry).min(1).max(30).required(),
 });
 
 const preferencesUpdate = Joi.object({

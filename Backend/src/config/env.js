@@ -73,6 +73,34 @@ const config = {
     max: num('RATE_LIMIT_MAX', 300),
   },
 
+  // AI recommendation provider. Defaults to the local rule-based generator;
+  // set AI_PROVIDER=openai + AI_API_KEY=... to enable a remote provider once
+  // implemented in `services/ai.service.js`.
+  ai: {
+    provider: (process.env.AI_PROVIDER || 'rule_based').toLowerCase(),
+    apiKey: process.env.AI_API_KEY || '',
+    model: process.env.AI_MODEL || 'gpt-4o-mini',
+  },
+
+  // Gmail SMTP (nodemailer). Use a Gmail **App Password** (16 chars, no symbols)
+  // generated at https://myaccount.google.com/apppasswords after enabling
+  // 2-Step Verification. Plain Gmail account passwords will be rejected by
+  // smtp.gmail.com. See `services/mail/transporter.js`.
+  mail: {
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: num('SMTP_PORT', 587),
+    secure: String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true',
+    user: process.env.SMTP_USER || '',
+    pass: process.env.SMTP_PASS || '',
+    from: process.env.MAIL_FROM || process.env.SMTP_USER || '',
+    // Operational tuning (each has a safe default).
+    maxRetries: num('MAIL_MAX_RETRIES', 3),
+    retryBaseMs: num('MAIL_RETRY_BASE_MS', 1000),
+    appName: process.env.MAIL_APP_NAME || 'MatchHire',
+    appUrl: process.env.MAIL_APP_URL || 'https://matchhire.com',
+    supportEmail: process.env.MAIL_SUPPORT_EMAIL || 'support@matchhire.com',
+  },
+
   logLevel: process.env.LOG_LEVEL || 'info',
 };
 

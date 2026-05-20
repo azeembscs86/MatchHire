@@ -9,6 +9,8 @@
 export { api, call, tokens, apiBaseUrl } from './client.js';
 export { authApi } from './auth.js';
 export { publicApi } from './public.js';
+export { homeApi } from './home.js';
+export { skillsApi } from './skills.js';
 export { candidatesApi } from './candidates.js';
 export { employersApi } from './employers.js';
 export { adminApi } from './admin.js';

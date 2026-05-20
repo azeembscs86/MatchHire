@@ -13,7 +13,6 @@
  */
 
 const companyRepo = require('../repositories/company.repository');
-const jobIndexer = require('../indexers/job.indexer');
 const employerRepo = require('../repositories/employer.repository');
 const jobRepo = require('../repositories/job.repository');
 const appRepo = require('../repositories/application.repository');
@@ -48,8 +47,6 @@ async function createJob(user_id, payload) {
   });
   await cache.deleteByPattern(cache.Patterns.jobsList);
   await cache.deleteByPattern(cache.Patterns.dashboardStats('employer'));
-  // Push to ES (best-effort - logs and returns on failure).
-  jobIndexer.indexJob(id).catch(() => {});
   return jobRepo.findById(id);
 }
 
@@ -59,7 +56,6 @@ async function updateJob(user_id, jobId, payload) {
   await jobRepo.update(jobId, payload);
   await cache.deleteCache(cache.Keys.jobDetail(jobId));
   await cache.deleteByPattern(cache.Patterns.jobsList);
-  jobIndexer.indexJob(jobId).catch(() => {});
   return jobRepo.findById(jobId);
 }
 
@@ -69,7 +65,6 @@ async function deleteJob(user_id, jobId) {
   await jobRepo.softDelete(jobId);
   await cache.deleteCache(cache.Keys.jobDetail(jobId));
   await cache.deleteByPattern(cache.Patterns.jobsList);
-  jobIndexer.removeJob(jobId).catch(() => {});
   return true;
 }
 

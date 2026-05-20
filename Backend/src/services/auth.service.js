@@ -33,11 +33,23 @@ const candidateRepo = require('../repositories/candidate.repository');
 const companyRepo = require('../repositories/company.repository');
 const employerRepo = require('../repositories/employer.repository');
 const emailService = require('./email.service');
-const emailQueue = require('../queues/email.queue');
+const mailService = require('./mail/mail.service');
 const AppError = require('../utils/AppError');
+const logger = require('../utils/logger');
 const { ROLES } = require('../constants/roles');
 
 const VERIFICATION_TTL_HOURS = 24;
+// Reset-token lifetime per product spec. 15 min is short enough to
+// limit replay risk if a mail is intercepted, long enough to survive
+// the user reading the email on a phone and switching to a laptop.
+const RESET_TOKEN_TTL_MINUTES = 15;
+// Refresh-token lifetimes. "Remember me" widens the window from the
+// JWT_REFRESH_EXPIRES_IN default to 90 days so the session survives
+// laptop reboots. Without remember-me, the refresh token still works
+// for the configured default (typically 7d) — so the user stays
+// signed in across a normal day but is signed out next week.
+const REFRESH_DEFAULT_DAYS = 7;
+const REFRESH_REMEMBER_DAYS = 90;
 
 function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
@@ -86,20 +98,29 @@ async function issueEmailVerification(user, meta = {}) {
     sent_to: user.email,
     ip_address: meta.ip || null,
   });
-  // Send through the email queue when Redis/BullMQ is up - otherwise
-  // the queue wrapper falls back to inline send. Either way the URL
-  // is computed locally so the dev API response can include it.
-  const FRONT = process.env.FRONTEND_BASE_URL || 'http://localhost:5173';
-  const url = `${FRONT}/verify-email/${token}`;
-  await emailQueue.add('send-verification', { user: { id: user.id, email: user.email, full_name: user.full_name }, token });
+  const { url } = await emailService.sendVerificationEmail({ user, token });
   return { token, url, expires_at };
 }
 
+/**
+ * Issue an access + refresh token pair for `user`. The refresh-token
+ * TTL is driven by `meta.rememberMe`:
+ *
+ *   rememberMe === true  -> REFRESH_REMEMBER_DAYS (90 days)
+ *   rememberMe falsy     -> the JWT_REFRESH_EXPIRES_IN env value
+ *                           (default REFRESH_DEFAULT_DAYS = 7 days)
+ *
+ * `remember_me_enabled` on the response is informational — the
+ * frontend reads it so it can default the "Remember me" checkbox the
+ * next time the user signs in.
+ */
 async function issueTokens(user, meta = {}) {
   const accessToken = signAccessToken(user);
   const refreshToken = generateRefreshToken();
   const refreshHash = hashToken(refreshToken);
-  const expires_at = expiresInDays(config.jwt.refreshExpiresIn, 30);
+  const expires_at = meta.rememberMe
+    ? new Date(Date.now() + REFRESH_REMEMBER_DAYS * 24 * 3600 * 1000)
+    : expiresInDays(config.jwt.refreshExpiresIn, REFRESH_DEFAULT_DAYS);
   await tokenRepo.saveRefreshToken({
     user_id: user.id,
     token_hash: refreshHash,
@@ -110,8 +131,10 @@ async function issueTokens(user, meta = {}) {
   return {
     access_token: accessToken,
     refresh_token: refreshToken,
+    refresh_token_expires_at: expires_at,
     token_type: 'Bearer',
     expires_in: config.jwt.expiresIn,
+    remember_me: !!meta.rememberMe,
   };
 }
 
@@ -202,7 +225,22 @@ async function registerEmployer(payload, meta = {}) {
   };
 }
 
-async function login({ email, password }, meta = {}) {
+/**
+ * Login flow.
+ *
+ * Accepts an optional `rememberMe` flag (off by default). When true:
+ *   - the refresh token is issued with a 90-day TTL instead of the
+ *     env default (typically 7 days)
+ *   - users.remember_me_enabled is set to 1 so the next login
+ *     pre-checks the box on the frontend (via /auth/me)
+ *
+ * Storage strategy (frontend-owned): when rememberMe=true the
+ * frontend persists tokens in localStorage (survives browser
+ * restarts); when false they live in sessionStorage (cleared on tab
+ * close). The backend stays storage-agnostic — it just sizes the
+ * TTL.
+ */
+async function login({ email, password, rememberMe = false }, meta = {}) {
   const userRow = await userRepo.findByEmail(email.toLowerCase());
   if (!userRow) throw new AppError('Invalid email or password', 401);
   if (userRow.status === 'suspended') throw new AppError('Account suspended', 403);
@@ -222,8 +260,10 @@ async function login({ email, password }, meta = {}) {
   }
 
   await userRepo.touchLogin(userRow.id);
+  await userRepo.setRememberMe(userRow.id, rememberMe);
   const { password_hash, ...user } = userRow; // eslint-disable-line no-unused-vars
-  const tokens = await issueTokens(user, meta);
+  user.remember_me_enabled = rememberMe ? 1 : 0;
+  const tokens = await issueTokens(user, { ...meta, rememberMe });
   return { user, ...tokens };
 }
 
@@ -289,37 +329,130 @@ async function rotateRefreshToken(refresh_token, meta = {}) {
   return { user, ...tokens };
 }
 
-async function forgotPassword(email) {
+/**
+ * Forgot-password flow.
+ *
+ * Always returns the SAME shape regardless of whether the email
+ * matches an account, so this endpoint cannot be used to enumerate
+ * registered users. The caller is the controller, which renders the
+ * generic "If this email exists..." message.
+ *
+ * Side effects when the email DOES match:
+ *   1. Any outstanding (unused, unexpired) reset tokens for that user
+ *      are invalidated, so a stolen prior token can't be replayed.
+ *   2. A fresh single-use token is generated (32 random bytes hex);
+ *      only its SHA-256 hash is stored — the plaintext lives only in
+ *      the email body.
+ *   3. The token TTL is RESET_TOKEN_TTL_MINUTES (15 minutes).
+ *   4. A real reset email is sent through the mail service. SMTP
+ *      failures are absorbed (fail-soft) so the controller's generic
+ *      success envelope never reveals delivery state to the caller.
+ */
+async function forgotPassword(email, meta = {}) {
   const user = await userRepo.findByEmail(email.toLowerCase());
-  if (!user) return { token: null };
+  if (!user) return { sent: false };
+
+  // Invalidate prior tokens BEFORE generating the new one so a race
+  // (e.g. user clicks "Forgot" twice) can't leave two valid tokens.
+  await tokenRepo.invalidatePriorResetTokensForUser(user.id);
+
   const token = crypto.randomBytes(32).toString('hex');
-  const expires_at = new Date(Date.now() + 60 * 60 * 1000);
+  const expires_at = new Date(Date.now() + RESET_TOKEN_TTL_MINUTES * 60 * 1000);
   await tokenRepo.savePasswordResetToken({
-    user_id: user.id, token_hash: hashToken(token), expires_at,
+    user_id: user.id,
+    token_hash: hashToken(token),
+    expires_at,
   });
-  return { token };
+
+  // Build the link to the SPA reset page. FRONTEND_BASE_URL is
+  // configurable via env so staging/prod URLs don't bleed into dev.
+  const base = process.env.FRONTEND_BASE_URL || 'http://localhost:5173';
+  const resetUrl = `${base.replace(/\/$/, '')}/reset-password/${token}`;
+  const result = await mailService.sendPasswordResetEmail(user.email, {
+    name: user.full_name,
+    resetUrl,
+    expiresInMinutes: RESET_TOKEN_TTL_MINUTES,
+  });
+  if (result && result.ok === false) {
+    logger.warn('forgotPassword: reset email delivery failed', { user_id: user.id, error: result.error });
+  }
+  // Return the plaintext token + URL ONLY in non-production so the
+  // dev/demo flow can still complete without an inbox.
+  return {
+    sent: true,
+    reset_url: config.isProduction ? null : resetUrl,
+    reset_token: config.isProduction ? null : token,
+    expires_at,
+  };
 }
 
-async function resetPassword({ token, password }) {
+/**
+ * Read-only check that a reset token is still valid. Used by the
+ * frontend reset page on mount so it can either render the new-
+ * password form or redirect to /forgot-password with an "expired"
+ * banner. Does NOT consume the token.
+ */
+async function verifyResetToken(token) {
+  if (!token) return { valid: false, reason: 'missing' };
+  const rec = await tokenRepo.findPasswordResetByHash(hashToken(token));
+  if (!rec) return { valid: false, reason: 'invalid' };
+  if (rec.used_at) return { valid: false, reason: 'used' };
+  if (new Date(rec.expires_at).getTime() <= Date.now()) return { valid: false, reason: 'expired' };
+  return { valid: true, expires_at: rec.expires_at };
+}
+
+/**
+ * Reset password flow.
+ *
+ * After validation the token is consumed (single-use), the password
+ * hash is updated (and password_changed_at stamped via
+ * userRepo.updatePassword), ALL refresh tokens for the user are
+ * revoked (so other devices are signed out), and a confirmation
+ * email is queued.
+ */
+async function resetPassword({ token, password }, meta = {}) {
   const rec = await tokenRepo.findPasswordResetByHash(hashToken(token));
   if (!rec) throw new AppError('Invalid or expired reset token', 400);
-  if (rec.used_at) throw new AppError('Token already used', 400);
-  if (new Date(rec.expires_at).getTime() <= Date.now()) throw new AppError('Token expired', 400);
+  if (rec.used_at) throw new AppError('This reset link has already been used', 400);
+  if (new Date(rec.expires_at).getTime() <= Date.now()) throw new AppError('Reset link expired - request a new one', 400);
+
   const password_hash = await bcrypt.hash(password, 10);
   await userRepo.updatePassword(rec.user_id, password_hash);
   await tokenRepo.consumePasswordReset(rec.id);
   await tokenRepo.revokeAllForUser(rec.user_id);
+
+  // Out-of-band notification. Fail-soft: we never want a flaky SMTP
+  // to roll back a successful password change.
+  const user = await userRepo.findById(rec.user_id);
+  if (user) {
+    await mailService.sendPasswordChangedEmail(user.email, {
+      name: user.full_name,
+      ip: meta.ip || null,
+    });
+  }
   return true;
 }
 
-async function changePassword(user_id, { current_password, new_password }) {
-  const userRow = await db.queryOne('SELECT id, password_hash FROM users WHERE id = ? LIMIT 1', [user_id]);
+/**
+ * Change-password flow (authenticated user). Same trust-and-revoke
+ * pattern as resetPassword: hash, persist, stamp, revoke all refresh
+ * tokens, send confirmation email.
+ */
+async function changePassword(user_id, { current_password, new_password }, meta = {}) {
+  const userRow = await db.queryOne(
+    'SELECT id, email, full_name, password_hash FROM users WHERE id = ? LIMIT 1',
+    [user_id]
+  );
   if (!userRow) throw new AppError('User not found', 404);
   const ok = await bcrypt.compare(current_password, userRow.password_hash);
   if (!ok) throw new AppError('Current password is incorrect', 400);
   const password_hash = await bcrypt.hash(new_password, 10);
   await userRepo.updatePassword(user_id, password_hash);
   await tokenRepo.revokeAllForUser(user_id);
+  await mailService.sendPasswordChangedEmail(userRow.email, {
+    name: userRow.full_name,
+    ip: meta.ip || null,
+  });
   return true;
 }
 
@@ -342,10 +475,12 @@ module.exports = {
   logout,
   rotateRefreshToken,
   forgotPassword,
+  verifyResetToken,
   resetPassword,
   changePassword,
   me,
   verifyEmail,
   resendVerification,
   hashToken,
+  RESET_TOKEN_TTL_MINUTES,
 };

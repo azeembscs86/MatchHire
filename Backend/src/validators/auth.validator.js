@@ -45,6 +45,13 @@ const registerEmployer = Joi.object({
 const login = Joi.object({
   email: Joi.string().email().required(),
   password: Joi.string().min(1).max(72).required(),
+  // Optional. When true, the backend issues a 90-day refresh token
+  // and the frontend persists the session in localStorage.
+  rememberMe: Joi.boolean().default(false),
+});
+
+const verifyResetToken = Joi.object({
+  token: Joi.string().required(),
 });
 
 const refreshToken = Joi.object({
@@ -83,6 +90,7 @@ module.exports = {
   login,
   refreshToken,
   forgotPassword,
+  verifyResetToken,
   resetPassword,
   changePassword,
   verifyEmail,

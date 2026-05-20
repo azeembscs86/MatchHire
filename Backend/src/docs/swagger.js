@@ -160,10 +160,12 @@ const baseDefinition = {
   tags: [
     { name: 'Auth', description: 'Authentication and account flows' },
     { name: 'Public', description: 'Unauthenticated read-only endpoints (cached)' },
+    { name: 'Home', description: 'Auth-aware homepage + smart job feed (GET; personalised when signed in)' },
     { name: 'Candidates', description: 'Authenticated candidate endpoints (all POST)' },
     { name: 'Employers', description: 'Authenticated employer endpoints (all POST)' },
     { name: 'Admin', description: 'Admin / super_admin moderation endpoints (all POST)' },
-    { name: 'Search', description: 'Full-text + filtered search (ElasticSearch with MySQL fallback)' },
+    { name: 'Mail', description: 'Gmail SMTP test surface (send-test, send-otp, send-welcome, verify)' },
+    { name: 'Skills', description: 'Skill catalogue (public reads) and candidate skill management' },
   ],
   components: {
     securitySchemes: {

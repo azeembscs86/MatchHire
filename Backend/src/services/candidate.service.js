@@ -20,11 +20,7 @@ const appRepo = require('../repositories/application.repository');
 const interviewRepo = require('../repositories/interview.repository');
 const matchRepo = require('../repositories/match.repository');
 const matchService = require('./match.service');
-const trendingService = require('./trending.service');
-const matchQueue = require('../queues/match.queue');
-const candidateIndexer = require('../indexers/candidate.indexer');
 const cache = require('../cache/cache.helper');
-const cacheSvc = require('./cache.service');
 const AppError = require('../utils/AppError');
 const db = require('../config/database');
 
@@ -54,11 +50,6 @@ async function updateProfile(user_id, payload) {
   await candidateRepo.recomputeProfileStrength(user_id);
   await cache.deleteByPattern(cache.Patterns.candidatesList);
   await cache.deleteCache(cache.Keys.candidateDetail(user_id), cache.Keys.topCandidates());
-  // Match scores depend on profile - blast every (this candidate, *) match cache.
-  cacheSvc.invalidate.candidateProfileChanged(user_id).catch(() => {});
-  matchQueue.add('recompute-for-candidate', { candidateId: user_id }).catch(() => {});
-  // Mirror the change into ES (best-effort).
-  candidateIndexer.indexCandidate(user_id).catch(() => {});
   return getProfile(user_id);
 }
 
@@ -67,16 +58,11 @@ async function updateSkills(user_id, skills) {
   await candidateRepo.recomputeProfileStrength(user_id);
   await cache.deleteCache(cache.Keys.candidateDetail(user_id));
   await cache.deleteByPattern(cache.Patterns.candidatesList);
-  cacheSvc.invalidate.candidateProfileChanged(user_id).catch(() => {});
-  matchQueue.add('recompute-for-candidate', { candidateId: user_id }).catch(() => {});
-  candidateIndexer.indexCandidate(user_id).catch(() => {});
   return candidateRepo.listSkills(user_id);
 }
 
 async function updatePreferences(user_id, preferences) {
   await candidateRepo.upsertPreferences(user_id, preferences);
-  cacheSvc.invalidate.candidateProfileChanged(user_id).catch(() => {});
-  matchQueue.add('recompute-for-candidate', { candidateId: user_id }).catch(() => {});
   return candidateRepo.getPreferences(user_id);
 }
 
@@ -88,7 +74,6 @@ async function addFavorite(user_id, job_id) {
   const job = await jobRepo.findById(job_id);
   if (!job) throw new AppError('Job not found', 404);
   await favRepo.add(user_id, job_id);
-  trendingService.bumpEvent({ jobId: job_id, event: 'save', country: job.country, city: job.city }).catch(() => {});
   return { user_id, job_id };
 }
 
@@ -249,10 +234,6 @@ async function applyWithValidation(user_id, job_id, payload = {}) {
   await cache.deleteCache(cache.Keys.jobDetail(job_id));
   await cache.deleteByPattern(cache.Patterns.dashboardStats('candidate'));
   await cache.deleteByPattern(cache.Patterns.dashboardStats('employer'));
-  // Bump trending + invalidate matches for this job (every candidate's
-  // score for this job is now stale).
-  trendingService.bumpEvent({ jobId: job_id, event: 'apply', country: job.country, city: job.city }).catch(() => {});
-  matchQueue.add('recompute-for-job', { jobId: job_id }).catch(() => {});
 
   return {
     accepted: true,

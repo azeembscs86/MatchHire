@@ -13,9 +13,13 @@
  * later without changing this page).
  */
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { LoadingState, ErrorState } from '../components/AsyncState.jsx';
 import ResumeUploadCard from '../components/ResumeUploadCard.jsx';
-import { candidatesApi } from '../api/index.js';
+import SkillsPicker from '../components/SkillsPicker.jsx';
+import ProfileImageUpload from '../components/ProfileImageUpload.jsx';
+import ProfileCompletionCard from '../components/ProfileCompletionCard.jsx';
+import { candidatesApi, skillsApi } from '../api/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 
 const AVAILABILITY_OPTIONS = [
@@ -40,8 +44,18 @@ export default function Profile() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [profile, setProfile] = useState(null);
+  // Selection-state for the SkillsPicker: array of
+  // { id, name, category?, proficiency?, years_experience?, isCustom? }.
+  // null `id` means a custom entry that the backend will ensure-or-create
+  // when we save.
   const [skills, setSkills] = useState([]);
-  const [skillInput, setSkillInput] = useState('');
+  const [skillsSavedAt, setSkillsSavedAt] = useState(null);
+  const [skillsSaveError, setSkillsSaveError] = useState(null);
+  const [savingSkills, setSavingSkills] = useState(false);
+  // Profile-image + completion state (separate from the form so the
+  // image/completion can update without going through the form submit).
+  const [imageUrl, setImageUrl] = useState(null);
+  const [completion, setCompletion] = useState(null);
   const [form, setForm] = useState({
     full_name: '', headline: '', current_title: '', summary: '',
     location: '', country: '', open_to_remote: true,
@@ -62,7 +76,22 @@ export default function Profile() {
         const p = data?.profile || {};
         const u = data?.profile || {};
         setProfile(p);
-        setSkills((data?.skills || []).map((s) => s.name).filter(Boolean));
+        // SkillsPicker expects rich entries — pass through everything
+        // the backend returned so chips render with category + proficiency
+        // metadata.
+        setSkills((data?.skills || []).map((s) => ({
+          id: s.id,
+          name: s.name,
+          category: s.category || null,
+          proficiency: s.proficiency || 'intermediate',
+          years_experience: Number(s.years_experience) || 0,
+        })));
+        // Image lives on users.avatar_url (kept in sync by the backend
+        // on every upload/delete) — the dashboard reads it from there too.
+        setImageUrl(u.avatar_url || data?.user?.avatar_url || null);
+        // Fetch the completion breakdown — separate call so it doesn't
+        // block first paint of the form.
+        candidatesApi.profileCompletion().then(setCompletion).catch(() => { /* non-fatal */ });
         setForm({
           full_name: u.full_name || user?.full_name || '',
           headline: p.headline || '',
@@ -91,15 +120,39 @@ export default function Profile() {
 
   function update(patch) { setForm((f) => ({ ...f, ...patch })); }
 
-  function addSkill(e) {
-    if (e.key === 'Enter' && skillInput.trim()) {
-      e.preventDefault();
-      const next = skillInput.trim();
-      if (!skills.includes(next)) setSkills((s) => [...s, next]);
-      setSkillInput('');
+  /**
+   * Persist the current SkillsPicker selection. Catalogue picks
+   * carry `id`; custom entries carry only `name` — the backend
+   * resolves both shapes in one call.
+   */
+  async function handleSaveSkills() {
+    if (savingSkills) return;
+    setSavingSkills(true);
+    setSkillsSaveError(null);
+    setSkillsSavedAt(null);
+    try {
+      const payload = skills.map((s) => (
+        s.id
+          ? { skill_id: s.id, proficiency: s.proficiency, years_experience: s.years_experience }
+          : { name: s.name, proficiency: s.proficiency, years_experience: s.years_experience }
+      ));
+      const data = await skillsApi.save({ mode: 'set', skills: payload });
+      // Re-hydrate from server so newly-created custom skills get
+      // their assigned id (chips lose the `isCustom` flag once they
+      // exist in the catalogue).
+      setSkills((data?.skills || []).map((s) => ({
+        id: s.id, name: s.name, category: s.category || null,
+        proficiency: s.proficiency || 'intermediate',
+        years_experience: Number(s.years_experience) || 0,
+      })));
+      setSkillsSavedAt(new Date());
+      candidatesApi.profileCompletion().then(setCompletion).catch(() => {});
+    } catch (err) {
+      setSkillsSaveError(err);
+    } finally {
+      setSavingSkills(false);
     }
   }
-  function removeSkill(s) { setSkills((list) => list.filter((x) => x !== s)); }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -125,20 +178,15 @@ export default function Profile() {
       if (form.expected_salary_max !== '') payload.expected_salary_max = Number(form.expected_salary_max);
       await candidatesApi.updateProfile(payload);
       await refreshMe();
+      // Re-fetch the completion breakdown so the bar reflects whatever
+      // sections just got populated (basic_info, contact_info, social_links, …).
+      candidatesApi.profileCompletion().then(setCompletion).catch(() => {});
       setSavedAt(new Date());
     } catch (err) {
       setError(err);
     } finally {
       setSubmitting(false);
     }
-  }
-
-  async function handleSaveSkills() {
-    // Backend wants `skill_id`; we don't expose the skill catalogue
-    // from this page yet, so skill names are persisted on the profile
-    // summary for now. Once a skill picker lands here, swap to
-    // `candidatesApi.updateSkills(skills.map(...))`.
-    await candidatesApi.updateProfile({ summary: form.summary });
   }
 
   if (loading) {
@@ -163,19 +211,28 @@ export default function Profile() {
 
       <div className="container profile-layout">
         <aside className="profile-side">
-          <div className="profile-avatar">
-            {initials(form.full_name)}
-            <div className="upload">+</div>
-          </div>
-          <div className="profile-name">{form.full_name || 'Your name'}</div>
+          <ProfileImageUpload
+            imageUrl={imageUrl}
+            fullName={form.full_name}
+            onChange={(nextUrl) => {
+              setImageUrl(nextUrl);
+              // Refresh the completion bar — image is 10% of the score.
+              candidatesApi.profileCompletion().then(setCompletion).catch(() => {});
+              // Tell the rest of the app (Header avatar) the user changed.
+              refreshMe().catch(() => {});
+            }}
+          />
+          <div className="profile-name" style={{ marginTop: 14 }}>{form.full_name || 'Your name'}</div>
           <div className="profile-headline">{form.headline || form.current_title || 'Add a headline'}</div>
-          <button className="btn btn-outline" style={{ width: '100%', justifyContent: 'center' }} type="button">Preview public profile</button>
-          <div className="completion">
-            <small><span>Profile completion</span><span style={{ color: 'var(--coral)', fontWeight: 600 }}>{profile?.profile_strength ?? 0}%</span></small>
-            <div className="completion-bar"><div className="completion-fill" style={{ width: `${profile?.profile_strength ?? 0}%` }}></div></div>
-            <small style={{ fontSize: 11, color: 'var(--muted-2)', marginTop: 8 }}>
-              Add a portfolio link or summary to lift your score.
-            </small>
+          <Link
+            to="/profile/review"
+            className="btn btn-outline"
+            style={{ width: '100%', justifyContent: 'center', textAlign: 'center', textDecoration: 'none', marginTop: 12 }}
+          >
+            Review profile →
+          </Link>
+          <div style={{ marginTop: 16 }}>
+            <ProfileCompletionCard completion={completion} compact />
           </div>
         </aside>
 
@@ -239,23 +296,36 @@ export default function Profile() {
             <div className="form-row single">
               <div className="form-field">
                 <label>Skills · these power your matches</label>
-                <div className="skills-input">
-                  {skills.map((s) => (
-                    <span key={s} className="skill-pill">
-                      {s}
-                      <button type="button" onClick={() => removeSkill(s)}>×</button>
-                    </span>
-                  ))}
-                  <input
-                    placeholder="Type a skill and press enter…"
-                    value={skillInput}
-                    onChange={(e) => setSkillInput(e.target.value)}
-                    onKeyDown={addSkill}
-                  />
+                <SkillsPicker
+                  value={skills}
+                  onChange={setSkills}
+                  minSkills={3}
+                  maxSkills={30}
+                />
+                {skillsSaveError && (
+                  <div role="alert" style={{ background: '#fde9e3', color: '#b3361b', padding: '8px 12px', borderRadius: 8, marginTop: 10, fontSize: 13 }}>
+                    {skillsSaveError.message || 'Could not save skills.'}
+                  </div>
+                )}
+                {skillsSavedAt && (
+                  <div role="status" style={{ background: '#e6f4ea', color: '#0f5132', padding: '8px 12px', borderRadius: 8, marginTop: 10, fontSize: 13 }}>
+                    Skills saved at {skillsSavedAt.toLocaleTimeString()}.
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+                  <small className="muted" style={{ fontSize: 12 }}>
+                    Pick from the catalogue or add custom skills. Saved separately from your profile.
+                  </small>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={handleSaveSkills}
+                    disabled={savingSkills || skills.length < 3}
+                    style={{ padding: '6px 14px', fontSize: 13 }}
+                  >
+                    {savingSkills ? 'Saving skills…' : 'Save skills'}
+                  </button>
                 </div>
-                <small className="muted" style={{ display: 'block', marginTop: 8 }}>
-                  Skills are saved with your profile.
-                </small>
               </div>
             </div>
           </div>
@@ -302,7 +372,6 @@ export default function Profile() {
               </div>
             </div>
             <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--line-soft)' }}>
-              <button type="button" className="btn btn-ghost" onClick={handleSaveSkills} disabled={submitting}>Save draft</button>
               <button type="submit" className="btn btn-coral" disabled={submitting}>
                 {submitting ? 'Saving…' : 'Save & publish profile →'}
               </button>

@@ -67,24 +67,12 @@ app.use(morgan(config.isProduction ? 'combined' : 'dev', {
  * Liveness probe used by load balancers and the `/admin/health-summary`
  * endpoint. Returns the same envelope as every other API.
  */
-/**
- * Liveness probe. Reports the status of every backing service so a
- * single `curl /health` answers "is this deployable" and "is anything
- * degraded". ElasticSearch and Redis are both optional; the API
- * remains operational when either is down.
- */
 app.get('/health', async (_req, res) => {
   const dbOk = await db.ping();
-  let esStatus = 'down (fallback)';
-  try {
-    const es = require('./config/elasticsearch');
-    if (es.isReady()) esStatus = 'up';
-  } catch (_) { /* noop */ }
   return response.success(res, {
     api: 'up',
     database: dbOk ? 'up' : 'down',
     redis: redis.isReady() ? 'up' : 'down (fallback)',
-    elasticsearch: esStatus,
     uptime_seconds: Math.floor(process.uptime()),
     env: config.nodeEnv,
   }, 'OK');

@@ -31,7 +31,15 @@ exports.registerEmployer = async (req, res) => {
   return response.created(res, data, 'Employer registered successfully');
 };
 
-/** POST /auth/login — verifies password, issues access + refresh tokens. */
+/**
+ * POST /auth/login — verifies password, issues access + refresh tokens.
+ * Accepts `rememberMe` (optional, default false). When true the
+ * backend issues a long-lived refresh token (90d) and the frontend
+ * persists tokens in localStorage so the session survives browser
+ * restarts. When false, the refresh-token TTL matches the env default
+ * (typically 7d) and the frontend uses sessionStorage so a tab close
+ * ends the session.
+ */
 exports.login = async (req, res) => {
   const data = await authService.login(req.body, meta(req));
   return response.success(res, data, 'Login successful');
@@ -49,25 +57,57 @@ exports.refreshToken = async (req, res) => {
   return response.success(res, data, 'Token refreshed');
 };
 
-/** POST /auth/forgot-password — issues a one-hour reset token (returned in demo). */
+/**
+ * POST /auth/forgot-password — start a password reset.
+ *
+ * The response is intentionally the SAME shape regardless of whether
+ * the email matches an account ("If this email exists, password
+ * reset instructions have been sent."). This prevents user
+ * enumeration via the public endpoint. In non-production the dev
+ * convenience link is included on the `Data` block so the SPA flow
+ * can be exercised without an inbox.
+ */
 exports.forgotPassword = async (req, res) => {
-  const data = await authService.forgotPassword(req.body.email);
+  const data = await authService.forgotPassword(req.body.email, meta(req));
   return response.success(res, {
-    message: 'If the email exists, a reset link has been sent',
-    reset_token: data.token,
-  }, 'Password reset initiated');
+    // Dev-only conveniences (null in production)
+    reset_url: data.reset_url || null,
+    reset_token: data.reset_token || null,
+    expires_at: data.expires_at || null,
+  }, 'If this email exists, password reset instructions have been sent.');
+};
+
+/**
+ * POST /auth/verify-reset-token — read-only token check.
+ * Used by the SPA reset page on mount to decide whether to render
+ * the new-password form or redirect to /forgot-password with an
+ * "expired" banner. Does NOT consume the token.
+ */
+exports.verifyResetToken = async (req, res) => {
+  const data = await authService.verifyResetToken(req.body.token);
+  if (!data.valid) {
+    return response.error(
+      res,
+      data.reason === 'expired' ? 'Reset link expired'
+        : data.reason === 'used' ? 'Reset link already used'
+        : 'Invalid reset link',
+      400,
+      { reason: data.reason }
+    );
+  }
+  return response.success(res, data, 'Reset token is valid');
 };
 
 /** POST /auth/reset-password — exchanges the reset token for a new password. */
 exports.resetPassword = async (req, res) => {
-  await authService.resetPassword(req.body);
-  return response.success(res, {}, 'Password reset successful');
+  await authService.resetPassword(req.body, meta(req));
+  return response.success(res, {}, 'Password reset successful. You can now sign in with your new password.');
 };
 
 /** POST /auth/change-password — authenticated; revokes refresh tokens after success. */
 exports.changePassword = async (req, res) => {
-  await authService.changePassword(req.user.id, req.body);
-  return response.success(res, {}, 'Password changed successfully');
+  await authService.changePassword(req.user.id, req.body, meta(req));
+  return response.success(res, {}, 'Password changed successfully. Sign in again on your other devices.');
 };
 
 /** POST /auth/me — returns the authenticated user + role-specific profile. */

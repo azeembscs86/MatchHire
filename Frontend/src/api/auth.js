@@ -18,9 +18,14 @@ export const authApi = {
     return call(api.post(path, payload));
   },
 
-  /** Exchange email + password for tokens + user. */
-  login(email, password) {
-    return call(api.post('/auth/login', { email, password }));
+  /**
+   * Exchange email + password for tokens + user.
+   * `rememberMe` (default false) tells the backend whether to issue
+   * a long-lived refresh token; AuthContext separately decides which
+   * browser store to persist tokens in.
+   */
+  login(email, password, rememberMe = false) {
+    return call(api.post('/auth/login', { email, password, rememberMe }));
   },
 
   /** Revoke the current refresh token on the server, then wipe local storage. */
@@ -36,8 +41,11 @@ export const authApi = {
     return call(api.post('/auth/refresh-token', { refresh_token }));
   },
 
-  /** Begin a password reset; backend returns the token in demo mode. */
+  /** Begin a password reset. Response is generic (does not leak whether the email exists). */
   forgotPassword(email) { return call(api.post('/auth/forgot-password', { email })); },
+
+  /** Read-only check that a reset token is still valid (does NOT consume it). */
+  verifyResetToken(token) { return call(api.post('/auth/verify-reset-token', { token })); },
 
   /** Exchange a reset token for a new password. */
   resetPassword(token, password) { return call(api.post('/auth/reset-password', { token, password })); },

@@ -13,10 +13,11 @@
  * the tree can pop the modal without prop-drilling a callback.
  */
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuthModal } from '../context/AuthModalContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
-import { authApi } from '../api/index.js';
+import { authApi, tokens } from '../api/index.js';
+import PasswordInput from './PasswordInput.jsx';
 
 function FormError({ error }) {
   if (!error) return null;
@@ -38,6 +39,9 @@ function SignIn({ onSwitch, onClose }) {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  // "Remember me" defaults to whatever the user picked last time
+  // (read straight from token storage so it survives a logout/login).
+  const [rememberMe, setRememberMe] = useState(() => tokens.isRemembered());
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [resendStatus, setResendStatus] = useState(null);
@@ -55,7 +59,7 @@ function SignIn({ onSwitch, onClose }) {
     setResendStatus(null);
     setSubmitting(true);
     try {
-      await login(email.trim(), password);
+      await login(email.trim(), password, rememberMe);
       onClose();
     } catch (err) {
       setError(err);
@@ -105,7 +109,30 @@ function SignIn({ onSwitch, onClose }) {
       </div>
       <div className="form-field">
         <label>Password</label>
-        <input type="password" required placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+        <PasswordInput
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoComplete="current-password"
+          ariaLabel="Password"
+        />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '4px 0 14px 0', fontSize: 13 }}>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={rememberMe}
+            onChange={(e) => setRememberMe(e.target.checked)}
+            style={{ accentColor: 'var(--coral, #E85D3C)' }}
+          />
+          Remember me
+        </label>
+        <Link
+          to="/forgot-password"
+          onClick={onClose}
+          style={{ color: 'var(--coral, #E85D3C)', fontWeight: 500 }}
+        >
+          Forgot password?
+        </Link>
       </div>
       <button className="btn btn-coral" type="submit" disabled={submitting}>
         {submitting ? 'Signing in…' : 'Sign in →'}
@@ -201,7 +228,13 @@ function SignUp({ onClose }) {
       </div>
       <div className="form-field">
         <label>Password · 8+ characters, letters and numbers</label>
-        <input type="password" required minLength={8} placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+        <PasswordInput
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          minLength={8}
+          autoComplete="new-password"
+          ariaLabel="Password"
+        />
       </div>
       <button className="btn btn-coral" type="submit" disabled={submitting}>
         {submitting ? 'Creating account…' : 'Create account →'}

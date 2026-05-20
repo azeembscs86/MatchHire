@@ -697,9 +697,660 @@ Branch naming: `feat/<short-description>`, `fix/<short-description>`, `chore/<sh
 - Routes + Swagger annotations: [src/routes/](../src/routes)
 - Services (business logic): [src/services/](../src/services)
 - Repositories (SQL): [src/repositories/](../src/repositories)
-- Cache + invalidation: [src/cache/cache.helper.js](../src/cache/cache.helper.js)
+- Cache + invalidation: [src/services/cache.service.js](../src/services/cache.service.js) + [src/helpers/cacheKey.helper.js](../src/helpers/cacheKey.helper.js)
+- Queues (BullMQ): [src/queues/](../src/queues)
+- ElasticSearch config + indexers: [src/config/elasticsearch.js](../src/config/elasticsearch.js), [src/indexers/](../src/indexers)
+- Search service + analytics: [src/services/search.service.js](../src/services/search.service.js), [src/services/searchAnalytics.service.js](../src/services/searchAnalytics.service.js)
 - Auth flow: [src/services/auth.service.js](../src/services/auth.service.js)
 - Migration runner: [src/database/migrate.js](../src/database/migrate.js)
 - Seeders: [src/database/seed.js](../src/database/seed.js)
 - OpenAPI entrypoint: [src/docs/swagger.js](../src/docs/swagger.js)
 - Component schemas: [src/docs/schemas/](../src/docs/schemas)
+
+---
+
+## 26. Redis caching strategy
+
+The MatchHire backend treats Redis as a **performance optimisation, not a hard dependency** — every Redis-aware call short-circuits when the client is offline. The four workloads are:
+
+1. **Application caching** (job feeds, location feeds, search results, dashboard stats, meta lookups)
+2. **Match-score memoisation** (per `(candidate, job)` pair)
+3. **Trending jobs** (sorted sets weighted by activity)
+4. **Background work queues** (BullMQ)
+5. **Session metadata** (multi-device session listing)
+
+All cache keys come from [`src/helpers/cacheKey.helper.js`](../src/helpers/cacheKey.helper.js); never construct them by hand. Service code talks to [`src/services/cache.service.js`](../src/services/cache.service.js), which thinly wraps the underlying `cache.helper`.
+
+### Key namespace
+
+```
+mh:job:list:<hash>            paginated job listing
+mh:job:feed:<userId>:<hash>   personalised feed
+mh:job:detail:<id>            job detail
+mh:job:trending:<scope>       trending sorted set (global / country:Pakistan / city:Karachi)
+mh:company:list:<hash>        company listing
+mh:company:detail:<id>
+mh:candidate:list:<hash>
+mh:candidate:detail:<id>
+mh:meta:countries / cities:<countryId> / skills:all / categories
+mh:match:<candidateId>:<jobId>
+mh:search:<index>:<hash>      cached /search/* response
+mh:session:<userId>:<sessionId>
+mh:session-idx:<userId>
+mh:dashboard:<scope>:<id>
+```
+
+### TTLs (seconds)
+
+| Domain | TTL | Notes |
+| --- | --- | --- |
+| `JOB_LIST` | 600 | 10 min |
+| `JOB_FEED` | 300 | 5 min (per-user) |
+| `JOB_DETAIL` | 900 | 15 min |
+| `JOBS_TRENDING` | 1800 | 30 min (sorted set also expires after 7d of inactivity) |
+| `COMPANY_LIST` / `COMPANY_DETAIL` | 1800 | 30 min |
+| `CANDIDATE_LIST` / `CANDIDATE_DETAIL` | 600 | 10 min |
+| `META` (countries / cities / skills / categories) | 3600 | 1 hour |
+| `MATCH_SCORE` | 1800 | 30 min, invalidated on profile/skill/preference/job change |
+| `SEARCH_RESULT` | 300 | 5 min |
+| `SESSION` | 2592000 | mirrors the refresh-token lifetime |
+| `DASHBOARD` | 300 | 5 min |
+
+### Invalidation rules
+
+| Event | Patterns blasted |
+| --- | --- |
+| Job created / updated / deleted / closed | `mh:job:list:*`, `mh:job:feed:*`, `mh:job:detail:<id>`, `mh:search:jobs:*`, `mh:match:*:<jobId>` |
+| Company updated / verified | `mh:company:detail:<id>`, `mh:company:list:*`, `mh:search:companies:*` |
+| Candidate profile / skills / preferences saved | `mh:candidate:detail:<uid>`, `mh:candidate:list:*`, `mh:match:<uid>:*`, `mh:job:feed:<uid>:*`, `mh:search:candidates:*`, `mh:dashboard:candidate:*` |
+| Application status change | `mh:dashboard:candidate:*`, `mh:dashboard:employer:*` |
+
+These rules are codified inside `cache.service.invalidate.*` so the call sites just write `cache.invalidate.candidateProfileChanged(uid)` and trust the helper.
+
+### Match-score memoisation (building block)
+
+The match algorithm is deterministic, so [`match.service.scoreJobCached(job, candidate)`](../src/services/match.service.js) reads `mh:match:<candidateId>:<jobId>` first and caches misses for `TTL.MATCH_SCORE`. Use it in any hot path where you'd otherwise recompute the score. Invalidation lives on `cache.invalidate.candidateProfileChanged(uid)` (clears every match for the candidate) and `cache.invalidate.job(jobId)` (clears every match for that job) — call those from your profile/skills/preference save handlers and your job-edit handlers respectively. The `match` queue (`queues/match.queue.js`) provides async `recompute-for-candidate` / `recompute-for-job` jobs for fanned-out invalidation.
+
+### Trending jobs (building block)
+
+[`services/trending.service.js`](../src/services/trending.service.js) maintains three Redis sorted sets:
+
+```
+mh:job:trending:global
+mh:job:trending:country:<lowercased-name>
+mh:job:trending:city:<lowercased-name>
+```
+
+Suggested weights per event (constants exported as `EVENT_WEIGHTS`):
+
+```
+view        +1
+save        +3
+apply       +5
+match_shown +0.5
+```
+
+The service exposes `bump({ jobId, weight, country, city })`, `bumpEvent({ jobId, event, country, city })`, and `top({ scope, value, limit })`. `top(...)` falls back to "newest published" when the sorted set is empty (or Redis is offline). Wire `bumpEvent` into your job-detail / favorite / apply paths and surface `top` through your preferred endpoint when you're ready to expose trending publicly.
+
+### Sessions (Redis-backed metadata)
+
+`session.service.create({ userId, refreshToken, ip, userAgent, expiresAt })` writes:
+
+```
+mh:session:<userId>:<sha256(refreshToken)>    hash field "data" -> JSON
+mh:session-idx:<userId>                       hash sessionId -> createdAt
+```
+
+This is purely a fast multi-device read path; the canonical source of truth is the `refresh_tokens` MySQL table. If Redis is offline the auth flow keeps working — the session list just returns empty.
+
+### Queues (BullMQ)
+
+[`src/queues/index.js`](../src/queues/index.js) is the thin wrapper. Producer pattern:
+
+```js
+const emailQueue = require('./queues/email.queue');
+await emailQueue.add('send-verification', { user, token });
+```
+
+If Redis isn't ready, `add(...)` runs the queue's inline fallback synchronously, which performs the same work; the user-facing flow never blocks on infra. The four queues:
+
+| Queue | Jobs | Concurrency |
+| --- | --- | --- |
+| `email` | `send-verification`, `send-application`, `send-generic` | 5 |
+| `resume` | `parse-resume`, `reindex-resume` | 2 |
+| `notification` | `application-status`, `interview-scheduled`, `new-match`, `job-alert-digest` | 10 |
+| `match` | `recompute-for-candidate`, `recompute-for-job` | 3 |
+
+Default options: 3 attempts, exponential backoff (4s), `removeOnComplete` 24h / 1000, `removeOnFail` 7d / 500. Workers register at boot (in `server.js`) when Redis is up; the wrapper logs a single info line per queue.
+
+### Health-checking Redis
+
+`GET /health` reports `redis: "up" | "down (fallback)"`. The admin dashboard's `/admin/health-summary` repeats the same payload so an operator can see degradation without SSHing into a box.
+
+---
+
+## 27. ElasticSearch integration
+
+ElasticSearch handles the search hot path (fuzzy job/candidate/skill search, autocomplete, weighted relevance). It is **always optional**: every search endpoint falls back to the existing MySQL repositories when ES is unreachable.
+
+### Indices
+
+```
+${ELASTICSEARCH_INDEX_PREFIX}_jobs        canonical job index
+${ELASTICSEARCH_INDEX_PREFIX}_candidates  public candidate index
+${ELASTICSEARCH_INDEX_PREFIX}_resumes     parsed resume payloads
+```
+
+Prefix defaults to `matchhire`. Use a different prefix per environment to share a single cluster.
+
+`config/elasticsearch.js > ensureIndices()` is idempotent: it creates each index with the proper mapping if it doesn't already exist. The mappings live in the same file (`JOB_MAPPING`, `CANDIDATE_MAPPING`, `RESUME_MAPPING`). Key choices:
+
+- **Edge-ngram analyzer** (`autocomplete`) on `title`, `company_name`, `headline` for skill / role / company suggestions.
+- **English standard analyzer** on body fields (`description`, `responsibilities`, `summary`, `skills_text`).
+- **Keyword sub-fields** (`title.keyword`, `company_name.keyword`) for exact-match aggregations.
+- **`geo_point`** field reserved on jobs for distance scoring in a future iteration.
+
+### Search service
+
+[`src/services/search.service.js`](../src/services/search.service.js) builds queries from the request filters:
+
+- `keyword` → `multi_match` across `title^4 / title.autocomplete^3 / skills_text^3 / skills_tags^2 / company_name^2 / company_name.autocomplete / responsibilities / requirements / description`, with `fuzziness: "AUTO"`.
+- `role` → `match` on title with explicit boost.
+- `skills` (comma-separated or array) → `terms` filter on `skills_tags`.
+- Geo/filter fields (`country`, `city`, `job_type`, `work_mode`, `experience_level`, `is_remote`, `is_global_remote`, `company_id`, `category`) → `term` filters.
+- Salary range → `range` clauses with overlap semantics.
+- Sort defaults to relevance, with `latest` / `salary_high` / `featured` overrides.
+
+When ES is unavailable, the service calls the MySQL repositories (`jobRepo.listPublic`, `candidateRepo.listPublicCandidates`, `companyRepo.listPublic`) so the SPA still gets results. Cached responses live under `mh:search:<index>:<hash>` for 5 minutes.
+
+### Endpoints
+
+| Method | Path | Auth | What |
+| --- | --- | --- | --- |
+| GET | `/search/jobs` | optional | Job search (ES + MySQL fallback) |
+| GET | `/search/candidates` | optional | Candidate search (ES + MySQL fallback) |
+| GET | `/search/companies` | none | Company search (MySQL only - small set) |
+| GET | `/search/skills/autocomplete` | none | Edge-ngram skill suggestions |
+| POST | `/search/analytics` | optional | Click / conversion / no-result ping |
+| POST | `/index/jobs/reindex` | admin | Bulk reindex |
+| POST | `/index/candidates/reindex` | admin | Bulk reindex |
+| POST | `/index/resumes/reindex` | admin | Bulk reindex |
+
+### Incremental indexing (building block)
+
+The indexers in [`src/indexers/`](../src/indexers) expose `indexJob(id)` / `removeJob(id)` / `indexCandidate(uid)` / `removeCandidate(uid)` / `indexResume(rid)` / `removeResume(rid)`. They're idempotent and best-effort: when ES is unavailable they log a warning and return so callers never need a try/catch.
+
+Wire these into your write paths whenever you're ready. A typical pattern looks like:
+
+```js
+const jobIndexer = require('../indexers/job.indexer');
+// inside employer.service.updateJob, after the MySQL UPDATE has committed:
+jobIndexer.indexJob(jobId).catch(() => {});
+```
+
+The bulk `reindexAll()` is what `POST /api/v1/index/<thing>/reindex` runs — useful after a backfill, a schema change, or when ES has been added to a deployment for the first time.
+
+### Search analytics
+
+[`src/services/searchAnalytics.service.js`](../src/services/searchAnalytics.service.js) appends to `search_events`. The endpoint never throws so the SPA never blocks. Admin helpers (`topKeywords`, `noResultKeywords`, `conversionRate`) back the admin dashboard's "search performance" panel.
+
+### Health-checking ElasticSearch
+
+`GET /health` reports `elasticsearch: "up" | "down (fallback)"`. The same probe inside `config/elasticsearch.js` runs at boot and any time the search service is called.
+
+### Running ElasticSearch locally
+
+The fastest path is the included `docker-compose.yml`:
+
+```bash
+docker compose up -d elasticsearch
+# (optionally) docker compose --profile full up -d kibana
+```
+
+Then export `ELASTICSEARCH_NODE=http://localhost:9200` in your `.env.local`, boot the backend (`npm run dev`), and call `POST /index/jobs/reindex` as an admin to populate the index. Without Docker the API runs identically — every search call just goes through MySQL.
+
+## 28. Smart matching, AI recommendations, Home & Jobs pages
+
+The `/api/v1/home` + `/api/v1/jobs` surface added in May 2026 layers an
+auth-aware "smart" feed on top of the existing public listings without
+touching them.
+
+### File map
+
+| File | Responsibility |
+| --- | --- |
+| `src/services/match.service.js` | Deterministic 0..100 scoring (skills, role, experience, location, salary, category). Apply-time validation. |
+| `src/services/jobMatch.service.js` | High-level coordinator: ranks a batch of jobs for one candidate, returns `matchPercentage`, `matchedSkills`, `missingSkills`, `matchReasons`, `aiRecommendationLabel`, `aiSummary` on every row. Applies the 40% threshold. |
+| `src/services/ai.service.js` | Rule-based copy generator (label, match summary, missing-skill suggestion, career + profile improvement, recommended job titles). Provider-pluggable for OpenAI later. |
+| `src/services/home.service.js` | Aggregates the homepage payload (hero, categories, top companies, latest, recommended, latestMatched, AI suggestions, CTAs). Caches the **guest** payload for 15 min. |
+| `src/services/profileMatch.service.js` | Drives `POST /candidates/profile-match`. Completion %, missing fields, recommended skills (sampled from real job demand), AI suggestions. |
+| `src/controllers/home.controller.js` | HTTP boundary for `/home`, `/jobs`, `/jobs/recommended`, `/jobs/:id`. All use `optionalAuth`. |
+| `src/routes/home.routes.js` | Mounts those routes at `/api/v1`. JSDoc `@swagger` blocks render under the new **Home** tag. |
+| `src/validators/home.validator.js` | Joi schemas for the new GET endpoints. |
+
+### Scoring rubric (single source of truth)
+
+`match.service.scoreJob(job, candidate)` returns `{ score, reasons[], gaps[], missing[], decision }` where:
+
+| Component | Max | Trigger |
+| --- | --- | --- |
+| skills_match | 30 | Skill overlap between job `skills_tags` and candidate skills, normalised by required count. |
+| role_match | 25 | Keyword overlap between job title and candidate's current_title / headline. |
+| experience | 15 | Candidate clears the job's experience band. |
+| location_match | 15 | city > country > remote-compatible. |
+| salary_match | 10 | Candidate's expected range overlaps the job's. |
+| category_match | 5 | Job's category is in the candidate's preferred_categories. |
+
+`scoreJob` is the only place these weights live; `jobMatch.service` and the controllers consume the output verbatim. The product-spec percentages (skills 50%, category 15%, experience 15%, location 10%, type 10%) are derived from these component caps relative to the achievable total.
+
+### Threshold rules
+
+| Audience | Min match | Source | Override |
+| --- | --- | --- | --- |
+| Logged-in candidate | 40% | `jobMatch.LOGGED_IN_THRESHOLD` | `?threshold=N&include_below_threshold=true` |
+| Guest | none | controller short-circuits to the public list | n/a |
+
+### AI provider plug
+
+`ai.service.summariseMatch()` and friends are sync today and read entirely from rule-based code. To wire OpenAI in:
+
+1. Set `AI_PROVIDER=openai` + `AI_API_KEY=…` in the env.
+2. Implement the network call inside `summariseMatch()` behind the `isRemote()` guard.
+3. Always compute the local fallback first; return remote text on success, local on any error. This keeps the user-facing flow unbreakable.
+
+### How to add a new profession / skill category later
+
+1. Add the new category to `EXTRA_CATEGORIES` in `seed.expand.js` and rerun `npm run seed:expand` (or use Admin → categories UI in production).
+2. Add the new skills to `EXTRA_SKILLS[<category>]` in the same file. Slugs are derived; `INSERT IGNORE` handles existing rows.
+3. (Optional) Add corresponding profession entries to the candidate / job templates so the seeder produces realistic demo rows for the new category.
+4. To improve AI title suggestions, add lowercased skill keys + their suggested titles to `TITLE_MAP` in `ai.service.js`.
+
+### Frontend integration
+
+| Component | Backend call |
+| --- | --- |
+| `pages/Home.jsx` | `homeApi.home()` |
+| `pages/Jobs.jsx` | `homeApi.jobs({ ...filters })` |
+| Recommended rail | inline `payload.recommendedJobs` from `/home`; `homeApi.recommended()` is also exposed for one-off rails |
+| Profile widget | `candidatesApi.profileMatch()` |
+
+All endpoints use `optionalAuth`, so the shared axios client automatically attaches the bearer token when present — no separate code paths between guest and authenticated callers.
+
+### Testing matrix
+
+```bash
+# Guest path — latest jobs, no match% on cards
+curl 'http://localhost:3500/api/v1/jobs?limit=5'
+
+# Candidate path — only > 40% matches, ranked by match% desc
+TOKEN=...
+curl -H "Authorization: Bearer $TOKEN" 'http://localhost:3500/api/v1/jobs?limit=10'
+
+# Recommended (candidate-only)
+curl -H "Authorization: Bearer $TOKEN" 'http://localhost:3500/api/v1/jobs/recommended?limit=8'
+
+# Job detail with match decoration
+curl -H "Authorization: Bearer $TOKEN" http://localhost:3500/api/v1/jobs/12
+
+# Profile diagnostic
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:3500/api/v1/candidates/profile-match
+```
+
+The Swagger UI under `/api-docs` ships interactive examples for every new endpoint under the **Home** tag.
+
+## 29. Remember Me, Show/Hide Password, Forgot Password (May 2026)
+
+### Remember Me + token storage strategy
+
+`POST /auth/login` accepts an optional `rememberMe` boolean (default `false`). The flag drives two coupled decisions:
+
+| `rememberMe` | Backend: refresh-token TTL                       | Frontend: storage backend     |
+|---|---|---|
+| `false` (default) | `JWT_REFRESH_EXPIRES_IN` (env, typically `7d`)   | `sessionStorage` — clears when the tab/window closes |
+| `true`            | `90 days` (`REFRESH_REMEMBER_DAYS` in service)   | `localStorage` — survives browser restarts |
+
+The backend also writes `users.remember_me_enabled` so the next login defaults the checkbox to whatever the user picked last time. The frontend reads `tokens.isRemembered()` from `Frontend/src/api/client.js` to drive the same default before the user submits.
+
+On app reload (`AuthContext > hydrate`):
+1. The `tokens` helper reads from localStorage first, then sessionStorage — whichever has the access token.
+2. `/auth/me` is called to validate the session.
+3. If the access token has expired, the axios interceptor in `client.js` transparently calls `/auth/refresh-token` once and replays the failed request. If refresh also fails, `matchhire:auth:logout` is dispatched and AuthContext clears state.
+
+Tokens never live in both stores at once — `tokens.set({ rememberMe })` writes to the chosen store and wipes the opposite one. Plain passwords are never persisted anywhere.
+
+### Forgot Password flow
+
+```
+SPA  ─POST /auth/forgot-password { email }─►  Backend
+                                              ├─ invalidate prior reset tokens for this user
+                                              ├─ generate 32-byte hex token (plaintext)
+                                              ├─ store SHA-256 hash in password_reset_tokens
+                                              ├─ 15-min TTL
+                                              └─ Gmail SMTP: send reset email
+SPA  ◄── identical generic envelope regardless of whether email matched
+
+User clicks link → /reset-password/:token
+
+SPA  ─POST /auth/verify-reset-token { token }─►  Backend (read-only check)
+SPA  ◄── { valid: true }    or  { reason: invalid|used|expired }
+
+SPA  ─POST /auth/reset-password { token, password }─►  Backend
+                                                       ├─ consume token (used_at = NOW())
+                                                       ├─ bcrypt(password, cost=10)
+                                                       ├─ stamp password_changed_at
+                                                       ├─ revoke ALL refresh tokens for the user
+                                                       └─ Gmail SMTP: confirmation email
+SPA  ◄── 200 OK → tokens.clear() → redirect home with "Sign in with new password" banner
+```
+
+Security properties:
+- **No user enumeration** — `/forgot-password` returns the same envelope for matched and unmatched emails.
+- **Single-use tokens** — replaying a consumed token returns `"This reset link has already been used"`.
+- **Token rotation** — new `/forgot-password` request invalidates prior tokens for the same user.
+- **15-minute TTL** — short enough to limit replay risk, long enough to read on phone and switch to laptop.
+- **Out-of-band notification** — every password change sends a confirmation email so the legitimate owner sees account takeover attempts immediately.
+- **All-device sign-out** — successful reset revokes every refresh token for the user (`tokens.revokeAllForUser`).
+- **Token hashing** — only the SHA-256 hash is stored. The plaintext exists only in transit (email body) and in the URL the user is currently looking at.
+- **Rate limiting** — `authLimiter` is applied to all of `/forgot-password`, `/verify-reset-token`, `/reset-password`.
+
+### Show / Hide Password
+
+`Frontend/src/components/PasswordInput.jsx` is a reusable wrapper around a native password input with an integrated eye-toggle button. Used on:
+- Sign-in tab + Sign-up tab of `AuthModal.jsx`
+- `/reset-password/:token` page (both new + confirm fields)
+
+Accessibility: the toggle has `aria-label="Show password" / "Hide password"` that flips with state, and `aria-pressed` so screen readers announce the toggle state.
+
+### New routes summary
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/auth/login` | Now accepts `rememberMe: boolean` |
+| POST | `/auth/forgot-password` | Sends real reset email via Gmail SMTP; dev echoes `reset_url` + `reset_token` on Data |
+| POST | `/auth/verify-reset-token` | **New**: read-only token validity check |
+| POST | `/auth/reset-password` | Now sends out-of-band confirmation email + stamps `password_changed_at` |
+| GET | `/forgot-password` (SPA) | `Frontend/src/pages/ForgotPassword.jsx` |
+| GET | `/reset-password/:token` (SPA) | `Frontend/src/pages/ResetPassword.jsx` |
+
+### Required environment variables
+
+```env
+# Already present from earlier work
+JWT_SECRET=...
+JWT_REFRESH_SECRET=...
+JWT_REFRESH_EXPIRES_IN=7d        # used when rememberMe=false; ignored when true (becomes 90d)
+
+# Frontend URL the reset email links to (env-driven so dev/staging/prod don't bleed)
+FRONTEND_BASE_URL=http://localhost:5173
+
+# Gmail SMTP (already wired in services/mail/mail.service.js)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your-gmail@gmail.com
+SMTP_PASS=your-16-char-app-password   # NEVER your account password
+MAIL_FROM="MatchHire <your-gmail@gmail.com>"
+MAIL_SUPPORT_EMAIL=support@matchhire.com
+```
+
+### Testing recipe
+
+```bash
+# 1. apply migration 028 (adds password_changed_at, remember_me_enabled)
+cd Backend && npm run migrate
+npm run dev
+
+# 2. login WITHOUT rememberMe — refresh TTL should be env-default (7d)
+curl -X POST http://localhost:3500/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"YOUR_EMAIL","password":"YOUR_PASSWORD"}'
+
+# 3. login WITH rememberMe — refresh TTL should jump to 90 days
+curl -X POST http://localhost:3500/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"YOUR_EMAIL","password":"YOUR_PASSWORD","rememberMe":true}'
+
+# 4. forgot-password — same envelope regardless of email existence
+curl -X POST http://localhost:3500/api/v1/auth/forgot-password \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"YOUR_EMAIL"}'        # real → reset_url returned in dev
+curl -X POST http://localhost:3500/api/v1/auth/forgot-password \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"nobody-xyz@example.com"}'   # unknown → reset_url null, same message
+
+# 5. verify-reset-token + reset-password (use TOKEN from step 4)
+curl -X POST http://localhost:3500/api/v1/auth/verify-reset-token \
+  -H 'Content-Type: application/json' \
+  -d '{"token":"TOKEN_FROM_DEV_RESPONSE"}'
+curl -X POST http://localhost:3500/api/v1/auth/reset-password \
+  -H 'Content-Type: application/json' \
+  -d '{"token":"TOKEN_FROM_DEV_RESPONSE","password":"NewPassword@123"}'
+
+# 6. replay the same token — should fail with "already used"
+curl -X POST http://localhost:3500/api/v1/auth/reset-password \
+  -H 'Content-Type: application/json' \
+  -d '{"token":"TOKEN_FROM_STEP_4","password":"Whatever@123"}'
+```
+
+**Frontend manual tests** (with `cd Frontend && npm run dev` running on http://localhost:5173):
+
+| Scenario | Steps | Expected |
+|---|---|---|
+| Remember Me OFF | Sign in without ticking the box, close the tab, reopen the SPA | Logged out — `sessionStorage` was cleared |
+| Remember Me ON | Sign in with the box ticked, close the browser, reopen | Still signed in — `localStorage` survived |
+| Forgot Password | Click "Forgot password?" → enter email → check dev console for reset URL | URL renders inside the success card in dev |
+| Reset Password | Open the dev URL, set a new password (must clear weak/mismatch hints), submit | Redirected home, sign in with new password |
+| Replay reset URL | Click the same URL twice | Second click shows "Link not usable" with reason `used` |
+| Show / Hide password | Type password, click the eye | Field reveals/hides; `aria-pressed` flips |
+
+## 30. Skills catalogue + candidate SkillsPicker (May 2026)
+
+The Skills & Expertise field on the candidate profile was upgraded from a free-text input to a proper multi-select picker backed by the existing `skills` + `candidate_skills` tables plus a small dedicated surface.
+
+### Backend surface
+
+| Verb | Path | Notes |
+|---|---|---|
+| GET | `/skills?search=&limit=` | Fuzzy catalogue search (prefix ranks higher than substring). Empty query returns top alphabetical. |
+| GET | `/skills/categories` | Catalogue grouped by category — each entry is `{ category, count, skills[] }`. |
+| GET | `/skills/categories?meta=1` | Flat `{ category, count }` list (cheap, used by sidebars). |
+| POST | `/candidates/skills` | **Enhanced**: accepts `mode: "set" \| "add"` and entries as either `{ skill_id, ... }` (catalogue) or `{ name, ... }` (free-text custom — auto-created). |
+| POST | `/candidates/skills/list` | Read-only convenience: just the auth'd candidate's current skill set. |
+| DELETE | `/candidates/skills/:skill_id` | Single-skill removal. |
+| POST | `/candidates/skills/:skill_id/remove` | POST alias of the DELETE (project's POST-only convention). |
+| GET | `/public/candidates/:id/skills` | Public read for browsing candidate profiles. |
+
+### Validation rules (enforced at the service layer)
+
+- `MIN_SKILLS_REQUIRED = 3` — enforced **only** on `mode: "set"`. The `mode: "add"` path can start from zero so users aren't trapped.
+- `MAX_SKILLS_ALLOWED = 30` — enforced on every write.
+- `MAX_SKILL_NAME_LEN = 80` — enforced when creating a free-text custom skill.
+- Duplicates — caught both client-side (the picker de-dupes by `skill_id` and lowercased name) and at the DB level (`UNIQUE(candidate_user_id, skill_id)` on `candidate_skills`).
+- Joi `xor` on the entry shape rejects payloads that send both `skill_id` and `name` together.
+
+### Free-text custom skills
+
+`POST /candidates/skills` with an entry like `{ name: "Strapi CMS", proficiency: "intermediate" }` will:
+
+1. Case-insensitively look up `Strapi CMS` in `skills.name`.
+2. If found, link the existing row.
+3. If not found, `INSERT IGNORE` a new row with `category = "User Submitted"` so an admin can re-categorise later. The unique slug means re-running the same custom name is idempotent.
+
+This keeps the catalogue self-improving — users surface skills the seed data missed — without spamming duplicates.
+
+### Seeder
+
+`npm run seed:skills` is an additive seeder that tops up the catalogue with the new product-spec categories:
+
+- Frontend Development, Backend Development, Mobile App Development
+- UI/UX Design, QA & Testing, DevOps & Cloud, Database
+- Project Management, Content Writing, Business Operations
+
+Re-running is safe (INSERT IGNORE on the unique slug). Existing rows are not modified — a previously-categorised "React.js" under "Technology & Software" is left alone so old data isn't disturbed.
+
+### Frontend
+
+- `Frontend/src/api/skills.js` — API wrappers (`search`, `categories`, `myList`, `save`, `remove`, `forCandidate`).
+- `Frontend/src/components/SkillsPicker.jsx` — controlled multi-select component:
+  - Debounced (250 ms) autocomplete fetches from `/skills?search=`.
+  - Type-and-press-Enter or click to add a suggestion.
+  - "+ Add custom" row appears when no exact match.
+  - "Browse by category" panel lists every category with one-click bulk add.
+  - Selected skills render as chips; custom ones have a small `custom` badge.
+  - Backspace from an empty input removes the last chip.
+  - Inline counter + min/max + name-length feedback.
+- `Frontend/src/pages/Profile.jsx` — uses `SkillsPicker` with `minSkills={3} maxSkills={30}`. Skills are saved separately from the rest of the profile (`Save skills` button under the picker).
+
+### Testing recipe
+
+```bash
+# 1. Apply migrations + seed
+cd Backend
+npm run migrate
+npm run seed:skills      # tops up new categories
+
+# 2. Boot the API
+npm run dev
+
+# 3. Catalogue search
+curl 'http://localhost:3500/api/v1/skills?search=react&limit=5'
+curl 'http://localhost:3500/api/v1/skills/categories' | head -c 2000
+
+# 4. Sign in + save skills (replace TOKEN)
+TOKEN=...
+curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"mode":"set","skills":[{"skill_id":12},{"skill_id":14},{"name":"Strapi CMS"}]}' \
+  http://localhost:3500/api/v1/candidates/skills
+
+# 5. List, then DELETE one
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:3500/api/v1/candidates/skills/list
+curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:3500/api/v1/candidates/skills/12
+
+# 6. Public view of any candidate's skills (replace 42 with a real id)
+curl http://localhost:3500/api/v1/public/candidates/42/skills
+```
+
+**Frontend manual test** (`cd Frontend && npm run dev`):
+1. Sign in → `/profile` → scroll to **Skills & expertise**.
+2. Type "react" → suggestions appear → click "React.js".
+3. Click **Browse by category** → expand groups → bulk-add a few.
+4. Type "Strapi CMS" (not in catalogue) → `+ Add "Strapi CMS" as a custom skill` row appears → click it.
+5. Save skills → reload → custom skill now shows with its assigned id (no longer marked `custom`).
+
+## 31. Profile image, completion score, Review Profile page (May 2026)
+
+The Candidate Profile module gained three coordinated improvements:
+
+### 1. Profile image upload
+
+| Verb | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/candidates/profile-image` | candidate | Multipart upload, field `image`. JPG/PNG/WEBP up to 2MB. Replaces any prior image (soft-deleted on disk). |
+| DELETE | `/candidates/profile-image` | candidate | Clears the image and resets `users.avatar_url`. |
+
+**Storage path**: `Backend/storage/profile-images/<random-hex>.<ext>`, served via the existing signed-URL route (`/api/v1/files/profile-images/<filename>?exp=...&sig=...`). The raw path is never exposed; URLs expire after 7 days but are regenerated on every read.
+
+**Defence in depth**:
+- multer rejects > 2MB at the wire (HTTP 413)
+- multer `fileFilter` rejects non-image MIME at the header level (HTTP 415)
+- service-layer re-checks MIME, extension whitelist (`.jpg/.jpeg/.png/.webp`), AND a magic-number sniff so a renamed executable can't sneak through
+- multer's native errors are translated to 413/415 by `withErrorTranslation` in `upload.middleware.js`, so the global 500 handler never sees them
+
+**Database**:
+- `candidate_profiles.profile_image VARCHAR(500)` — relative storage path (added in migration 029)
+- `users.avatar_url` — mirrored signed URL so existing surfaces (header, dashboard nav, navigation API) light up automatically
+
+### 2. Profile completion score
+
+`recomputeProfileStrength` in `candidate.repository` was rewritten to the product-spec rubric. Each section is partially credited (e.g. basic_info: 2 of 3 sub-fields = 10/15) so the bar moves smoothly:
+
+| Section | Weight | Credited when |
+|---|---:|---|
+| profile_image | 10% | `candidate_profiles.profile_image` set |
+| basic_info | 15% | full_name + headline + current_title (one point each) |
+| contact_info | 10% | phone + location + country (one point each) |
+| skills_expertise | 15% | ≥ 3 candidate_skills rows |
+| work_experience | 15% | current_title set AND years_experience > 0 |
+| education | 10% | `candidate_profiles.languages` set OR parsed-resume education JSON non-empty |
+| resume_upload | 10% | any resumes row exists OR resume_url set |
+| job_preferences | 10% | preferences.desired_titles + preferred_locations |
+| social_links | 5% | linkedin_url OR portfolio_url OR github_url |
+
+`computeCompletionBreakdown(user_id)` returns:
+```js
+{
+  score: 77,
+  totals: { earned: 77, max: 100 },
+  sections: [
+    { key, label, weight, earned, percent, complete, hint /* string when !complete */ }
+  ]
+}
+```
+
+Two endpoints surface this:
+
+| Verb | Path | Notes |
+|---|---|---|
+| GET | `/candidates/profile-completion` | Just the breakdown — used by the dashboard card. |
+| GET | `/candidates/review-profile` | Composite — completion + user + profile + image URL + skills + preferences + resume + parsed-resume preview + flat `missing[]` list. |
+
+**Note on REST verbs**: these two are GET on authenticated endpoints — a small, explicit deviation from the project's POST-only-when-authed convention, matching the product spec verbatim. The route still sits behind `requireAuth + requireCandidate` so authorisation isn't relaxed.
+
+**Note on education**: the schema doesn't have a dedicated education table. The score uses `candidate_profiles.languages` and the parsed-resume `education` JSON as proxies. When you add a real education table later, update the `education` section in `computeCompletionBreakdown`.
+
+### 3. Review Profile page
+
+- Route: `/profile/review` (candidate-only, behind `<ProtectedRoute roles={['candidate']} />`)
+- Page: `Frontend/src/pages/ReviewProfile.jsx`
+- Reuses `ProfileCompletionCard` and renders a top-to-bottom read-only preview of every section the candidate has filled.
+- Empty sections render an actionable hint inline (`<EmptyHint>`) rather than disappearing — so the candidate sees what's missing without leaving the page.
+- The `"Preview public profile"` button on `Profile.jsx` was renamed to `"Review profile →"` and now navigates here.
+
+### Frontend wiring
+
+- `Frontend/src/api/candidates.js` — new helpers: `profileCompletion()`, `reviewProfile()`, `uploadProfileImage(file)`, `deleteProfileImage()`.
+- `Frontend/src/components/ProfileImageUpload.jsx` — drop-in image control. Local preview via `URL.createObjectURL()` before upload. Client-side type/size validation matches backend. Default-avatar (initials) fallback.
+- `Frontend/src/components/ProfileCompletionCard.jsx` — progress bar + per-section breakdown + missing-section hints + "Edit profile" / "Review profile" actions. Drops into both `Profile.jsx` (compact) and `DashboardCandidate.jsx` (compact).
+
+### Testing recipe
+
+```bash
+# 1. Apply the migration
+cd Backend && npm run migrate
+
+# 2. Boot the API
+npm run dev
+
+# 3. Log in (any candidate)
+TOKEN=$(curl -s -X POST http://localhost:3500/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"azeem.akram78@gmail.com","password":"@@Super253##"}' \
+  | node -e "let s='';process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>{console.log(JSON.parse(s).Data?.access_token)})")
+
+# 4. Completion BEFORE image
+curl -X GET -H "Authorization: Bearer $TOKEN" http://localhost:3500/api/v1/candidates/profile-completion
+
+# 5. Upload an image (build a tiny PNG inline)
+node -e "require('fs').writeFileSync('/tmp/pic.png', Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108020000009078adff0000000c4944415478da636060f80f0001010100c7e98c5b0000000049454e44ae426082','hex'))"
+curl -X POST -H "Authorization: Bearer $TOKEN" -F "image=@/tmp/pic.png" http://localhost:3500/api/v1/candidates/profile-image
+
+# 6. Completion AFTER image (should be +10%)
+curl -X GET -H "Authorization: Bearer $TOKEN" http://localhost:3500/api/v1/candidates/profile-completion
+
+# 7. Composite read used by the Review page
+curl -X GET -H "Authorization: Bearer $TOKEN" http://localhost:3500/api/v1/candidates/review-profile
+
+# 8. Validation: TXT → 415, 3MB JPG → 413
+echo "hello" > /tmp/not-image.txt
+curl -w "\nHTTP %{http_code}\n" -X POST -H "Authorization: Bearer $TOKEN" -F "image=@/tmp/not-image.txt" http://localhost:3500/api/v1/candidates/profile-image
+
+# 9. Remove the image
+curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:3500/api/v1/candidates/profile-image
+```
+
+**Frontend manual tests** (`cd Frontend && npm run dev`):
+1. Sign in → `/profile` → click the avatar circle → pick a JPG/PNG/WEBP.
+2. Preview appears immediately, then the server URL replaces it. The dashboard nav avatar in `/dashboard/candidate` reflects the new image too.
+3. Click the small `Remove` link under the avatar → falls back to initials.
+4. Save the profile form → notice the completion percent moves in real time as `basic_info`, `contact_info`, `social_links` get filled.
+5. Click **Review profile →** → lands on `/profile/review`. Empty sections show the actionable hint, not a blank space.

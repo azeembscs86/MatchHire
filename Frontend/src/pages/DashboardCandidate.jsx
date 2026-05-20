@@ -16,6 +16,7 @@ import { Link } from 'react-router-dom';
 import { candidatesApi } from '../api/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { LoadingState, ErrorState } from '../components/AsyncState.jsx';
+import ProfileCompletionCard from '../components/ProfileCompletionCard.jsx';
 import { toJobCardShape } from '../api/adapters.js';
 
 const STATUS_PILL = {
@@ -48,6 +49,8 @@ export default function DashboardCandidate() {
   const [stats, setStats] = useState(null);
   const [apps, setApps] = useState([]);
   const [matches, setMatches] = useState([]);
+  // Per-section completion breakdown for the ProfileCompletionCard.
+  const [completion, setCompletion] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -57,15 +60,19 @@ export default function DashboardCandidate() {
       setLoading(true);
       setError(null);
       try {
-        const [statsData, appsData, matchesData] = await Promise.all([
+        const [statsData, appsData, matchesData, completionData] = await Promise.all([
           candidatesApi.dashboardStats(),
           candidatesApi.applications.list({ page: 1, limit: 6 }),
           candidatesApi.recommendedJobs(4).catch(() => ({ records: [] })),
+          // Per-section completion breakdown — non-fatal if it errors,
+          // so the rest of the dashboard still renders.
+          candidatesApi.profileCompletion().catch(() => null),
         ]);
         if (cancelled) return;
         setStats(statsData || null);
         setApps(appsData?.records || []);
         setMatches((matchesData?.records || []).map(toJobCardShape).filter(Boolean));
+        setCompletion(completionData || null);
       } catch (err) {
         if (!cancelled) setError(err);
       } finally {
@@ -119,7 +126,14 @@ export default function DashboardCandidate() {
           <div className="dash-side-head">
             <div className="dash-side-role">Candidate · Pro plan</div>
             <div className="dash-side-name">
-              <div className="dash-side-avatar lg-1">{initials(user?.full_name)}</div>
+              <div
+                className={`dash-side-avatar${user?.avatar_url ? '' : ' lg-1'}`}
+                style={user?.avatar_url ? {
+                  background: `center / cover no-repeat url("${user.avatar_url}")`,
+                } : undefined}
+              >
+                {!user?.avatar_url && initials(user?.full_name)}
+              </div>
               {user?.full_name?.split(' ')[0] || 'You'}
             </div>
           </div>
@@ -213,20 +227,13 @@ export default function DashboardCandidate() {
               )}
             </div>
 
-            <div className="dash-panel">
-              <div className="dash-panel-head">
-                <h3>Profile health</h3>
-                <strong style={{ color: 'var(--coral)', fontFamily: "'Fraunces',serif", fontSize: 18 }}>{profileStrength}%</strong>
-              </div>
-              <div className="completion-bar"><div className="completion-fill" style={{ width: `${profileStrength}%` }}></div></div>
-              <p style={{ fontSize: 12, color: 'var(--muted)', margin: '10px 0 18px' }}>Complete these to reach 100% and triple your match rate.</p>
-              <div className="checklist">
-                <div className={`check-item${profileStrength >= 60 ? ' done' : ''}`}><div className="check-box">{profileStrength >= 60 ? '✓' : ''}</div><span>Add your headline & summary</span></div>
-                <div className={`check-item${profileStrength >= 75 ? ' done' : ''}`}><div className="check-box">{profileStrength >= 75 ? '✓' : ''}</div><span>Add 8+ skills</span></div>
-                <div className={`check-item${profileStrength >= 85 ? ' done' : ''}`}><div className="check-box">{profileStrength >= 85 ? '✓' : ''}</div><span>Upload portfolio link <small>+15%</small></span></div>
-                <div className={`check-item${profileStrength >= 95 ? ' done' : ''}`}><div className="check-box">{profileStrength >= 95 ? '✓' : ''}</div><span>Verify with LinkedIn <small>+10%</small></span></div>
-              </div>
-            </div>
+            {/*
+             * Profile health — drives off the real per-section
+             * breakdown from /candidates/profile-completion so the
+             * hints match what the candidate hasn't filled in yet,
+             * not a hard-coded list.
+             */}
+            <ProfileCompletionCard completion={completion} compact />
           </div>
 
           <div className="dash-row split">

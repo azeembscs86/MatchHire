@@ -65,30 +65,9 @@ router.get('/jobs/search', validate(v.jobsQuery, 'query'), asyncHandler(controll
  *     responses:
  *       '200': { $ref: '#/components/responses/PaginatedJobs' }
  */
-// `/jobs/location-based` and `/jobs/trending` must precede `/jobs/:id`
-// so Express does not match `location-based` / `trending` as the
-// `:id` path parameter.
+// `/jobs/location-based` must precede `/jobs/:id` so Express does not
+// match `location-based` as the `:id` parameter.
 router.get('/jobs/location-based', optionalAuth, asyncHandler(controller.locationBased));
-
-/**
- * @swagger
- * /public/jobs/trending:
- *   get:
- *     tags: [Public]
- *     summary: Trending jobs (Redis sorted set, MySQL fallback)
- *     description: |
- *       Ranks open jobs by recent activity (view + save + apply
- *       weights) within an optional country/city scope. Falls back to
- *       "newest published" when Redis is offline.
- *     security: []
- *     parameters:
- *       - { name: scope, in: query, schema: { type: string, enum: [global, country, city], default: global } }
- *       - { name: value, in: query, schema: { type: string }, description: country or city name when scope is set }
- *       - { name: limit, in: query, schema: { type: integer, default: 8, maximum: 24 } }
- *     responses:
- *       '200': { description: Trending jobs, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
- */
-router.get('/jobs/trending', asyncHandler(controller.trendingJobs));
 
 /**
  * @swagger
@@ -184,6 +163,38 @@ router.get('/candidates', validate(v.candidatesQuery, 'query'), asyncHandler(con
  *       '404': { $ref: '#/components/responses/NotFoundError' }
  */
 router.get('/candidates/:id', validate(v.idParam, 'params'), asyncHandler(controller.getCandidate));
+
+/**
+ * @swagger
+ * /public/candidates/{id}/skills:
+ *   get:
+ *     tags: [Skills]
+ *     summary: Public skills of a single candidate
+ *     description: |
+ *       Returns the candidate's skill list (with proficiency + years
+ *       of experience) when their profile is marked public. Used by
+ *       company recruiters browsing candidate profiles.
+ *     security: []
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses:
+ *       '200':
+ *         description: Skills
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/SuccessEnvelope' }
+ *             example:
+ *               Response: { responseCode: 1, status: 'Success', message: 'Candidate skills returned' }
+ *               Data:
+ *                 candidate_id: 42
+ *                 skills:
+ *                   - { id: 12, name: 'React.js', proficiency: 'advanced', years_experience: 5 }
+ *       '404': { $ref: '#/components/responses/NotFoundError' }
+ */
+router.get(
+  '/candidates/:id/skills',
+  validate(v.idParam, 'params'),
+  asyncHandler(require('../controllers/skill.controller').candidateSkills)
+);
 
 /**
  * @swagger
