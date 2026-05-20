@@ -92,6 +92,40 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
 }));
 app.get('/api-docs.json', (_req, res) => res.json(swaggerSpec));
 
+/**
+ * Public static mount for profile images.
+ * ---------------------------------------
+ * Profile images are inherently public (recruiters / other candidates
+ * see them on every profile page) so we skip the HMAC signing
+ * machinery and serve them directly with cache headers. The bucket
+ * is ONLY `profile-images` — sensitive buckets like `resumes`
+ * continue to require a signed URL through `/api/v1/files/...`.
+ *
+ *   Cache-Control: public, max-age=86400, immutable
+ *   Cross-Origin-Resource-Policy: cross-origin   (so the SPA on a
+ *                                                 different origin can
+ *                                                 render the <img>)
+ *
+ * Files are stored under `Backend/storage/profile-images/<hex>.<ext>`
+ * with crypto-random filenames so there's no enumerable path. The
+ * extension whitelist + magic-number sniff happen on upload
+ * (profileImage.service) so what lands on disk is always a real
+ * JPG / PNG / WEBP.
+ */
+const path = require('node:path');
+const STORAGE_ROOT = path.resolve(process.cwd(), 'storage');
+app.use(
+  '/uploads/profile-images',
+  express.static(path.join(STORAGE_ROOT, 'profile-images'), {
+    maxAge: '1d',
+    immutable: true,
+    fallthrough: false,
+    setHeaders: (res) => {
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    },
+  })
+);
+
 // Versioned API surface. The default rate-limiter is applied at the top of
 // the prefix so abusive clients are throttled before hitting any route.
 app.use(config.apiPrefix, defaultLimiter, routes);

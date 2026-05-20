@@ -13,6 +13,27 @@ export const candidatesApi = {
   /** Update the candidate's profile (any subset of fields). */
   updateProfile(payload) { return call(api.post('/candidates/profile/update', payload)); },
 
+  /**
+   * Save Draft vs. Save & Publish toggle. Flips
+   * `candidate_profiles.is_public` server-side. Kept separate from
+   * `updateProfile` so the two buttons don't have to re-send the
+   * whole form just to flip a single bit.
+   */
+  setPublishState(publish) {
+    return call(api.post('/candidates/profile/publish-state', { publish: !!publish }));
+  },
+
+  /**
+   * Work experience CRUD. Used by the multi-row Work Experience
+   * card on the Profile page.
+   */
+  experience: {
+    list() { return call(api.post('/candidates/experiences/list')); },
+    create(payload) { return call(api.post('/candidates/experiences', payload)); },
+    update(id, payload) { return call(api.post(`/candidates/experiences/${id}`, payload)); },
+    remove(id) { return call(api.delete(`/candidates/experiences/${id}`)); },
+  },
+
   /** Replace the full set of skills (idempotent). */
   updateSkills(skills) { return call(api.post('/candidates/skills', { skills })); },
 

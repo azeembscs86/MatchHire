@@ -26,7 +26,8 @@ async function findProfileByUserId(user_id) {
 async function upsertProfile(user_id, fields, conn = null) {
   const exec = conn ? conn.execute.bind(conn) : (sql, params) => db.getPool().execute(sql, params);
   const allowed = [
-    'headline','summary','current_title','years_experience','location','country','open_to_remote',
+    'headline','summary','current_title','desired_role','years_experience','location','country',
+    'open_to_remote','work_preference','relocation_scope',
     'expected_salary_min','expected_salary_max','salary_currency','availability','resume_url',
     'profile_image',
     'portfolio_url','linkedin_url','github_url','languages','is_public',
@@ -230,26 +231,30 @@ async function topCandidates(limit = 8) {
 /**
  * Recompute the 0-100 completion score from the spec rubric.
  *
- *   Section            Weight  When fully credited
- *   -----------------  ------  ---------------------------------------
- *   profile_image       10%    candidate_profiles.profile_image set
- *   basic_info          15%    headline + current_title + years_experience
- *   contact_info        10%    phone OR (location + country)
- *   skills_expertise    15%    >= 3 candidate_skills rows
- *   work_experience     15%    years_experience > 0 AND current_title
- *   education           10%    languages set OR parsed-resume education JSON
- *   resume_upload       10%    a resumes row exists OR resume_url set
- *   job_preferences     10%    preferences row with desired_titles populated
- *   social_links         5%    linkedin_url OR portfolio_url OR github_url
+ *   Section                Weight   When fully credited
+ *   ---------------------  ------   -------------------------------------------
+ *   profile_image           10%     candidate_profiles.profile_image set
+ *   personal_information    20%     full_name + headline + phone + location
+ *                                   + (open_to_remote/relocation_scope) set
+ *   about                   10%     summary (>= 60 chars per validator)
+ *   skills                  15%     >= 3 candidate_skills rows (linear up to 3)
+ *   work_experience         20%     >= 1 candidate_experiences row
+ *                                   (fallback: parsed-resume experience JSON)
+ *   resume_upload           10%     a resumes row exists OR resume_url set
+ *   job_preferences         10%     desired_role/work_preference/availability
+ *                                   + expected_salary_min set (any 3 of 4)
+ *   social_links             5%     linkedin_url OR portfolio_url OR github_url
  *
- * Each section can be partially credited (e.g. basic_info: 2 of 3
- * sub-fields populated = 10/15) so the bar moves smoothly as the
- * user fills the form, rather than jumping in chunky 15% increments.
+ *   ------------------------------------------------------------------
+ *   Total                  100%
+ *
+ * Each section can be partially credited (e.g. personal_information:
+ * 4 of 5 sub-fields populated = 16/20) so the bar moves smoothly as
+ * the user fills the form rather than jumping in chunky increments.
  *
  * Stored in `candidate_profiles.profile_strength`. The per-section
- * breakdown is recomputed on demand by
- * `profile.service.computeCompletion()` and never persisted, so the
- * UI's hints always reflect current data.
+ * breakdown is recomputed on demand by `/candidates/profile-completion`
+ * and never persisted, so the UI's hints always reflect current data.
  */
 async function recomputeProfileStrength(user_id) {
   const result = await computeCompletionBreakdown(user_id);
@@ -268,9 +273,12 @@ async function recomputeProfileStrength(user_id) {
  */
 async function computeCompletionBreakdown(user_id) {
   const cp = await db.queryOne(
-    `SELECT cp.headline, cp.summary, cp.current_title, cp.years_experience,
-            cp.location, cp.country, cp.resume_url, cp.linkedin_url, cp.portfolio_url,
-            cp.github_url, cp.languages, cp.profile_image,
+    `SELECT cp.headline, cp.summary, cp.current_title, cp.desired_role,
+            cp.years_experience, cp.location, cp.country,
+            cp.open_to_remote, cp.work_preference, cp.relocation_scope,
+            cp.expected_salary_min, cp.availability,
+            cp.resume_url, cp.linkedin_url, cp.portfolio_url, cp.github_url,
+            cp.languages, cp.profile_image,
             u.phone, u.full_name, u.avatar_url
      FROM candidate_profiles cp
      INNER JOIN users u ON u.id = cp.user_id
@@ -289,16 +297,25 @@ async function computeCompletionBreakdown(user_id) {
     `SELECT id FROM resumes WHERE candidate_user_id = ? AND deleted_at IS NULL LIMIT 1`,
     [user_id]
   );
-  const parsedEdu = await db.queryOne(
-    `SELECT education FROM resume_parsed_data WHERE candidate_user_id = ? LIMIT 1`,
-    [user_id]
+  // Prefer the normalised candidate_experiences table; fall back to
+  // the legacy parsed-resume JSON so existing accounts keep their
+  // work-experience credit until they migrate to the new editor.
+  const expCount = Number(
+    (await db.queryOne(
+      `SELECT COUNT(*) AS n FROM candidate_experiences WHERE candidate_user_id = ?`,
+      [user_id]
+    ))?.n || 0
   );
-  const prefs = await db.queryOne(
-    `SELECT desired_titles, preferred_locations FROM preferences WHERE user_id = ? LIMIT 1`,
+  const parsedExp = expCount > 0 ? null : await db.queryOne(
+    `SELECT experience FROM resume_parsed_data WHERE candidate_user_id = ? LIMIT 1`,
     [user_id]
   );
 
-  // Each section: max weight + a 0..1 "fill ratio".
+  // Relocation/work-mode signal: either column populated counts.
+  const hasRelocationSignal = cp.relocation_scope != null
+    || cp.work_preference != null
+    || cp.open_to_remote != null;
+
   const sections = [
     {
       key: 'profile_image',
@@ -308,21 +325,36 @@ async function computeCompletionBreakdown(user_id) {
       hint: 'Upload your profile image to improve profile visibility.',
     },
     {
-      key: 'basic_info',
-      label: 'Basic info',
-      weight: 15,
-      fill: scoreFraction([!!cp.full_name, !!cp.headline, !!cp.current_title]),
-      hint: 'Add your headline and current job title so recruiters know your role at a glance.',
+      key: 'personal_information',
+      label: 'Personal information',
+      weight: 20,
+      // 5 sub-checks: name + headline + phone + location + work mode.
+      fill: scoreFraction([
+        !!cp.full_name,
+        !!cp.headline,
+        !!cp.phone,
+        !!cp.location,
+        hasRelocationSignal,
+      ]),
+      hint: 'Add your headline, phone, location and remote preference so we can match you to local roles.',
     },
     {
-      key: 'contact_info',
-      label: 'Contact info',
+      key: 'about',
+      label: 'About you',
       weight: 10,
-      fill: scoreFraction([!!cp.phone, !!cp.location, !!cp.country]),
-      hint: 'Add a phone number and location so we can match local roles.',
+      // Validator enforces summary >= 60 chars, so credit only when
+      // it clears the same bar — half-credit at >= 30 chars to keep
+      // the bar moving as the user types.
+      fill: (() => {
+        const len = String(cp.summary || '').trim().length;
+        if (len >= 60) return 1;
+        if (len >= 30) return 0.5;
+        return 0;
+      })(),
+      hint: 'Write a short bio (at least 60 characters) describing what you build and what you are looking for.',
     },
     {
-      key: 'skills_expertise',
+      key: 'skills',
       label: 'Skills & expertise',
       weight: 15,
       // 3 skills = fully credited; 1 skill = 1/3; saturates at 1.
@@ -332,19 +364,15 @@ async function computeCompletionBreakdown(user_id) {
     {
       key: 'work_experience',
       label: 'Work experience',
-      weight: 15,
-      // current_title + a positive years_experience together = full credit.
-      fill: scoreFraction([!!cp.current_title, Number(cp.years_experience) > 0]),
-      hint: 'Add work experience to increase your profile strength.',
-    },
-    {
-      key: 'education',
-      label: 'Education',
-      weight: 10,
-      // No dedicated education table yet; we credit when languages
-      // are listed OR the parsed-resume education JSON is non-empty.
-      fill: ((cp.languages && String(cp.languages).trim()) || parsedEducationFilled(parsedEdu?.education)) ? 1 : 0,
-      hint: 'Add your education history (upload a resume — we extract education automatically).',
+      weight: 20,
+      // 1 entry = 50% credit, 2+ = full credit. Fallback to parsed
+      // resume only when the normalised table is empty.
+      fill: (() => {
+        if (expCount >= 2) return 1;
+        if (expCount === 1) return 0.6;
+        return parsedExperienceFilled(parsedExp?.experience) ? 0.5 : 0;
+      })(),
+      hint: 'Add your work history so recruiters can see your trajectory.',
     },
     {
       key: 'resume_upload',
@@ -355,13 +383,21 @@ async function computeCompletionBreakdown(user_id) {
     },
     {
       key: 'job_preferences',
-      label: 'Job preferences',
+      label: 'What you are looking for',
       weight: 10,
-      fill: scoreFraction([
-        !!(prefs?.desired_titles && String(prefs.desired_titles).trim()),
-        !!(prefs?.preferred_locations && String(prefs.preferred_locations).trim()),
-      ]),
-      hint: 'Complete job preferences to receive relevant openings.',
+      // 4 sub-checks: desired role + availability + work preference +
+      // salary expectation. Any 3 of 4 = full credit.
+      fill: (() => {
+        const checks = [
+          !!cp.desired_role,
+          !!cp.availability && cp.availability !== 'not_looking',
+          !!cp.work_preference,
+          cp.expected_salary_min != null,
+        ];
+        const hits = checks.filter(Boolean).length;
+        return Math.min(1, hits / 3);
+      })(),
+      hint: 'Set the role you want, work preference, salary, and availability so we surface the right openings.',
     },
     {
       key: 'social_links',
@@ -394,8 +430,8 @@ async function computeCompletionBreakdown(user_id) {
   };
 }
 
-/** Treat parsed-resume education as "filled" only when it's a non-empty JSON array. */
-function parsedEducationFilled(raw) {
+/** Treat parsed-resume experience as "filled" only when it's a non-empty JSON array. */
+function parsedExperienceFilled(raw) {
   if (!raw) return false;
   try {
     const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;

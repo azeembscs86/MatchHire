@@ -34,6 +34,34 @@ function initials(name = '') {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || '··';
 }
 
+/**
+ * Sidebar avatar. Uses a real <img> so onError can fall back to
+ * the initials block when the URL 404s (file deleted, stale URL,
+ * network blip). The <img> sits absolutely-positioned over the
+ * initials so the fallback is instant — no flash of broken image.
+ */
+function DashAvatar({ user }) {
+  const [failed, setFailed] = useState(false);
+  const url = user?.avatar_url;
+  const showImg = !!url && !failed;
+  return (
+    <div
+      className={`dash-side-avatar${showImg ? '' : ' lg-1'}`}
+      style={{ position: 'relative', overflow: 'hidden' }}
+    >
+      {!showImg && initials(user?.full_name)}
+      {showImg && (
+        <img
+          src={url}
+          alt=""
+          onError={() => setFailed(true)}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      )}
+    </div>
+  );
+}
+
 function relative(iso) {
   if (!iso) return '';
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -126,14 +154,14 @@ export default function DashboardCandidate() {
           <div className="dash-side-head">
             <div className="dash-side-role">Candidate · Pro plan</div>
             <div className="dash-side-name">
-              <div
-                className={`dash-side-avatar${user?.avatar_url ? '' : ' lg-1'}`}
-                style={user?.avatar_url ? {
-                  background: `center / cover no-repeat url("${user.avatar_url}")`,
-                } : undefined}
-              >
-                {!user?.avatar_url && initials(user?.full_name)}
-              </div>
+              {/*
+               * Avatar — uses a real <img> so onError can fall back
+               * to initials when the file 404s (deleted on disk,
+               * stale URL, etc) rather than rendering a broken-image
+               * placeholder. The wrapper keeps the .dash-side-avatar
+               * class so layout/sizing stays consistent.
+               */}
+              <DashAvatar user={user} />
               {user?.full_name?.split(' ')[0] || 'You'}
             </div>
           </div>

@@ -1352,5 +1352,179 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:3500/api/v1/ca
 1. Sign in → `/profile` → click the avatar circle → pick a JPG/PNG/WEBP.
 2. Preview appears immediately, then the server URL replaces it. The dashboard nav avatar in `/dashboard/candidate` reflects the new image too.
 3. Click the small `Remove` link under the avatar → falls back to initials.
-4. Save the profile form → notice the completion percent moves in real time as `basic_info`, `contact_info`, `social_links` get filled.
-5. Click **Review profile →** → lands on `/profile/review`. Empty sections show the actionable hint, not a blank space.
+4. Save the profile form → notice the completion percent moves in real time as `personal_information`, `about`, `social_links` get filled.
+5. Click **Preview public profile** → lands on `/profile/review`. Empty sections show the actionable hint, not a blank space.
+
+---
+
+## 31. Profile builder — extended fields + work experience (May 2026)
+
+This release brings the candidate Profile page in line with the
+business design spec by adding the fields that were missing,
+normalising work history into its own table, and introducing an
+explicit Draft vs Publish lifecycle.
+
+### Migrations
+
+| # | Migration | What it does |
+| --- | --- | --- |
+| 030 | `030_extend_profile_targets.js` | Adds three columns to `candidate_profiles`: `desired_role` (VARCHAR), `work_preference` ENUM(remote/hybrid/onsite), `relocation_scope` ENUM(anywhere/region/remote_only). Idempotent. |
+| 031 | `031_create_candidate_experiences.js` | New normalised table `candidate_experiences` for multi-row work history. Cascades on user delete. Idempotent. |
+
+The legacy `candidate_profiles.open_to_remote` boolean is kept for
+backward compatibility — `services/candidate.service.js > updateProfile`
+derives it from `relocation_scope` when the new column is sent
+without the old one.
+
+### New endpoints
+
+| Method | Path | Validator | Purpose |
+| --- | --- | --- | --- |
+| POST | `/candidates/experiences/list` | — | List the candidate's work history (sorted: current → recent end → recent start) |
+| POST | `/candidates/experiences` | `experienceCreate` | Append one new role. Hard cap: 30 rows per candidate |
+| POST | `/candidates/experiences/:id` | `experienceUpdate` | Patch an existing row (partial OK) |
+| DELETE | `/candidates/experiences/:id` | `experienceIdParam` | Remove a row |
+| POST | `/candidates/experiences/:id/remove` | `experienceIdParam` | POST alias for the DELETE above |
+| POST | `/candidates/profile/publish-state` | — | `{ publish: boolean }` — flips `is_public` without sending the whole form |
+
+Existing `/candidates/profile/update` accepts three new fields:
+`desired_role`, `work_preference`, `relocation_scope`. The `summary`
+field now requires **60–2000 characters** (Joi `min(60).max(2000)`)
+to match the frontend bio counter and avoid empty bios slipping
+through.
+
+### Profile completion — re-tuned weights
+
+```
+profile_image          10%   (unchanged)
+personal_information   20%   ← was basic_info 15 + contact_info 10
+about                  10%   ← new section; partial credit at 30 chars, full at 60
+skills                 15%   (unchanged)
+work_experience        20%   ← was 15; reads from candidate_experiences,
+                              falls back to parsed-resume JSON when empty
+resume_upload          10%   (unchanged)
+job_preferences        10%   ← now based on desired_role + work_preference
+                              + availability + expected_salary_min (any 3 of 4)
+social_links            5%   (unchanged)
+────────────────────────────
+Total                 100%
+```
+
+`Backend/src/repositories/candidate.repository.js >
+computeCompletionBreakdown` is the single source of truth. Every
+profile/skill/experience write calls `recomputeProfileStrength`,
+which calls this function and persists the score to
+`candidate_profiles.profile_strength`.
+
+### Draft vs Publish
+
+| Action on UI | API call | Effect on `is_public` |
+| --- | --- | --- |
+| Save Draft | `updateProfile(...)` then `setPublishState(false)` | 0 |
+| Save & Publish | `updateProfile(...)` then `setPublishState(true)` | 1 |
+
+`is_public=0` profiles are hidden from public listings
+(`listPublicCandidates`), the matching engine, and the top-candidates
+rail — but the owner still sees them normally on `/profile` and
+`/profile/review`. No new column was added; the existing
+`candidate_profiles.is_public` carries the lifecycle.
+
+### Manual test plan
+
+```bash
+# 0. Migrate
+cd Backend && npm run migrate
+
+# 1. Add a current role
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"company":"Verkada","title":"Senior Frontend","start_date":"2022-03-01","is_current":true,"description":"Led the migration to Next.js 14."}' \
+  http://localhost:3500/api/v1/candidates/experiences
+
+# 2. List them
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:3500/api/v1/candidates/experiences/list
+
+# 3. Profile completion should now show work_experience at 60% (1 entry = 0.6 fill)
+curl -X GET -H "Authorization: Bearer $TOKEN" http://localhost:3500/api/v1/candidates/profile-completion
+
+# 4. Update profile with the new fields
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"desired_role":"Staff Frontend","work_preference":"remote","relocation_scope":"anywhere"}' \
+  http://localhost:3500/api/v1/candidates/profile/update
+
+# 5. Save as draft (hide from search)
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"publish":false}' http://localhost:3500/api/v1/candidates/profile/publish-state
+
+# 6. Bio too short — should return 422
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"summary":"too short"}' http://localhost:3500/api/v1/candidates/profile/update
+```
+
+**Frontend manual tests** (`cd Frontend && npm run dev`):
+1. `/profile` shows the 5 numbered cards with all new fields (Phone, Open-to-relocate tri-state, Desired role, Work preference).
+2. Bio textarea shows the live counter and warns below 60 chars.
+3. Work Experience card supports add / edit / delete + "current role" toggle. End-date field disables when "I currently work here" is ticked.
+4. Sidebar shows a **Draft / Published** pill that updates as soon as you click Save Draft or Save & Publish.
+5. Completion bar moves correctly: image (10%), Personal info (20%), About (10%), Skills (15%), Work exp (20%), Resume (10%), Looking-for (10%), Social (5%).
+
+## 32. Profile image cross-origin display fix (May 2026)
+
+The May 2026 release of §31 stored a **relative** signed URL
+(`/api/v1/files/profile-images/<hex>.jpg?exp=…&sig=…`) on
+`users.avatar_url`. That URL works fine when the SPA is served from
+the same origin as the API, but Vite in dev serves the SPA on
+`:5173` while the API runs on `:3500` — so the browser resolved the
+relative path against the SPA origin and returned 404 from Vite.
+
+### Fix summary
+
+1. **New env**: `API_PUBLIC_URL` (defaults to `http://localhost:${PORT}` in dev). Required in staging/prod where the API has a real domain.
+2. **New static mount**: `app.use('/uploads/profile-images', express.static(...))` in `app.js`. Profile images are public profile data, so they're served directly — no HMAC signing on every render.
+   - `Cross-Origin-Resource-Policy: cross-origin` so `<img>` on a different origin can render the file
+   - `Cache-Control: public, max-age=86400, immutable` — files are content-addressed (crypto-random filenames) so cache forever is safe
+3. **`profileImage.service.publicUrlFor(storagePath)`**: builds an absolute URL anchored on `apiPublicUrl`. Both `users.avatar_url` and the `image_url` returned from the upload endpoint now use this. `signedUrlFor` is kept as a thin alias for any older import.
+4. **`storage.signUrl` also now returns absolute URLs** so resume download links work cross-origin too (same root bug, harder to hit because resumes are downloaded via a new-tab `<a>` click, but fixed for consistency).
+5. **Backfill**: existing rows had the legacy relative URL. A one-shot SQL rebuild from `candidate_profiles.profile_image`:
+   ```sql
+   UPDATE users u
+   JOIN candidate_profiles cp ON cp.user_id = u.id
+   SET u.avatar_url = CONCAT('http://localhost:3500/uploads/', cp.profile_image)
+   WHERE cp.profile_image IS NOT NULL
+     AND (u.avatar_url IS NULL OR u.avatar_url LIKE '%/api/v1/files/profile-images/%');
+   ```
+6. **Frontend hardening**:
+   - `ProfileImageUpload.jsx` now renders a real `<img>` (was CSS `background`), with `onError` falling back to the initials avatar — no broken-image placeholder, ever.
+   - Cache-busting `?v=<ts>` appended after every successful upload so the SAME-filename-replace edge case still refreshes the in-browser image (the static server's `immutable` header would otherwise hold the stale copy).
+   - Real upload progress bar via axios `onUploadProgress`.
+   - Drag-and-drop support on the avatar circle.
+   - `DashboardCandidate.jsx`'s sidebar avatar likewise switched from `background: url(...)` to `<img onError={...}>`.
+
+### Resume vs. profile image — when to sign vs serve publicly
+
+| Bucket | Visibility | Serving |
+|---|---|---|
+| `profile-images` | Public profile data — recruiters / other candidates see it | `express.static` mount, no signing |
+| `resumes` | Sensitive — only the candidate + employers they applied to should see it | Signed HMAC URL via `/api/v1/files/resumes/...?exp=…&sig=…` |
+
+If you add a new bucket, decide which category it falls in. If it's sensitive, route it through `storage.signUrl`; if it's inherently public, add a static mount in `app.js`.
+
+### Testing recipe
+
+```bash
+# 1. Server boot (auto-creates the bucket on first upload)
+cd Backend && npm run dev
+
+# 2. Direct fetch — should be 200 + Cross-Origin-Resource-Policy: cross-origin
+curl -sI http://localhost:3500/uploads/profile-images/<some-file>.jpg
+
+# 3. From a Vite-style origin (simulating the SPA)
+curl -sI -H 'Origin: http://localhost:5173' \
+  http://localhost:3500/uploads/profile-images/<some-file>.jpg | \
+  grep -iE 'access-control|cross-origin-resource-policy|cache-control'
+```
+
+Expected:
+- HTTP 200
+- `Cross-Origin-Resource-Policy: cross-origin`
+- `Access-Control-Allow-Origin: http://localhost:5173`
+- `Cache-Control: public, max-age=86400, immutable`

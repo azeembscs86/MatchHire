@@ -70,7 +70,20 @@ async function remove(storagePath) {
   catch (err) { logger.warn('storage.remove failed', { error: err.message }); }
 }
 
-/** Build a `/files/<bucket>/<filename>?exp=...&sig=...` URL valid for `ttlSeconds`. */
+/**
+ * Build a signed download URL valid for `ttlSeconds`.
+ *
+ * Returns an ABSOLUTE URL anchored on `config.apiPublicUrl` so the
+ * browser can resolve it from any origin (Vite at :5173 calling an
+ * API at :3500, or a CDN-served SPA hitting a separate api host).
+ *
+ *   storage path : resumes/abc.pdf
+ *   returned URL : http://localhost:3500/api/v1/files/resumes/abc.pdf?exp=...&sig=...
+ *
+ * The HMAC signature covers `storagePath:exp`, NOT the host, so
+ * prepending an absolute origin doesn't invalidate the signature
+ * verification in `verifySignedUrl()`.
+ */
 function signUrl(storagePath, ttlSeconds = 600) {
   const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
   const sig = crypto
@@ -79,7 +92,7 @@ function signUrl(storagePath, ttlSeconds = 600) {
     .digest('hex');
   // storagePath uses POSIX separators in the URL; mount path is added by the route.
   const posix = storagePath.split(path.sep).join('/');
-  return `${config.apiPrefix}/files/${posix}?exp=${exp}&sig=${sig}`;
+  return `${config.apiPublicUrl}${config.apiPrefix}/files/${posix}?exp=${exp}&sig=${sig}`;
 }
 
 /** Reject expired, missing, or tampered signatures. */

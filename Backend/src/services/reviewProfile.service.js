@@ -22,16 +22,18 @@
 
 const userRepo = require('../repositories/user.repository');
 const candidateRepo = require('../repositories/candidate.repository');
+const experienceRepo = require('../repositories/candidateExperience.repository');
 const db = require('../config/database');
 const profileImageService = require('./profileImage.service');
 
 async function build(user_id) {
-  const [user, profile, skills, preferences, completion] = await Promise.all([
+  const [user, profile, skills, preferences, completion, experiences] = await Promise.all([
     userRepo.findById(user_id),
     candidateRepo.findProfileByUserId(user_id),
     candidateRepo.listSkills(user_id),
     candidateRepo.getPreferences(user_id),
     candidateRepo.computeCompletionBreakdown(user_id),
+    experienceRepo.listForUser(user_id),
   ]);
 
   // Latest resume (lightweight metadata — full parsed data only if the
@@ -54,7 +56,10 @@ async function build(user_id) {
     [user_id]
   );
 
-  const image_url = profileImageService.signedUrlFor(profile?.profile_image);
+  // Always derive the URL from the storage path on read, so the source of
+  // truth stays the `candidate_profiles.profile_image` column. The DB
+  // mirror on `users.avatar_url` is just a denormalised convenience.
+  const image_url = profileImageService.publicUrlFor(profile?.profile_image);
 
   // Flatten the per-section hints into a single list for the
   // "Missing sections" banner at the top of the Review page.
@@ -80,6 +85,10 @@ async function build(user_id) {
     image_url,
     skills,
     preferences,
+    // Normalised work history. The SPA renders this when present and
+    // falls back to `parsed.experience` (the resume-extracted JSON)
+    // only when the candidate hasn't added any entries yet.
+    experiences,
     resume,
     parsed: parsed ? {
       education: safeJson(parsed.education),

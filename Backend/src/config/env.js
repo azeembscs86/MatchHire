@@ -44,6 +44,16 @@ const config = {
   apiPrefix: process.env.API_PREFIX || '/api/v1',
   corsOrigin: process.env.CORS_ORIGIN || '*',
 
+  // Public, absolute origin of THIS API as the browser sees it. Used to
+  // build absolute URLs (profile images, signed download links) that
+  // need to work when the SPA is served from a different origin
+  // (Vite at :5173 in dev, CDN host in prod) than the API.
+  //
+  //   dev      : defaults to http://localhost:${port}
+  //   staging  : API_PUBLIC_URL=https://staging-api.matchhire.example.com
+  //   prod     : API_PUBLIC_URL=https://api.matchhire.example.com
+  apiPublicUrl: (process.env.API_PUBLIC_URL || `http://localhost:${num('PORT', 3500)}`).replace(/\/$/, ''),
+
   db: {
     host: required('DB_HOST', 'localhost'),
     port: num('DB_PORT', 3306),

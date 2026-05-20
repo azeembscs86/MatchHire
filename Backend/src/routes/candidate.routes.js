@@ -600,7 +600,7 @@ router.post('/profile-match', asyncHandler(controller.profileMatch));
  *               Response: { responseCode: 1, status: 'Success', message: 'Profile image uploaded' }
  *               Data:
  *                 profile_image: 'profile-images/9c3a...8e.jpg'
- *                 image_url: '/api/v1/files/profile-images/9c3a...8e.jpg?exp=1747876800&sig=...'
+ *                 image_url: 'http://localhost:3500/uploads/profile-images/9c3a...8e.jpg'
  *       '413':
  *         description: Image exceeds the 2MB limit
  *       '415':
@@ -693,7 +693,7 @@ router.get('/profile-completion', asyncHandler(controller.profileCompletion));
  *               Data:
  *                 user: { id: 1492, full_name: 'Azeem Akram', email: 'azeem.akram78@gmail.com', role: 'candidate' }
  *                 profile: { headline: 'Senior Full-Stack Engineer', current_title: 'Senior Full-Stack Engineer' }
- *                 image_url: '/api/v1/files/profile-images/abc.jpg?exp=...&sig=...'
+ *                 image_url: 'http://localhost:3500/uploads/profile-images/abc.jpg'
  *                 skills: [{ id: 12, name: 'React.js' }]
  *                 preferences: { desired_titles: 'Full-Stack Engineer' }
  *                 resume: { id: 7, original_name: 'cv.pdf' }
@@ -701,5 +701,169 @@ router.get('/profile-completion', asyncHandler(controller.profileCompletion));
  *                 missing: [{ key: 'profile_image', label: 'Profile image', hint: 'Upload your profile image to improve profile visibility.' }]
  */
 router.get('/review-profile', asyncHandler(controller.reviewProfile));
+
+/* ----------------------------------------------------------------
+ * Work experience CRUD
+ * ----------------------------------------------------------------
+ * Backs the multi-row Work Experience card on the Profile page.
+ * Mounted under /candidates/experiences/* so they sit alongside
+ * other candidate-owned resources (skills, favorites, applications).
+ *
+ * The literal /list path is registered BEFORE /:id so Express
+ * doesn't treat "list" as the :id route param.
+ * ---------------------------------------------------------------- */
+
+/**
+ * @swagger
+ * /candidates/experiences/list:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: List the candidate's saved work experiences
+ *     description: |
+ *       Returns the candidate's work history sorted with `is_current`
+ *       roles first, then by most recent end date. Empty array when
+ *       the candidate hasn't added any experiences yet.
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       '200':
+ *         description: Experiences returned
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/SuccessEnvelope' }
+ *             example:
+ *               Response: { responseCode: 1, status: 'Success', message: 'Experiences returned' }
+ *               Data:
+ *                 experiences:
+ *                   - id: 12
+ *                     company: 'Verkada'
+ *                     title: 'Senior Frontend Engineer'
+ *                     start_date: '2022-03-01'
+ *                     end_date: null
+ *                     is_current: 1
+ *                     description: 'Led the migration of our legacy dashboard to Next.js 14.'
+ */
+router.post('/experiences/list', asyncHandler(controller.listExperiences));
+
+/**
+ * @swagger
+ * /candidates/experiences:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: Add a new work experience entry
+ *     description: |
+ *       Hard cap: 30 entries per candidate. If `is_current=true`, any
+ *       other "current" flags on the same candidate are cleared so a
+ *       candidate never has two concurrent current roles. Date sanity
+ *       is enforced server-side.
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema: { $ref: '#/components/schemas/CandidateExperienceCreate' }
+ *           example:
+ *             company: 'Verkada'
+ *             title: 'Senior Frontend Engineer'
+ *             start_date: '2022-03-01'
+ *             is_current: true
+ *             description: 'Led the migration of our legacy dashboard to Next.js 14, reducing TTI by 64%.'
+ *     responses:
+ *       '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ *       '422': { $ref: '#/components/responses/ValidationError' }
+ */
+router.post('/experiences', validate(v.experienceCreate), asyncHandler(controller.createExperience));
+
+/**
+ * @swagger
+ * /candidates/experiences/{id}:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: Update an existing work experience entry
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema: { $ref: '#/components/schemas/CandidateExperienceUpdate' }
+ *     responses:
+ *       '200': { description: Updated, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ *       '404': { $ref: '#/components/responses/NotFoundError' }
+ *       '422': { $ref: '#/components/responses/ValidationError' }
+ *   delete:
+ *     tags: [Candidates]
+ *     summary: Remove a single work experience entry
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses:
+ *       '200': { $ref: '#/components/responses/EmptySuccess' }
+ *       '404': { $ref: '#/components/responses/NotFoundError' }
+ */
+router.post(
+  '/experiences/:id',
+  validate(v.experienceIdParam, 'params'),
+  validate(v.experienceUpdate),
+  asyncHandler(controller.updateExperience)
+);
+router.delete(
+  '/experiences/:id',
+  validate(v.experienceIdParam, 'params'),
+  asyncHandler(controller.removeExperience)
+);
+
+/**
+ * @swagger
+ * /candidates/experiences/{id}/remove:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: POST alias of DELETE /candidates/experiences/{id}
+ *     description: |
+ *       Project rule is "POST-only when authed". The DELETE above
+ *       matches the public product spec; this POST alias is offered
+ *       so frontends that prefer POST stay consistent.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses:
+ *       '200': { $ref: '#/components/responses/EmptySuccess' }
+ *       '404': { $ref: '#/components/responses/NotFoundError' }
+ */
+router.post(
+  '/experiences/:id/remove',
+  validate(v.experienceIdParam, 'params'),
+  asyncHandler(controller.removeExperience)
+);
+
+/**
+ * @swagger
+ * /candidates/profile/publish-state:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: Save Draft vs. Save & Publish toggle
+ *     description: |
+ *       The Profile page has two save paths:
+ *
+ *         - Save Draft        → `{ publish: false }` — `is_public` set to 0.
+ *                                Recruiters can't see the profile, matching
+ *                                engine skips it.
+ *         - Save & Publish    → `{ publish: true }` — `is_public` set to 1.
+ *
+ *       The endpoint exists so the two buttons don't have to re-send
+ *       the whole form payload just to flip a single bit. The full
+ *       form still goes through `/profile/update` first.
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [publish]
+ *             properties:
+ *               publish: { type: boolean }
+ *           example: { publish: true }
+ *     responses:
+ *       '200': { description: Toggled, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ */
+router.post('/profile/publish-state', asyncHandler(controller.setPublishState));
 
 module.exports = router;

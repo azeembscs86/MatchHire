@@ -22,9 +22,9 @@
  * file does not change.
  */
 
-const fileType = null; // intentionally null — we don't pull in file-type
 const path = require('node:path');
 const db = require('../config/database');
+const config = require('../config/env');
 const storage = require('./storage.service');
 const candidateRepo = require('../repositories/candidate.repository');
 const AppError = require('../utils/AppError');
@@ -34,7 +34,6 @@ const BUCKET = 'profile-images';
 const MAX_BYTES = 2 * 1024 * 1024;
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
 const ALLOWED_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp']);
-const URL_TTL_SECONDS = 60 * 60 * 24 * 7; // 7d — long enough for cache freshness, short enough to rotate
 
 /**
  * Magic-number sniff — light defence so a renamed `.exe` masquerading
@@ -95,7 +94,10 @@ async function uploadForUser(user_id, file) {
   });
 
   await candidateRepo.upsertProfile(user_id, { profile_image: saved.storage_path });
-  const url = storage.signUrl(saved.storage_path, URL_TTL_SECONDS);
+  // Absolute, public URL (no signing — profile images are public profile data).
+  // We mirror this onto `users.avatar_url` so existing surfaces that read
+  // avatar_url (Header, dashboard nav, navigation API) light up immediately.
+  const url = publicUrlFor(saved.storage_path);
   await db.getPool().execute('UPDATE users SET avatar_url = ? WHERE id = ?', [url, user_id]);
   await candidateRepo.recomputeProfileStrength(user_id);
 
@@ -125,20 +127,40 @@ async function removeForUser(user_id) {
 }
 
 /**
- * Return a fresh signed URL for the candidate's image (or null when
- * none exists). Called by every read path so the URL doesn't rot.
+ * Build the absolute public URL for a stored profile image.
+ *
+ * Storage path looks like `profile-images/<hex>.<ext>`. We strip the
+ * bucket prefix and rebuild against the configured `apiPublicUrl` so
+ * the resulting URL is absolute and works cross-origin (SPA on
+ * :5173, API on :3500, or any deployed split).
+ *
+ *   profile-images/abc.jpg  →  http://localhost:3500/uploads/profile-images/abc.jpg
+ *
+ * Returns null for null/empty input so callers can pass through the
+ * DB value directly without a null-guard.
  */
-function signedUrlFor(profile_image_path) {
+function publicUrlFor(profile_image_path) {
   if (!profile_image_path) return null;
-  return storage.signUrl(profile_image_path, URL_TTL_SECONDS);
+  // Normalise separators (Windows compat) and strip the bucket prefix.
+  const posix = String(profile_image_path).split(path.sep).join('/');
+  const filename = posix.startsWith(`${BUCKET}/`) ? posix.slice(BUCKET.length + 1) : posix;
+  return `${config.apiPublicUrl}/uploads/${BUCKET}/${filename}`;
 }
+
+/**
+ * Back-compat alias: older callers (reviewProfile.service v1) imported
+ * `signedUrlFor`. Now that profile images are served publicly this is a
+ * thin wrapper around `publicUrlFor`, kept so we don't break any
+ * lingering import.
+ */
+const signedUrlFor = publicUrlFor;
 
 module.exports = {
   uploadForUser,
   removeForUser,
+  publicUrlFor,
   signedUrlFor,
   BUCKET,
   MAX_BYTES,
   ALLOWED_MIME,
-  URL_TTL_SECONDS,
 };

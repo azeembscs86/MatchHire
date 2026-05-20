@@ -39,15 +39,42 @@ async function updateProfile(user_id, payload) {
   if (Object.keys(userFields).length) await userRepo.updateById(user_id, userFields);
 
   const profileFields = {};
-  const allowed = ['headline','summary','current_title','years_experience','location','country','open_to_remote',
-    'expected_salary_min','expected_salary_max','salary_currency','availability','resume_url','portfolio_url',
-    'linkedin_url','github_url','languages','is_public'];
+  const allowed = [
+    'headline','summary','current_title','desired_role','years_experience',
+    'location','country',
+    'open_to_remote','work_preference','relocation_scope',
+    'expected_salary_min','expected_salary_max','salary_currency','availability',
+    'resume_url','portfolio_url','linkedin_url','github_url','languages','is_public',
+  ];
   for (const k of allowed) {
     if (k in payload) profileFields[k] = payload[k];
   }
+
+  // Derive `open_to_remote` from `relocation_scope` when the caller
+  // sent the new tri-state without also explicitly sending the
+  // legacy boolean. Keeps every existing read path (matching,
+  // search, public profile) working without changes.
+  if ('relocation_scope' in profileFields && !('open_to_remote' in profileFields)) {
+    profileFields.open_to_remote = profileFields.relocation_scope !== null
+      && profileFields.relocation_scope !== 'onsite_only';
+  }
+
   if (Object.keys(profileFields).length) await candidateRepo.upsertProfile(user_id, profileFields);
 
   await candidateRepo.recomputeProfileStrength(user_id);
+  await cache.deleteByPattern(cache.Patterns.candidatesList);
+  await cache.deleteCache(cache.Keys.candidateDetail(user_id), cache.Keys.topCandidates());
+  return getProfile(user_id);
+}
+
+/**
+ * Toggle the profile's publish state. "Save Draft" sets `is_public=0`,
+ * "Save & Publish" sets `is_public=1`. Splits out from updateProfile
+ * so the UI can wire one button to each path without sending the
+ * whole form payload.
+ */
+async function setPublishState(user_id, publish) {
+  await candidateRepo.upsertProfile(user_id, { is_public: publish ? 1 : 0 });
   await cache.deleteByPattern(cache.Patterns.candidatesList);
   await cache.deleteCache(cache.Keys.candidateDetail(user_id), cache.Keys.topCandidates());
   return getProfile(user_id);
@@ -248,6 +275,7 @@ async function applyWithValidation(user_id, job_id, payload = {}) {
 module.exports = {
   getProfile,
   updateProfile,
+  setPublishState,
   updateSkills,
   updatePreferences,
   recommendedJobs,

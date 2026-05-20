@@ -16,6 +16,7 @@ const profileMatchService = require('../services/profileMatch.service');
 const skillService = require('../services/skill.service');
 const profileImageService = require('../services/profileImage.service');
 const reviewProfileService = require('../services/reviewProfile.service');
+const experienceService = require('../services/candidateExperience.service');
 const candidateRepo = require('../repositories/candidate.repository');
 const response = require('../utils/response.helper');
 const { buildPagination } = require('../utils/pagination');
@@ -206,4 +207,58 @@ exports.validateAndApply = async (req, res) => {
     return response.error(res, data.message, 422, data);
   }
   return response.created(res, data, 'Application submitted with match score');
+};
+
+/* ----------------------------------------------------------------
+ * Work experience CRUD
+ * ----------------------------------------------------------------
+ * Backs the multi-row "Work experience" card on the Profile page.
+ * Reuses the project's POST-only convention for authenticated
+ * mutations; DELETE is registered for the remove path because the
+ * Swagger spec already documented similar DELETEs for skills /
+ * profile-image and the SPA's axios client speaks both.
+ * ---------------------------------------------------------------- */
+
+/** GET-equivalent: list the candidate's saved work experiences. */
+exports.listExperiences = async (req, res) => {
+  const experiences = await experienceService.list(req.user.id);
+  return response.success(res, { experiences }, 'Experiences returned');
+};
+
+/** POST /candidates/experiences — append one new experience row. */
+exports.createExperience = async (req, res) => {
+  const experience = await experienceService.create(req.user.id, req.body || {});
+  return response.created(res, { experience }, 'Experience added');
+};
+
+/** POST /candidates/experiences/:id — patch a single experience row. */
+exports.updateExperience = async (req, res) => {
+  const id = Number(req.params.id);
+  const experience = await experienceService.update(req.user.id, id, req.body || {});
+  return response.success(res, { experience }, 'Experience updated');
+};
+
+/** DELETE /candidates/experiences/:id — remove a single experience row. */
+exports.removeExperience = async (req, res) => {
+  const id = Number(req.params.id);
+  await experienceService.remove(req.user.id, id);
+  return response.success(res, {}, 'Experience removed');
+};
+
+/**
+ * POST /candidates/profile/publish-state
+ *
+ * Toggles `candidate_profiles.is_public`. The UI sends `{ publish: true }`
+ * for "Save & Publish" and `{ publish: false }` for "Save Draft".
+ * Kept separate from /profile/update so the buttons don't have to
+ * re-send the whole form to flip a single bit.
+ */
+exports.setPublishState = async (req, res) => {
+  const publish = !!req.body?.publish;
+  const data = await service.setPublishState(req.user.id, publish);
+  return response.success(
+    res,
+    data,
+    publish ? 'Profile published' : 'Profile saved as draft'
+  );
 };
