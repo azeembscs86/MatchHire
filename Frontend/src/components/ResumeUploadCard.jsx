@@ -129,10 +129,101 @@ export default function ResumeUploadCard({ onProfileUpdated }) {
       setParsed(null);
       setActiveId(null);
       onProfileUpdated?.();
+      await loadList();
     } catch (err) {
       setError(err);
       setStage('review');
     }
+  }
+
+  /* --- Resume management (§34) --- */
+
+  /**
+   * Reject the parsed preview without applying it. The resume file
+   * stays on disk; the review panel closes. UI prompts for an
+   * optional one-liner reason for an audit trail.
+   */
+  async function handleReject() {
+    if (!activeId) return;
+    // eslint-disable-next-line no-alert
+    const reason = window.prompt('Optional: why are you rejecting this parsed data?', '');
+    if (reason === null) return; // user hit Cancel
+    setStage('confirming');
+    setError(null);
+    try {
+      await candidatesApi.resume.reject(activeId, reason || 'Candidate rejected parsed data');
+      setStage('idle');
+      setParsed(null);
+      setActiveId(null);
+      await loadList();
+    } catch (err) {
+      setError(err);
+      setStage('review');
+    }
+  }
+
+  /** Promote a resume to primary; backend swaps everyone else off atomically. */
+  async function handleSetPrimary(id) {
+    setError(null);
+    try {
+      await candidatesApi.resume.setPrimary(id);
+      await loadList();
+    } catch (err) { setError(err); }
+  }
+
+  /** Soft-delete a resume. Confirms first because soft-delete is one-click. */
+  async function handleDelete(id, name) {
+    // eslint-disable-next-line no-alert
+    if (!window.confirm(`Remove "${name || 'this resume'}"? The file is recoverable by an admin.`)) return;
+    setError(null);
+    try {
+      await candidatesApi.resume.delete(id);
+      // If the user just deleted the resume they were reviewing, clear state.
+      if (id === activeId) { setActiveId(null); setParsed(null); setStage('idle'); }
+      await loadList();
+    } catch (err) { setError(err); }
+  }
+
+  /** Open the signed-URL in a new tab (the URL expires in 10 min). */
+  async function handleDownload(id) {
+    setError(null);
+    try {
+      const data = await candidatesApi.resume.signedUrl(id);
+      if (data?.url) window.open(data.url, '_blank', 'noopener,noreferrer');
+    } catch (err) { setError(err); }
+  }
+
+  /**
+   * Open a previously-uploaded resume's parsed data in the inline
+   * review editor (without re-parsing). Lets the candidate edit a
+   * past extraction and re-apply it to the profile.
+   */
+  async function handleReview(id) {
+    setError(null);
+    try {
+      const data = await candidatesApi.resume.detail(id);
+      const p = data?.parsed;
+      if (!p) {
+        setError({ message: 'This resume has no parsed data yet — try Re-parse.' });
+        return;
+      }
+      setActiveId(id);
+      setParsed(p);
+      applyParsedToDraft(p);
+      setStage('review');
+    } catch (err) { setError(err); }
+  }
+
+  /** Human-friendly file-size formatter. */
+  function fmtSize(bytes) {
+    const n = Number(bytes) || 0;
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  }
+  function fmtDate(iso) {
+    if (!iso) return '';
+    try { return new Date(iso).toLocaleDateString(); } catch { return ''; }
   }
 
   function removeSkill(s) {
@@ -190,6 +281,96 @@ export default function ResumeUploadCard({ onProfileUpdated }) {
           </span>
         )}
       </div>
+
+      {/*
+       * Resume Management list (§34)
+       * ---------------------------------------------------------------
+       * Renders every uploaded resume with metadata + actions.
+       *
+       *   - "Primary" badge + Set primary button (radio-style — exactly one)
+       *   - parse_status pill (pending / parsing / parsed / failed)
+       *   - View (signed URL in new tab) · Edit parsed · Download · Delete
+       *   - rejection_reason surfaces inline when present
+       *
+       * Hidden entirely when zero resumes exist — the upload button
+       * + empty-state copy carries that screen.
+       */}
+      {resumes.length > 0 && (
+        <div style={{ marginTop: 20, paddingTop: 18, borderTop: '1px solid var(--line-soft, #e2e0db)' }}>
+          <h4 style={{ marginBottom: 12 }}>Your resumes</h4>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {resumes.map((r) => {
+              const status = r.parse_status || 'pending';
+              const statusBg =
+                status === 'parsed' ? '#e6f4ea' :
+                status === 'failed' ? '#fde9e3' :
+                status === 'parsing' ? '#fff7e6' : 'var(--bone-2, #efe8da)';
+              const statusFg =
+                status === 'parsed' ? '#0f5132' :
+                status === 'failed' ? '#b3361b' :
+                status === 'parsing' ? '#7a4a14' : 'var(--muted, #6B6258)';
+              return (
+                <li
+                  key={r.id}
+                  style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    flexWrap: 'wrap', gap: 10,
+                    padding: '12px 14px', borderRadius: 12,
+                    background: r.is_primary ? 'var(--bone, #f5f0e6)' : 'var(--paper, #fff)',
+                    border: '1px solid ' + (r.is_primary ? '#e8b574' : 'var(--line, #e2d9c7)'),
+                  }}
+                >
+                  <div style={{ minWidth: 0, flex: '1 1 260px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <strong style={{ fontSize: 14 }}>📄 {r.original_name}</strong>
+                      {r.is_primary
+                        ? <span style={{ background: 'var(--coral, #E85D3C)', color: '#fff', fontSize: 10, padding: '2px 8px', borderRadius: 100, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase' }}>Primary</span>
+                        : null}
+                      <span style={{ background: statusBg, color: statusFg, fontSize: 11, padding: '2px 8px', borderRadius: 100, fontWeight: 500, textTransform: 'capitalize' }}>
+                        {status}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--muted, #6B6258)', marginTop: 2 }}>
+                      {fmtSize(r.size_bytes)} · uploaded {fmtDate(r.uploaded_at)}
+                    </div>
+                    {r.rejection_reason && (
+                      <div style={{ fontSize: 12, color: 'var(--coral-deep, #C73E1D)', marginTop: 4 }}>
+                        ⚠ Rejected: {r.rejection_reason}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {!r.is_primary && (
+                      <button type="button" className="btn btn-ghost"
+                              onClick={() => handleSetPrimary(r.id)}
+                              style={{ padding: '4px 10px', fontSize: 12 }}>
+                        Set primary
+                      </button>
+                    )}
+                    {status === 'parsed' && (
+                      <button type="button" className="btn btn-ghost"
+                              onClick={() => handleReview(r.id)}
+                              style={{ padding: '4px 10px', fontSize: 12 }}>
+                        Edit parsed
+                      </button>
+                    )}
+                    <button type="button" className="btn btn-ghost"
+                            onClick={() => handleDownload(r.id)}
+                            style={{ padding: '4px 10px', fontSize: 12 }}>
+                      Download
+                    </button>
+                    <button type="button" className="btn btn-ghost"
+                            onClick={() => handleDelete(r.id, r.original_name)}
+                            style={{ padding: '4px 10px', fontSize: 12, color: '#b3361b' }}>
+                      Delete
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       {stage === 'review' && parsed && (
         <div style={{ marginTop: 20, paddingTop: 18, borderTop: '1px solid var(--line-soft, #e2e0db)' }}>
@@ -269,12 +450,56 @@ export default function ResumeUploadCard({ onProfileUpdated }) {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 16 }}>
-            <button type="button" className="btn btn-ghost" onClick={() => { setStage('idle'); setParsed(null); }} disabled={stage === 'confirming'}>
-              Discard
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap', marginTop: 16 }}>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => { setStage('idle'); setParsed(null); setActiveId(null); }}
+              disabled={stage === 'confirming'}
+              title="Close the preview without saving (your edits stay in the form)"
+            >
+              Close
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={handleReject}
+              disabled={stage === 'confirming' || !activeId}
+              style={{ color: '#b3361b' }}
+              title="Reject the parsed data — keeps the file uploaded, does not update profile"
+            >
+              Reject parsed data
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={async () => {
+                if (!activeId) return;
+                setStage('confirming'); setError(null);
+                try {
+                  // Save edits to the parsed-data row WITHOUT applying
+                  // them to the candidate profile. The user can come
+                  // back later and click "Apply to profile" to merge.
+                  await candidatesApi.resume.updateParsed(activeId, {
+                    full_name: draft.full_name,
+                    job_title: draft.current_title,
+                    summary: draft.summary,
+                    location: draft.location,
+                    linkedin_url: draft.linkedin_url,
+                    github_url: draft.github_url,
+                    portfolio_url: draft.portfolio_url,
+                    skills: draft.skills,
+                  });
+                  setStage('review');
+                } catch (err) { setError(err); setStage('review'); }
+              }}
+              disabled={stage === 'confirming' || !activeId}
+              title="Save the corrected preview without updating your profile yet"
+            >
+              Save preview only
             </button>
             <button type="button" className="btn btn-coral" onClick={handleConfirm} disabled={stage === 'confirming'}>
-              {stage === 'confirming' ? 'Saving…' : 'Apply to profile →'}
+              {stage === 'confirming' ? 'Saving…' : 'Accept & update profile →'}
             </button>
           </div>
         </div>

@@ -1528,3 +1528,218 @@ Expected:
 - `Cross-Origin-Resource-Policy: cross-origin`
 - `Access-Control-Allow-Origin: http://localhost:5173`
 - `Cache-Control: public, max-age=86400, immutable`
+
+## 33. Candidate Onboarding Wizard (Phase 1.7)
+
+A guided 7-step first-run experience that walks newly-registered candidates through profile setup without exposing the full `/profile` editor on day one.
+
+### Architecture in one paragraph
+
+The wizard's **per-step data** is saved through the **existing** endpoints (`/profile/update`, `/skills`, `/experiences/*`, `/preferences`, `/resume/*`) — nothing new there. The **only** new surface is a tiny "where am I in the wizard?" state tracker so users can close the tab and resume. Two columns on `candidate_profiles` + three endpoints + one frontend page.
+
+### Database (migration 033)
+
+| Column | Type | Purpose |
+|---|---|---|
+| `onboarding_step` | TINYINT UNSIGNED, default 0 | Current step index, 0..6 |
+| `onboarding_completed_at` | DATETIME NULL | Set ONCE when user clicks Complete on step 6 |
+
+Both columns are nullable / have safe defaults — existing rows untouched.
+
+### Backend surface (all `POST /candidates/onboarding/*`)
+
+| Verb | Path | Body | Returns |
+|---|---|---|---|
+| POST | `/state` | (none) | `{ current_step, total_steps, is_completed, completed_at, profile_strength, completion }` |
+| POST | `/advance` | `{ step: 0..6, complete?: boolean }` | Updated state |
+| POST | `/reset` | (none) | State with `step=0, completed_at=null` |
+
+All three behind `requireAuth + requireCandidate`. Joi-validated on `advance`. Audit-trailed via the standard request log.
+
+### Step catalogue (lockstep — backend service constants match frontend)
+
+| Index | Label | Required | Reuses |
+|---:|---|:---:|---|
+| 0 | Basic Information | ✅ | `ProfileImageUpload` + form inputs |
+| 1 | Resume Upload | optional | `ResumeUploadCard` (existing parse + confirm flow) |
+| 2 | Skills & Expertise | ✅ | `SkillsPicker` (catalogue + custom, 3..30) |
+| 3 | Work Experience | optional | `WorkExperienceCard` (CRUD + `MonthYearPicker`) |
+| 4 | Education | optional | Free-text textarea → `candidate_profiles.education` |
+| 5 | Job Preferences | optional | Inline subset of `/preferences` page |
+| 6 | Review & Complete | — | `ReviewPanel` summary + "Complete profile" CTA |
+
+### Frontend behavior
+
+- **Route**: `/onboarding` (candidate-only, guarded by `<ProtectedRoute roles={['candidate']}/>`)
+- **Sidebar**: 7 step indicators with ✓/●/○ states; clickable for already-visited steps; auto-jumps via `POST /onboarding/advance`
+- **Per-step validation**: mirrors the Joi schema for that step (e.g. min 3 skills on step 2 surfaces inline)
+- **Footer actions**: `← Back`, `Skip this step` (optional steps only), `Save & exit` (banks progress + redirects to dashboard), `Save & next →`, `Complete profile ✓` (final step)
+- **Toast feedback**: `Saved`, `Skipped — you can come back`, `Progress saved — pick up here anytime`, `Profile complete!`
+- **Banner on the candidate dashboard**: gradient "Continue your setup — Step X of 7" with a deep link back to `/onboarding`. Hides automatically once `onboarding_completed_at` is set.
+
+### Sample candidate data
+
+The existing seeders (`seed.industries.js`, `seed.expand.js`) already populate ~270 candidates with profiles. **Their `onboarding_step` defaults to 0** (the migration default), so on first login any seeded candidate sees the Continue-setup banner. To pre-mark seeded candidates as already-onboarded for demo purposes:
+
+```sql
+UPDATE candidate_profiles
+   SET onboarding_step = 6,
+       onboarding_completed_at = COALESCE(onboarding_completed_at, NOW())
+ WHERE profile_strength >= 60;
+```
+
+Run this once after `npm run seed:industries` if you want the demo accounts to skip the wizard banner.
+
+### Testing recipe
+
+```bash
+# 1. Apply migration
+cd Backend && npm run migrate
+
+# 2. Boot
+npm run dev
+
+# 3. Log in as a candidate (the demo user works)
+TOKEN=$(curl -s -X POST http://localhost:3500/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"azeem.akram78@gmail.com","password":"@@Super253##"}' \
+  | node -e "let s='';process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>{console.log(JSON.parse(s).Data?.access_token)})")
+
+# 4. Read state
+curl -s -X POST -H "Authorization: Bearer $TOKEN" \
+  http://localhost:3500/api/v1/candidates/onboarding/state | jq
+
+# 5. Advance to step 3
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"step":3}' \
+  http://localhost:3500/api/v1/candidates/onboarding/advance | jq
+
+# 6. Mark complete
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"step":6,"complete":true}' \
+  http://localhost:3500/api/v1/candidates/onboarding/advance | jq
+
+# 7. Reset and start over (useful in dev)
+curl -s -X POST -H "Authorization: Bearer $TOKEN" \
+  http://localhost:3500/api/v1/candidates/onboarding/reset | jq
+```
+
+**Frontend manual test** (`cd Frontend && npm run dev`):
+1. Sign in as a candidate → `/dashboard/candidate` → click the coral "Resume onboarding →" banner.
+2. Walk through each step. Step 0 has inline validation (try saving with full_name empty).
+3. Step 2: try Save & next with 0 skills — backend returns 422, banner shows the error.
+4. Step 6: click Complete profile → toast → redirected to `/dashboard/candidate`, banner is gone.
+5. Open `/onboarding` again directly — it now lands on step 6 (already complete).
+
+### Out of scope (deliberately)
+
+- **Auto-redirect after first login**: the wizard is reachable via the dashboard banner; we don't auto-redirect new users. Adding `if (!onboarding.is_completed) navigate('/onboarding')` in `AuthContext` is a 2-line change if you want stronger nudging.
+- **Email "complete your profile" reminders**: trivial follow-up using the existing `email.queue` + a cron worker.
+- **Company / Admin onboarding wizards**: not built — current scope is candidate-only per the spec.
+
+## 34. Resume management (May 2026)
+
+The resume upload + parse + confirm pipeline already existed (see §
+on Resume Parsing). This section adds five candidate-facing management
+actions that were missing: **set-primary, soft-delete, get-detail,
+update-parsed-data, reject-parsed-data**. The result is a complete
+"list / view / edit / promote / delete" surface alongside the
+existing upload flow.
+
+### Migration
+
+`034_add_resume_rejection_reason.js` adds one column:
+
+| Column | Type | Purpose |
+|---|---|---|
+| `resumes.rejection_reason` | VARCHAR(500) NULL | Free-text note set by `/reject` action; kept for audit + surfaced inline in the management list |
+
+Idempotent — guarded on `information_schema.columns`.
+
+### Backend surface
+
+All endpoints sit under the existing `/candidates/resume/*` path (singular per project convention — the spec's `/candidate/resumes/*` plural shape is documented here as the intent; the singular URL is what shipped to keep the surface consistent with the existing upload/parse/confirm/download routes).
+
+| Verb | Path | Purpose |
+|---|---|---|
+| POST | `/candidates/resume/:id/detail` | `{ resume, parsed }` in one round-trip |
+| POST | `/candidates/resume/:id/set-primary` | Atomic swap: clears all `is_primary`, then sets this one |
+| POST | `/candidates/resume/:id/delete` | Soft-delete; auto-promotes next-newest if primary was deleted |
+| POST | `/candidates/resume/:id/parsed-data` | Save manual edits to parsed preview **without** applying to profile |
+| POST | `/candidates/resume/:id/reject` | Record `rejection_reason`, flip `parse_status='failed'`; keeps file on disk |
+
+Every action behind `requireAuth + requireCandidate`, with an extra service-layer ownership check (`loadOwnedResume`) — candidates cannot see or touch each other's resumes.
+
+### How the new actions relate to the existing ones
+
+```
+upload  →  parse  ↘
+                    review-and-edit-in-memory  →  confirm (apply to profile)
+                  ↗                              ↘
+        re-parse                                   reject (keep file, mark failed)
+
+list / detail / signedUrl / set-primary / delete / parsed-data   ← orthogonal to the pipeline
+```
+
+`/confirm` is what the spec calls "Apply to profile" — same operation, the existing name is kept.
+
+### Frontend
+
+`Frontend/src/components/ResumeUploadCard.jsx` gained:
+
+- A **Resume Management list** between the upload button and the review panel — one row per uploaded resume with: filename, parse-status pill, primary badge, size + uploaded date, `rejection_reason` inline when present, and per-row actions: **Set primary · Edit parsed · Download · Delete**
+- A **Reject parsed data** button on the review panel (with optional reason prompt)
+- A **Save preview only** button that persists manual edits to `resume_parsed_data` without applying to the candidate profile — for the "let me come back and apply later" case
+
+The button labelling matches the spec verbatim:
+- **Accept & update profile** (was "Apply to profile →")
+- **Reject parsed data**
+- **Save preview only** (new — covers the spec's "keep resume uploaded without updating profile" case)
+
+Frontend API wrapper (`Frontend/src/api/candidates.js > resume.*`) gained matching methods: `detail`, `setPrimary`, `delete`, `updateParsed`, `reject`.
+
+### Owner-check behavior
+
+Cross-user access returns **403 Forbidden** before any file I/O. The ownership gate is centralised in `loadOwnedResume(user_id, resume_id)` inside `resume.service.js`, so it runs identically for every action.
+
+### Primary-resume invariants
+
+- After every action, **exactly one** resume row per candidate has `is_primary = 1` (provided they have ≥ 1 non-deleted resume)
+- `setPrimary` runs as a transaction so the UI never observes 0 or 2 primaries during the swap
+- If the user deletes their primary resume, the **next-newest non-deleted** resume is auto-promoted in the same request
+
+### Live smoke test (verified)
+
+```
+A. Upload PDF           → resume_id 3
+B. Parse                → "Jane Doe" / "jane@example.com" extracted
+C. GET detail           → resume + parsed in one call
+D. Update parsed-data   → "Azeem Akram (edited)" + skills [React, Node.js, MySQL] persisted
+E. Set primary          → atomic swap; 1 of 4 primary
+F. Reject               → parse_status='failed', rejection_reason stored
+G. Soft-delete          → row dropped from list, file renamed `.deleted-<ts>`
+```
+
+### Testing recipe
+
+```bash
+# 1. Apply migration
+cd Backend && npm run migrate
+
+# 2. Boot
+npm run dev
+
+# 3. Get a token + try every action (replace TOKEN and ID)
+TOKEN=...; ID=3
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:3500/api/v1/candidates/resume/$ID/detail
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:3500/api/v1/candidates/resume/$ID/set-primary
+curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"full_name":"Edited Name","skills":["React","Node"]}' \
+  http://localhost:3500/api/v1/candidates/resume/$ID/parsed-data
+curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"reason":"Outdated version"}' \
+  http://localhost:3500/api/v1/candidates/resume/$ID/reject
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:3500/api/v1/candidates/resume/$ID/delete
+```
+
+Browse the new endpoints interactively at **`http://localhost:3500/api-docs`** under the **Candidates** tag (filter on "resume").

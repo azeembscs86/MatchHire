@@ -17,6 +17,7 @@ const skillService = require('../services/skill.service');
 const profileImageService = require('../services/profileImage.service');
 const reviewProfileService = require('../services/reviewProfile.service');
 const experienceService = require('../services/candidateExperience.service');
+const onboardingService = require('../services/onboarding.service');
 const candidateRepo = require('../repositories/candidate.repository');
 const response = require('../utils/response.helper');
 const { buildPagination } = require('../utils/pagination');
@@ -261,4 +262,50 @@ exports.setPublishState = async (req, res) => {
     data,
     publish ? 'Profile published' : 'Profile saved as draft'
   );
+};
+
+
+/**
+ * POST /candidates/onboarding/state
+ *
+ * Read the candidate's wizard state: current step index, total
+ * steps, completion timestamp, profile_strength %, and the
+ * per-section completion breakdown so the wizard's progress bar
+ * + step-by-step "complete" indicators can render in one round-trip.
+ */
+exports.onboardingState = async (req, res) => {
+  const data = await onboardingService.getState(req.user.id);
+  return response.success(res, data, 'Onboarding state returned');
+};
+
+/**
+ * POST /candidates/onboarding/advance
+ *
+ * Move the wizard to a new step (or mark complete on step 6).
+ * Payload: { step: 0..6, complete?: boolean }.
+ *
+ * The wizard's per-step data is still saved through the dedicated
+ * endpoints (/profile/update, /skills, /experiences/*, /preferences,
+ * /resume/*); this endpoint only tracks WHICH step the user is on
+ * so they can resume after closing the tab.
+ */
+exports.onboardingAdvance = async (req, res) => {
+  const data = await onboardingService.advance(req.user.id, req.body || {});
+  return response.success(
+    res,
+    data,
+    req.body?.complete ? 'Onboarding completed' : 'Onboarding step saved'
+  );
+};
+
+/**
+ * POST /candidates/onboarding/reset
+ *
+ * Reset the wizard back to step 0 and clear the completion
+ * timestamp. Used by the profile page's "Restart onboarding"
+ * action and by tests.
+ */
+exports.onboardingReset = async (req, res) => {
+  const data = await onboardingService.reset(req.user.id);
+  return response.success(res, data, 'Onboarding reset');
 };

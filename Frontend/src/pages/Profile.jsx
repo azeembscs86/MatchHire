@@ -79,6 +79,10 @@ const BLANK_FORM = {
   linkedin_url: '',
   portfolio_url: '',
   github_url: '',
+  // Free-text education block (one entry per line). Persisted to
+  // candidate_profiles.education (TEXT). Auto-filled by the resume
+  // parser on confirm; manually editable here.
+  education: '',
 };
 
 export default function Profile() {
@@ -154,6 +158,7 @@ export default function Profile() {
           linkedin_url: p.linkedin_url || '',
           portfolio_url: p.portfolio_url || '',
           github_url: p.github_url || '',
+          education: p.education || '',
         });
       } catch (err) {
         if (!cancelled) setError(err);
@@ -239,6 +244,7 @@ export default function Profile() {
         linkedin_url: form.linkedin_url?.trim() || null,
         portfolio_url: form.portfolio_url?.trim() || null,
         github_url: form.github_url?.trim() || null,
+        education: form.education?.trim() || null,
       };
       if (form.expected_salary_min !== '') payload.expected_salary_min = Number(form.expected_salary_min);
       if (form.expected_salary_max !== '') payload.expected_salary_max = Number(form.expected_salary_max);
@@ -514,6 +520,40 @@ export default function Profile() {
               candidatesApi.profileCompletion().then(setCompletion).catch(() => {});
             }}
           />
+
+          {/* -------- 04b Education -------- */}
+          {/*
+           * Free-text education block — one entry per line, format is
+           * up to the candidate. Auto-filled by the resume parser on
+           * the confirm step (parsed `education` JSON is collapsed
+           * into newline-separated text). Stored at
+           * candidate_profiles.education (TEXT, max 2000 chars).
+           * Structured education table is on the Phase-2 roadmap.
+           */}
+          <div className="form-card">
+            <div className="form-card-head">
+              <h3>Education</h3>
+              <span className="step">04b</span>
+            </div>
+            <div className="form-row single">
+              <div className="form-field">
+                <label htmlFor="profile-education">
+                  One entry per line — degree · institution · year
+                </label>
+                <textarea
+                  id="profile-education"
+                  value={form.education}
+                  onChange={(e) => update({ education: e.target.value })}
+                  placeholder={'BS Computer Science · LUMS · 2018\nMSc Data Science · Imperial College London · 2021'}
+                  maxLength={2000}
+                  style={{ minHeight: 100 }}
+                />
+                <small className="muted" style={{ display: 'block', marginTop: 6, fontSize: 12 }}>
+                  {form.education.length} / 2000 characters · auto-filled from your resume
+                </small>
+              </div>
+            </div>
+          </div>
 
           {/* -------- 05 What you're looking for -------- */}
           <div className="form-card">

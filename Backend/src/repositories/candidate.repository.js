@@ -26,7 +26,7 @@ async function findProfileByUserId(user_id) {
 async function upsertProfile(user_id, fields, conn = null) {
   const exec = conn ? conn.execute.bind(conn) : (sql, params) => db.getPool().execute(sql, params);
   const allowed = [
-    'headline','summary','current_title','desired_role','years_experience','location','country',
+    'headline','summary','current_title','desired_role','years_experience','location','country','education',
     'open_to_remote','work_preference','relocation_scope',
     'expected_salary_min','expected_salary_max','salary_currency','availability','resume_url',
     'profile_image',
@@ -119,41 +119,124 @@ async function countSkills(user_id) {
 }
 
 async function getPreferences(user_id) {
-  return db.queryOne(`SELECT * FROM preferences WHERE user_id = ? LIMIT 1`, [user_id]);
+  const row = await db.queryOne(
+    `SELECT * FROM preferences WHERE user_id = ? LIMIT 1`,
+    [user_id]
+  );
+  if (!row) return null;
+  // mysql2 returns JSON columns as already-parsed objects, but a
+  // belt-and-braces parse handles edge cases (server_version differences,
+  // text-coerced JSON, missing fields on never-saved rows).
+  const parseJson = (v, fallback) => {
+    if (v == null) return fallback;
+    if (typeof v === 'object') return v;
+    try { return JSON.parse(String(v)); } catch { return fallback; }
+  };
+  return {
+    ...row,
+    priorities:    parseJson(row.priorities, []),
+    match_weights: parseJson(row.match_weights, {}),
+    deal_breakers: parseJson(row.deal_breakers, []),
+  };
 }
 
 async function upsertPreferences(user_id, p) {
+  /*
+   * One UPSERT touches every column on the table. Storage shapes:
+   *   - CSV columns       (desired_titles, work_modes, ...) join(',')
+   *   - JSON columns      (priorities, match_weights, deal_breakers) JSON.stringify
+   *   - ENUM/scalar       passed through with sensible defaults
+   *   - Booleans          coerced to 0/1
+   *
+   * `getPreferences` reverses each shape on the read side.
+   */
+  const csv = (arr) => (Array.isArray(arr) ? arr.join(',') : '');
+  const json = (val) => (val == null ? null : JSON.stringify(val));
+
   const data = {
-    desired_titles: (p.desired_titles || []).join(','),
-    preferred_locations: (p.preferred_locations || []).join(','),
-    preferred_job_types: (p.preferred_job_types || []).join(','),
-    preferred_categories: (p.preferred_categories || []).join(','),
+    // --- legacy (matching engine) ---
+    desired_titles: csv(p.desired_titles),
+    preferred_locations: csv(p.preferred_locations),
+    preferred_job_types: csv(p.preferred_job_types),
+    preferred_categories: csv(p.preferred_categories),
+    job_scope: p.job_scope || 'hybrid',
     remote_only: p.remote_only ? 1 : 0,
     salary_min: p.salary_min ?? null,
     salary_max: p.salary_max ?? null,
     salary_currency: p.salary_currency || 'USD',
     notify_email: p.notify_email ? 1 : 0,
     notify_push: p.notify_push ? 1 : 0,
+    // --- new (migration 032) ---
+    priorities: json(p.priorities || []),
+    experience_levels: csv(p.experience_levels),
+    compensation_benefits: csv(p.compensation_benefits),
+    work_modes: csv(p.work_modes),
+    company_stages: csv(p.company_stages),
+    deal_breakers: json(p.deal_breakers || []),
+    relocate_open: p.relocate_open ? 1 : 0,
+    visa_sponsorship_needed: p.visa_sponsorship_needed ? 1 : 0,
+    timezone_overlap_required: p.timezone_overlap_required ? 1 : 0,
+    match_weights: json(p.match_weights || {}),
+    email_frequency: p.email_frequency || 'daily',
+    minimum_match_score: p.minimum_match_score ?? 70,
+    recruiter_messages: p.recruiter_messages == null ? 1 : (p.recruiter_messages ? 1 : 0),
+    interview_reminders: p.interview_reminders == null ? 1 : (p.interview_reminders ? 1 : 0),
+    weekly_profile_insights: p.weekly_profile_insights == null ? 1 : (p.weekly_profile_insights ? 1 : 0),
+    salary_trend_alerts: p.salary_trend_alerts ? 1 : 0,
   };
+
+  // The column list is ordered to match the placeholder list exactly.
+  // 28 columns including user_id — keep them lockstep when editing.
   await db.getPool().execute(
     `INSERT INTO preferences
-       (user_id, desired_titles, preferred_locations, preferred_job_types, preferred_categories,
-        remote_only, salary_min, salary_max, salary_currency, notify_email, notify_push)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (user_id,
+        desired_titles, preferred_locations, preferred_job_types, preferred_categories,
+        job_scope, remote_only, salary_min, salary_max, salary_currency,
+        notify_email, notify_push,
+        priorities, experience_levels, compensation_benefits, work_modes, company_stages,
+        deal_breakers,
+        relocate_open, visa_sponsorship_needed, timezone_overlap_required,
+        match_weights, email_frequency, minimum_match_score,
+        recruiter_messages, interview_reminders, weekly_profile_insights, salary_trend_alerts)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
-       desired_titles = VALUES(desired_titles),
-       preferred_locations = VALUES(preferred_locations),
-       preferred_job_types = VALUES(preferred_job_types),
-       preferred_categories = VALUES(preferred_categories),
-       remote_only = VALUES(remote_only),
-       salary_min = VALUES(salary_min),
-       salary_max = VALUES(salary_max),
-       salary_currency = VALUES(salary_currency),
-       notify_email = VALUES(notify_email),
-       notify_push = VALUES(notify_push)`,
+       desired_titles            = VALUES(desired_titles),
+       preferred_locations       = VALUES(preferred_locations),
+       preferred_job_types       = VALUES(preferred_job_types),
+       preferred_categories      = VALUES(preferred_categories),
+       job_scope                 = VALUES(job_scope),
+       remote_only               = VALUES(remote_only),
+       salary_min                = VALUES(salary_min),
+       salary_max                = VALUES(salary_max),
+       salary_currency           = VALUES(salary_currency),
+       notify_email              = VALUES(notify_email),
+       notify_push               = VALUES(notify_push),
+       priorities                = VALUES(priorities),
+       experience_levels         = VALUES(experience_levels),
+       compensation_benefits     = VALUES(compensation_benefits),
+       work_modes                = VALUES(work_modes),
+       company_stages            = VALUES(company_stages),
+       deal_breakers             = VALUES(deal_breakers),
+       relocate_open             = VALUES(relocate_open),
+       visa_sponsorship_needed   = VALUES(visa_sponsorship_needed),
+       timezone_overlap_required = VALUES(timezone_overlap_required),
+       match_weights             = VALUES(match_weights),
+       email_frequency           = VALUES(email_frequency),
+       minimum_match_score       = VALUES(minimum_match_score),
+       recruiter_messages        = VALUES(recruiter_messages),
+       interview_reminders       = VALUES(interview_reminders),
+       weekly_profile_insights   = VALUES(weekly_profile_insights),
+       salary_trend_alerts       = VALUES(salary_trend_alerts)`,
     [
-      user_id, data.desired_titles, data.preferred_locations, data.preferred_job_types, data.preferred_categories,
-      data.remote_only, data.salary_min, data.salary_max, data.salary_currency, data.notify_email, data.notify_push,
+      user_id,
+      data.desired_titles, data.preferred_locations, data.preferred_job_types, data.preferred_categories,
+      data.job_scope, data.remote_only, data.salary_min, data.salary_max, data.salary_currency,
+      data.notify_email, data.notify_push,
+      data.priorities, data.experience_levels, data.compensation_benefits, data.work_modes, data.company_stages,
+      data.deal_breakers,
+      data.relocate_open, data.visa_sponsorship_needed, data.timezone_overlap_required,
+      data.match_weights, data.email_frequency, data.minimum_match_score,
+      data.recruiter_messages, data.interview_reminders, data.weekly_profile_insights, data.salary_trend_alerts,
     ]
   );
 }

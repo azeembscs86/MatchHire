@@ -91,6 +91,24 @@ export const candidatesApi = {
   /** Remove the candidate's profile image. */
   deleteProfileImage() { return call(api.delete('/candidates/profile-image')); },
 
+  /**
+   * Onboarding Wizard state surface.
+   * Per-step DATA is saved through the other endpoints
+   * (updateProfile, updateSkills, experience.*, updatePreferences,
+   * resume.*); these endpoints only persist the wizard's progress
+   * so the user can resume after closing the tab.
+   */
+  onboarding: {
+    /** Read current step + completion breakdown. */
+    state() { return call(api.post('/candidates/onboarding/state')); },
+    /** Move to a new step (or pass `complete: true` to finish). */
+    advance(step, complete = false) {
+      return call(api.post('/candidates/onboarding/advance', { step, complete }));
+    },
+    /** Reset to step 0 (clears the completion timestamp). */
+    reset() { return call(api.post('/candidates/onboarding/reset')); },
+  },
+
   resume: {
     list() { return call(api.post('/candidates/resume/list')); },
     /** Multipart upload. `file` is the browser File object. */
@@ -105,5 +123,12 @@ export const candidatesApi = {
     preview(id) { return call(api.post(`/candidates/resume/${id}/preview`)); },
     confirm(id, fields = {}) { return call(api.post(`/candidates/resume/${id}/confirm`, fields)); },
     signedUrl(id) { return call(api.post(`/candidates/resume/${id}/download`)); },
+    /* Resume management (§34) — five candidate-facing actions on top
+       of the upload/parse/confirm pipeline. */
+    detail(id)        { return call(api.post(`/candidates/resume/${id}/detail`)); },
+    setPrimary(id)    { return call(api.post(`/candidates/resume/${id}/set-primary`)); },
+    delete(id)        { return call(api.post(`/candidates/resume/${id}/delete`)); },
+    updateParsed(id, fields = {}) { return call(api.post(`/candidates/resume/${id}/parsed-data`, fields)); },
+    reject(id, reason = '')       { return call(api.post(`/candidates/resume/${id}/reject`, { reason })); },
   },
 };

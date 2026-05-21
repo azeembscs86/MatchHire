@@ -45,6 +45,9 @@ async function updateProfile(user_id, payload) {
     'open_to_remote','work_preference','relocation_scope',
     'expected_salary_min','expected_salary_max','salary_currency','availability',
     'resume_url','portfolio_url','linkedin_url','github_url','languages','is_public',
+    // Free-text education block. Repo + validator already accept it
+    // (see candidate.validator.js > profileUpdate + candidate.repository.js > upsertProfile.allowed).
+    'education',
   ];
   for (const k of allowed) {
     if (k in payload) profileFields[k] = payload[k];

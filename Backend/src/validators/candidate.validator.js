@@ -41,6 +41,11 @@ const profileUpdate = Joi.object({
   linkedin_url: Joi.string().uri().max(500).allow('', null),
   github_url: Joi.string().uri().max(500).allow('', null),
   languages: Joi.array().items(Joi.string().max(50)).max(20),
+  // Free-text education block (one entry per line, format up to the
+  // candidate: "BS Computer Science · LUMS · 2018"). Structured
+  // education table is on the Phase-2 roadmap. The resume parser
+  // populates this on the confirm step from the parsed-education JSON.
+  education: Joi.string().max(2000).allow('', null),
   // Save Draft = is_public:false, Save & Publish = is_public:true.
   // (Existing column kept; see DEVELOPER_GUIDE §profile-drafts.)
   is_public: Joi.boolean(),
@@ -98,19 +103,69 @@ const skillsUpdate = Joi.object({
   skills: Joi.array().items(skillEntry).min(1).max(30).required(),
 });
 
+/**
+ * Full preferences payload — covers every section of the SPA's
+ * Preferences page. The schema is intentionally permissive on the
+ * structured arrays so the frontend can ship new chip values
+ * without a backend deploy (we only validate the SHAPE, not
+ * specific enum members on the open vocab fields). Closed-vocab
+ * fields (job_scope, preferred_job_types, email_frequency) are
+ * still pinned to their enum.
+ *
+ * Defaults are applied here so a partial payload never lands as
+ * NULL in a column that has a NOT NULL constraint.
+ */
 const preferencesUpdate = Joi.object({
+  // ---- Original (matching-engine) fields ----
   desired_titles: Joi.array().items(Joi.string().max(120)).max(20).default([]),
   preferred_locations: Joi.array().items(Joi.string().max(120)).max(20).default([]),
   preferred_job_types: Joi.array().items(
     Joi.string().valid('full_time', 'part_time', 'contract', 'internship', 'temporary', 'freelance')
   ).max(10).default([]),
   preferred_categories: Joi.array().items(Joi.string().max(120)).max(20).default([]),
+  // Scope of the job search. `local` = same city; `country` = same
+  // country; `global_remote` = remote-only across borders;
+  // `hybrid` (default) = any of the above ranked by proximity.
+  job_scope: Joi.string().valid('local', 'country', 'global_remote', 'hybrid').default('hybrid'),
   remote_only: Joi.boolean().default(false),
   salary_min: Joi.number().min(0).allow(null),
   salary_max: Joi.number().min(0).allow(null),
   salary_currency: Joi.string().max(8).default('USD'),
   notify_email: Joi.boolean().default(true),
   notify_push: Joi.boolean().default(false),
+
+  // ---- Migration 032 — full Preferences page coverage ----
+  // Priorities ranking (ordered list of priority ids, max 8).
+  priorities: Joi.array().items(Joi.string().max(40)).max(8).default([]),
+  // Multi-select: entry / junior / mid / senior / staff / principal.
+  experience_levels: Joi.array().items(Joi.string().max(40)).max(8).default([]),
+  // Multi-select benefits the user expects (equity, bonus, healthcare …).
+  compensation_benefits: Joi.array().items(Joi.string().max(60)).max(20).default([]),
+  // Multi-select work modes: remote / hybrid / onsite. Complementary
+  // to `job_scope` (which is single-select scope of the search).
+  work_modes: Joi.array().items(Joi.string().valid('remote', 'hybrid', 'onsite')).max(3).default([]),
+  // Multi-select company stages (seed / series_a_b / series_c_plus / late_stage / public).
+  company_stages: Joi.array().items(Joi.string().max(40)).max(8).default([]),
+  // Free-text deal breakers list.
+  deal_breakers: Joi.array().items(Joi.string().max(280)).max(50).default([]),
+
+  // Location preferences (Phase-1 toggles now persisted).
+  relocate_open: Joi.boolean().default(false),
+  visa_sponsorship_needed: Joi.boolean().default(false),
+  timezone_overlap_required: Joi.boolean().default(false),
+
+  // Match-algorithm weights (any keys, integer 0–100 each).
+  match_weights: Joi.object().pattern(Joi.string().max(40), Joi.number().min(0).max(100)).default({}),
+
+  // Email digest cadence + match-score floor.
+  email_frequency: Joi.string().valid('real_time', 'daily', 'weekly', 'off').default('daily'),
+  minimum_match_score: Joi.number().integer().min(50).max(100).default(70),
+
+  // Four granular notification flags.
+  recruiter_messages: Joi.boolean().default(true),
+  interview_reminders: Joi.boolean().default(true),
+  weekly_profile_insights: Joi.boolean().default(true),
+  salary_trend_alerts: Joi.boolean().default(false),
 });
 
 const applyToJob = Joi.object({
@@ -144,6 +199,17 @@ const matchFilters = Joi.object({
   include_below_threshold: Joi.boolean().default(false),
 }).unknown(false);
 
+/**
+ * Onboarding-wizard advance payload. The step index is bounded to
+ * [0, 6] (matches the 7 wizard panes); `complete: true` is only
+ * meaningful on the final step but is accepted at any step so the
+ * backend can be the authoritative gate.
+ */
+const onboardingAdvance = Joi.object({
+  step: Joi.number().integer().min(0).max(6).required(),
+  complete: Joi.boolean().default(false),
+});
+
 /** Apply validation + persist match (POST body). */
 const validateAndApply = Joi.object({
   cover_letter: Joi.string().max(5000).allow('', null),
@@ -163,4 +229,5 @@ module.exports = {
   experienceCreate,
   experienceUpdate,
   experienceIdParam,
+  onboardingAdvance,
 };

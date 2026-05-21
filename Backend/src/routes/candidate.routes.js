@@ -114,6 +114,119 @@ router.post('/resume/:id/confirm', asyncHandler(resumeController.confirm));
 router.post('/resume/:id/download', asyncHandler(resumeController.signedDownload));
 
 /**
+ * Resume management surface (added in §34). Five candidate-facing
+ * actions on top of the upload/parse/confirm pipeline. Every route
+ * runs an ownership check inside the service layer — a candidate
+ * can only act on their own resumes.
+ *
+ * @swagger
+ * /candidates/resume/{id}/detail:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: Read a single resume (metadata + parsed-data preview)
+ *     description: Returns `{ resume, parsed }` in one round-trip. 403 if the resume belongs to another candidate; 404 if it doesn't exist or has been soft-deleted.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses:
+ *       '200': { description: Resume + parsed, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ *       '403': { $ref: '#/components/responses/ForbiddenError' }
+ *       '404': { $ref: '#/components/responses/NotFoundError' }
+ *
+ * /candidates/resume/{id}/set-primary:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: Mark this resume as the candidate's primary CV
+ *     description: |
+ *       Runs as a single transaction — all of the user's other
+ *       resumes are demoted before this one is promoted, so the
+ *       UI never observes zero or two primary rows.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses:
+ *       '200': { description: Updated resume row, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ *
+ * /candidates/resume/{id}/delete:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: Soft-delete a resume
+ *     description: |
+ *       Flips `resumes.deleted_at = NOW()` and renames the file on
+ *       disk with a `.deleted-<ts>` suffix (recoverable). If the
+ *       deleted resume was the primary one, the most-recently-
+ *       uploaded remaining resume is auto-promoted to primary.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses:
+ *       '200': { $ref: '#/components/responses/EmptySuccess' }
+ *
+ * /candidates/resume/{id}/parsed-data:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: Save manual edits to the parsed preview
+ *     description: |
+ *       Updates the candidate's resume_parsed_data row in-place
+ *       WITHOUT applying anything to the candidate profile. Use
+ *       this to let the user correct extraction errors and save
+ *       the corrected preview for later. Apply to profile via
+ *       /resume/{id}/confirm.
+ *
+ *       Whitelisted fields only: full_name, email, phone, location,
+ *       country, city, job_title, summary, linkedin_url, github_url,
+ *       portfolio_url (text); skills, experience, education,
+ *       certifications (arrays/objects).
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               full_name:     { type: string }
+ *               email:         { type: string, format: email }
+ *               phone:         { type: string }
+ *               location:      { type: string }
+ *               job_title:     { type: string }
+ *               summary:       { type: string }
+ *               linkedin_url:  { type: string, format: uri }
+ *               github_url:    { type: string, format: uri }
+ *               portfolio_url: { type: string, format: uri }
+ *               skills:        { type: array, items: { type: string } }
+ *               experience:    { type: array, items: { type: string } }
+ *               education:     { type: array, items: { type: string } }
+ *     responses:
+ *       '200': { description: Updated parsed-data row, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ *
+ * /candidates/resume/{id}/reject:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: Reject the parsed preview (keep the file)
+ *     description: |
+ *       Stamps `resumes.rejection_reason` and flips parse_status
+ *       to 'failed' so the review panel stops popping. The resume
+ *       file is left on disk — the candidate can still download
+ *       it and use it manually.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties: { reason: { type: string, maxLength: 480 } }
+ *           example: { reason: 'Layout confused the parser — will upload a cleaner version.' }
+ *     responses:
+ *       '200': { description: Resume marked rejected, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ */
+router.post('/resume/:id/detail',       asyncHandler(resumeController.detail));
+router.post('/resume/:id/set-primary',  asyncHandler(resumeController.setPrimary));
+router.post('/resume/:id/delete',       asyncHandler(resumeController.softDelete));
+router.post('/resume/:id/parsed-data',  asyncHandler(resumeController.updateParsedData));
+router.post('/resume/:id/reject',       asyncHandler(resumeController.rejectParsedData));
+
+/**
  * @swagger
  * /candidates/profile:
  *   post:
@@ -865,5 +978,91 @@ router.post(
  *       '200': { description: Toggled, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
  */
 router.post('/profile/publish-state', asyncHandler(controller.setPublishState));
+
+/**
+ * @swagger
+ * /candidates/onboarding/state:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: Read the Onboarding Wizard state (current step + completion breakdown)
+ *     description: |
+ *       Returns the candidate's wizard progress in one round-trip:
+ *       current step index (0..6), total steps (7), completion
+ *       timestamp (or null if still in progress), profile_strength
+ *       percentage, AND the per-section completion breakdown — so
+ *       the wizard's progress bar + step indicators render without
+ *       a second request to /profile-completion.
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       '200':
+ *         description: Onboarding state
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/SuccessEnvelope' }
+ *             example:
+ *               Response: { responseCode: 1, status: 'Success', message: 'Onboarding state returned' }
+ *               Data:
+ *                 current_step: 2
+ *                 total_steps: 7
+ *                 is_completed: false
+ *                 completed_at: null
+ *                 profile_strength: 45
+ *                 completion:
+ *                   score: 45
+ *                   totals: { earned: 45, max: 100 }
+ *                   sections: []
+ */
+router.post('/onboarding/state', asyncHandler(controller.onboardingState));
+
+/**
+ * @swagger
+ * /candidates/onboarding/advance:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: Advance the Onboarding Wizard (next/back/complete)
+ *     description: |
+ *       Sets the candidate's current step index. Pass `complete: true`
+ *       on the final step (6 = "Review & Complete Profile") to stamp
+ *       `onboarding_completed_at` — that timestamp is set ONCE and
+ *       preserved across re-completes (so analytics for
+ *       time-to-first-complete stay clean).
+ *
+ *       Per-step DATA is saved through the dedicated endpoints
+ *       (/profile/update, /skills, /experiences/*, /preferences,
+ *       /resume/*). This endpoint only persists the wizard's own
+ *       progress so the user can resume after closing the tab.
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [step]
+ *             properties:
+ *               step:     { type: integer, minimum: 0, maximum: 6 }
+ *               complete: { type: boolean, default: false }
+ *           example: { step: 3, complete: false }
+ *     responses:
+ *       '200': { description: Updated state, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ *       '422': { $ref: '#/components/responses/ValidationError' }
+ */
+router.post('/onboarding/advance', validate(v.onboardingAdvance), asyncHandler(controller.onboardingAdvance));
+
+/**
+ * @swagger
+ * /candidates/onboarding/reset:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: Reset the Onboarding Wizard to step 0
+ *     description: |
+ *       Clears `onboarding_step` (→ 0) and `onboarding_completed_at`
+ *       (→ NULL). Profile data is NOT touched. Used by "Restart
+ *       onboarding" actions and by tests.
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       '200': { $ref: '#/components/responses/EmptySuccess' }
+ */
+router.post('/onboarding/reset', asyncHandler(controller.onboardingReset));
 
 module.exports = router;

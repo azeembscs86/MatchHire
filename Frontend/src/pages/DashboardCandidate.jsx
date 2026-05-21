@@ -79,6 +79,9 @@ export default function DashboardCandidate() {
   const [matches, setMatches] = useState([]);
   // Per-section completion breakdown for the ProfileCompletionCard.
   const [completion, setCompletion] = useState(null);
+  // Onboarding wizard state — surfaces a "Continue setup" banner
+  // when the user hasn't completed the 7-step wizard yet.
+  const [onboarding, setOnboarding] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -101,6 +104,10 @@ export default function DashboardCandidate() {
         setApps(appsData?.records || []);
         setMatches((matchesData?.records || []).map(toJobCardShape).filter(Boolean));
         setCompletion(completionData || null);
+        // Non-blocking — banner just hides if this fails.
+        candidatesApi.onboarding.state()
+          .then((d) => !cancelled && setOnboarding(d))
+          .catch(() => {});
       } catch (err) {
         if (!cancelled) setError(err);
       } finally {
@@ -193,6 +200,41 @@ export default function DashboardCandidate() {
           </div>
 
           {error && <ErrorState error={error} />}
+
+          {/*
+           * Onboarding banner — only renders when the wizard exists
+           * AND has not yet been completed. The banner deep-links
+           * back to the EXACT step the user left off on.
+           */}
+          {onboarding && !onboarding.is_completed && (
+            <div style={{
+              background: 'linear-gradient(135deg, var(--coral, #E85D3C), var(--coral-deep, #C73E1D))',
+              color: '#fff', borderRadius: 14, padding: '16px 20px',
+              marginBottom: 18, display: 'flex', alignItems: 'center',
+              justifyContent: 'space-between', flexWrap: 'wrap', gap: 12,
+            }}>
+              <div>
+                <div style={{ fontFamily: "'Fraunces',serif", fontSize: 18, marginBottom: 2 }}>
+                  Continue your setup
+                </div>
+                <div style={{ fontSize: 13, opacity: 0.92 }}>
+                  Step {Number(onboarding.current_step) + 1} of {onboarding.total_steps}
+                  {' · '}
+                  Profile {onboarding.profile_strength}% complete
+                </div>
+              </div>
+              <Link
+                to="/onboarding"
+                style={{
+                  background: '#fff', color: 'var(--coral-deep, #C73E1D)',
+                  padding: '8px 16px', borderRadius: 100, fontWeight: 600,
+                  fontSize: 13, textDecoration: 'none',
+                }}
+              >
+                Resume onboarding →
+              </Link>
+            </div>
+          )}
 
           <div className="stat-row">
             <div className="stat-card dark">

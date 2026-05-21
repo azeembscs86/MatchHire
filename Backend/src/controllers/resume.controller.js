@@ -50,3 +50,61 @@ exports.signedDownload = async (req, res) => {
   const url = await service.signedDownloadUrl(req.user.id, Number(req.params.id));
   return response.success(res, { url, expires_in_seconds: 600 }, 'Signed URL issued');
 };
+
+/* --- Resume management (§34) --- */
+
+/**
+ * POST /candidates/resume/:id/detail
+ * Resume metadata + parsed-data preview in one round-trip.
+ */
+exports.detail = async (req, res) => {
+  const data = await service.getDetail(req.user.id, Number(req.params.id));
+  return response.success(res, data, 'Resume detail returned');
+};
+
+/**
+ * POST /candidates/resume/:id/set-primary
+ * Atomically promotes this resume to primary; demotes all others.
+ */
+exports.setPrimary = async (req, res) => {
+  const data = await service.setPrimary(req.user.id, Number(req.params.id));
+  return response.success(res, data, 'Primary resume updated');
+};
+
+/**
+ * POST /candidates/resume/:id/delete
+ * Soft-deletes the resume row and renames the file on disk.
+ * Auto-promotes the next-most-recent resume to primary if needed.
+ */
+exports.softDelete = async (req, res) => {
+  const data = await service.softDelete(req.user.id, Number(req.params.id));
+  return response.success(res, data, 'Resume removed');
+};
+
+/**
+ * POST /candidates/resume/:id/parsed-data
+ * Save manual edits to the parsed preview WITHOUT applying them
+ * to the candidate profile. Use /confirm to merge into the profile.
+ */
+exports.updateParsedData = async (req, res) => {
+  const data = await service.updateParsedData(
+    req.user.id,
+    Number(req.params.id),
+    req.body || {}
+  );
+  return response.success(res, data, 'Parsed data updated');
+};
+
+/**
+ * POST /candidates/resume/:id/reject
+ * Record that the candidate rejected the parsed preview. The
+ * resume file stays uploaded; only the auto-apply flow is blocked.
+ */
+exports.rejectParsedData = async (req, res) => {
+  const data = await service.rejectParsedData(
+    req.user.id,
+    Number(req.params.id),
+    req.body?.reason
+  );
+  return response.success(res, data, 'Parsed data rejected');
+};

@@ -30,6 +30,7 @@ import Companies from './pages/Companies.jsx';
 import Candidates from './pages/Candidates.jsx';
 import Profile from './pages/Profile.jsx';
 import ReviewProfile from './pages/ReviewProfile.jsx';
+import Onboarding from './pages/Onboarding.jsx';
 import Preferences from './pages/Preferences.jsx';
 import Favorites from './pages/Favorites.jsx';
 import EmployerOnboarding from './pages/EmployerOnboarding.jsx';
@@ -64,6 +65,12 @@ export default function App() {
         <Route element={<ProtectedRoute roles={['candidate']} />}>
           <Route path="/profile" element={<Profile />} />
           <Route path="/profile/review" element={<ReviewProfile />} />
+          {/*
+           * Candidate Onboarding Wizard (7 steps). Reachable from the
+           * candidate dashboard via "Continue setup" banner; saves
+           * progress server-side so closing the tab resumes here.
+           */}
+          <Route path="/onboarding" element={<Onboarding />} />
           <Route path="/preferences" element={<Preferences />} />
           <Route path="/favorites" element={<Favorites />} />
           <Route path="/dashboard/candidate" element={<DashboardCandidate />} />
