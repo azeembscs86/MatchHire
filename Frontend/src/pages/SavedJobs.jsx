@@ -22,29 +22,11 @@ import { Link } from 'react-router-dom';
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.jsx';
 import { candidatesApi } from '../api/index.js';
 import { toJobCardShape } from '../api/adapters.js';
-
-function BookmarkIcon({ filled = true }) {
-  return (
-    <svg viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
-      <path d="M5 4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v18l-7-4-7 4V4z" />
-    </svg>
-  );
-}
-
-/** "Expires in 4d", "Expires today", or null when no deadline. */
-function expiryLabel(iso) {
-  if (!iso) return null;
-  const ts = new Date(iso).getTime();
-  if (!Number.isFinite(ts)) return null;
-  const ms = ts - Date.now();
-  if (ms <= 0) return 'Expired';
-  const days = Math.floor(ms / 86400000);
-  if (days === 0) return 'Expires today';
-  if (days === 1) return 'Expires tomorrow';
-  return `Expires in ${days}d`;
-}
+import { useSavedJobs } from '../context/SavedJobsContext.jsx';
+import JobCard from '../components/JobCard.jsx';
 
 export default function SavedJobs() {
+  const { savedIds } = useSavedJobs();
   const [saved, setSaved] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -52,6 +34,10 @@ export default function SavedJobs() {
   // jobId so multiple actions can show their results independently.
   const [perJobMessage, setPerJobMessage] = useState({});
   const [actingId, setActingId] = useState(null);
+  // Jobs the candidate applied to inside this session. Used to swap
+  // the JobCard's Apply button to "Already Applied" without removing
+  // the row (so the message can still be read before it disappears).
+  const [appliedIds, setAppliedIds] = useState(() => new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -77,6 +63,12 @@ export default function SavedJobs() {
     return () => { cancelled = true; };
   }, []);
 
+  // When JobCard's bookmark toggle removes a row from SavedJobsContext,
+  // filter the visible list so the row disappears immediately.
+  useEffect(() => {
+    setSaved((rows) => rows.filter((r) => savedIds.has(Number(r.id))));
+  }, [savedIds]);
+
   const insights = useMemo(() => {
     if (saved.length === 0) return null;
     const expiringSoon = saved.filter((j) => {
@@ -100,6 +92,7 @@ export default function SavedJobs() {
 
   /** Pre-flight + apply. Eligibility verdict gates the actual POST. */
   async function handleApply(job) {
+    if (job?.isExpired) return;
     setActingId(job.id);
     try {
       const verdict = await candidatesApi.savedJobs.eligibility(job.id);
@@ -113,11 +106,12 @@ export default function SavedJobs() {
       }
       // Match cleared the bar — submit the application.
       await candidatesApi.applications.apply(job.id, {});
+      setAppliedIds((prev) => {
+        const next = new Set(prev);
+        next.add(job.id);
+        return next;
+      });
       showMessage(job.id, { ok: true, text: `Application submitted to ${job.co}.` });
-      // Saved-for-later is an apply-intent surface — once the candidate
-      // has actually applied, drop the row from view (they don't need
-      // the "Apply" button on it anymore).
-      setSaved((rows) => rows.filter((r) => r.id !== job.id));
       // Best-effort cleanup of the backing saved_jobs row so the
       // backend list stays consistent on the next fetch. Errors here
       // don't affect the apply outcome.
@@ -126,18 +120,6 @@ export default function SavedJobs() {
       showMessage(job.id, { ok: false, text: err.message || 'Could not submit application.' });
     } finally {
       setActingId(null);
-    }
-  }
-
-  /** Remove the saved-for-later row; optimistic update + rollback. */
-  async function handleRemove(job) {
-    const prev = saved;
-    setSaved((rows) => rows.filter((r) => r.id !== job.id));
-    try {
-      await candidatesApi.savedJobs.remove(job.id);
-    } catch (err) {
-      setSaved(prev);
-      showMessage(job.id, { ok: false, text: err.message || 'Could not remove saved job.' });
     }
   }
 
@@ -190,94 +172,46 @@ export default function SavedJobs() {
           </div>
         )}
 
-        <div className="fav-grid">
-          {saved.length === 0 ? (
-            <div className="fav-empty" style={{ gridColumn: '1/-1' }}>
-              <div className="fav-empty-icon">⌘</div>
-              <h3>Nothing saved for later yet</h3>
-              <p>
-                When you find a role you want to apply to (but not right this second), tap the
-                Save button on it. We'll keep it here until the deadline passes.
-              </p>
-              <Link to="/jobs" className="btn btn-coral">Browse jobs →</Link>
-            </div>
-          ) : saved.map((j) => {
-            const exp = expiryLabel(j.expires_at);
-            const msg = perJobMessage[j.id];
-            return (
-              <div key={j.id} className="fav-card">
-                <button
-                  className="heart-btn saved"
-                  onClick={() => handleRemove(j)}
-                  title="Remove from saved"
-                  type="button"
-                  style={{ color: 'var(--coral, #e85d3c)' }}
-                >
-                  <BookmarkIcon filled />
-                </button>
-                {j.featured && <span className="fav-card-collection col-top">★ Top pick</span>}
-                <div className="job-head">
-                  <div className={`job-logo ${j.cl}`}>{j.l}</div>
-                  <div>
-                    <div className="job-co">{j.co}</div>
-                    <div className="job-loc">{j.loc}</div>
-                  </div>
-                </div>
-                <div className="job-title">{j.title}</div>
-                <div className="job-tags">
-                  {j.match && <span className="job-tag match">★ {j.match}</span>}
-                  {(j.tags || []).map((t) => <span key={t} className="job-tag">{t}</span>)}
-                </div>
-                <div className="job-foot">
-                  <div className="job-pay">{j.pay} <span>· {j.type}</span></div>
-                  <div className="job-time">
-                    {exp
-                      ? <span style={{ color: exp === 'Expires today' || exp === 'Expires tomorrow' ? 'var(--coral, #e85d3c)' : 'inherit' }}>{exp}</span>
-                      : 'No deadline'}
-                  </div>
-                </div>
+        {/* Any active per-job messages render above the grid so the
+            saved card stays visually clean. */}
+        {Object.entries(perJobMessage).map(([id, m]) => (
+          <div
+            key={`m-${id}`}
+            role="status"
+            style={{
+              margin: '0 0 12px', padding: '10px 12px', borderRadius: 8, fontSize: 13,
+              background: m.ok ? '#e6f4ea' : '#fde9e3',
+              color: m.ok ? '#0f5132' : '#b3361b',
+            }}
+          >
+            {m.text}
+          </div>
+        ))}
 
-                {msg && (
-                  <div
-                    role="status"
-                    style={{
-                      marginTop: 10, padding: '8px 10px', borderRadius: 6, fontSize: 12,
-                      background: msg.ok ? '#e6f4ea' : '#fde9e3',
-                      color: msg.ok ? '#0f5132' : '#b3361b',
-                    }}
-                  >
-                    {msg.text}
-                  </div>
-                )}
-
-                <div className="fav-card-actions">
-                  {exp === 'Expired' ? (
-                    <button
-                      className="btn btn-coral apply-btn apply-btn-expired"
-                      type="button"
-                      disabled
-                      aria-disabled="true"
-                      title="This job is no longer accepting applications"
-                    >
-                      Job Expired
-                    </button>
-                  ) : (
-                    <button
-                      className="btn btn-coral apply-btn"
-                      onClick={() => handleApply(j)}
-                      disabled={actingId === j.id}
-                      aria-busy={actingId === j.id}
-                      type="button"
-                    >
-                      {actingId === j.id ? 'Checking…' : 'Apply Now'}
-                    </button>
-                  )}
-                  <Link to={`/jobs/${j.id}`} className="btn btn-ghost">View details</Link>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        {saved.length === 0 ? (
+          <div className="fav-empty">
+            <div className="fav-empty-icon">⌘</div>
+            <h3>Nothing saved for later yet</h3>
+            <p>
+              When you find a role you want to apply to (but not right this second), tap the
+              Save button on it. We'll keep it here until the deadline passes.
+            </p>
+            <Link to="/jobs" className="btn btn-coral">Browse jobs →</Link>
+          </div>
+        ) : (
+          <div className="jobs-grid">
+            {saved.map((j) => (
+              <JobCard
+                key={j.id}
+                job={j}
+                featured
+                onApply={handleApply}
+                applied={appliedIds.has(j.id)}
+                applyingId={actingId}
+              />
+            ))}
+          </div>
+        )}
 
         {!error && saved.length === 0 && (
           <EmptyState title="Nothing here yet" />

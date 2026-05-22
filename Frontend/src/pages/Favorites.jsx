@@ -8,6 +8,11 @@
  * JobCard elsewhere.
  *
  * Apply action posts to `/candidates/applications/:jobId`.
+ *
+ * Nov 2026 — the bespoke `.fav-card` markup was replaced with the
+ * shared `<JobCard />` so every candidate-facing surface shares one
+ * card design. Visible rows sync to `FavoritesContext.savedJobs` so
+ * un-hearting a card here removes it from the grid immediately.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -17,16 +22,8 @@ import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.j
 import { candidatesApi, publicApi } from '../api/index.js';
 import { toJobCardShape } from '../api/adapters.js';
 
-function HeartFilled() {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-    </svg>
-  );
-}
-
 export default function Favorites() {
-  const { toggleSave } = useFavorites();
+  const { savedJobs: favoriteIds } = useFavorites();
   const [favs, setFavs] = useState([]);
   const [similar, setSimilar] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -63,6 +60,14 @@ export default function Favorites() {
     load();
     return () => { cancelled = true; };
   }, []);
+
+  // Sync the visible list with FavoritesContext so un-hearting a card
+  // (via JobCard's heart button) removes it from the grid instantly.
+  // We only filter — never re-add — so a freshly favourited job
+  // elsewhere doesn't sneak into the local list without a refresh.
+  useEffect(() => {
+    setFavs((rows) => rows.filter((r) => favoriteIds.has(Number(r.id))));
+  }, [favoriteIds]);
 
   const insights = useMemo(() => {
     if (favs.length === 0) return null;
@@ -165,72 +170,27 @@ export default function Favorites() {
           </div>
         )}
 
-        <div className="fav-grid">
-          {favs.length === 0 ? (
-            <div className="fav-empty" style={{ gridColumn: '1/-1' }}>
-              <div className="fav-empty-icon">♡</div>
-              <h3>No jobs saved yet</h3>
-              <p>Browse jobs and tap the heart icon on any role you like — it'll show up here for easy access later.</p>
-              <Link to="/jobs" className="btn btn-coral">Browse jobs →</Link>
-            </div>
-          ) : favs.map((j) => (
-            <div key={j.id} className="fav-card">
-              <button className="heart-btn saved" onClick={(e) => { e.stopPropagation(); toggleSave(j.id); }}>
-                <HeartFilled />
-              </button>
-              {j.featured && <span className="fav-card-collection col-top">★ Top pick</span>}
-              <div className="job-head">
-                <div className={`job-logo ${j.cl}`}>{j.l}</div>
-                <div>
-                  <div className="job-co">{j.co}</div>
-                  <div className="job-loc">{j.loc}</div>
-                </div>
-              </div>
-              <div className="job-title">{j.title}</div>
-              <div className="job-tags">
-                {j.match && <span className="job-tag match">★ {j.match}</span>}
-                {(j.tags || []).map((t) => <span key={t} className="job-tag">{t}</span>)}
-              </div>
-              <div className="job-foot">
-                <div className="job-pay">{j.pay} <span>· {j.type}</span></div>
-                <div className="job-time">Saved · {j.time}</div>
-              </div>
-              <div className="fav-card-actions">
-                {appliedIds.has(j.id) ? (
-                  <button
-                    className="btn btn-coral apply-btn apply-btn-applied"
-                    type="button"
-                    disabled
-                    aria-disabled="true"
-                  >
-                    ✓ Already Applied
-                  </button>
-                ) : j.isExpired ? (
-                  <button
-                    className="btn btn-coral apply-btn apply-btn-expired"
-                    type="button"
-                    disabled
-                    aria-disabled="true"
-                    title="This job is no longer accepting applications"
-                  >
-                    Job Expired
-                  </button>
-                ) : (
-                  <button
-                    className="btn btn-coral apply-btn"
-                    onClick={() => handleApply(j)}
-                    disabled={applyingId === j.id}
-                    aria-busy={applyingId === j.id}
-                    type="button"
-                  >
-                    {applyingId === j.id ? 'Applying…' : 'Apply Now'}
-                  </button>
-                )}
-                <Link to={`/jobs/${j.id}`} className="btn btn-ghost">View role</Link>
-              </div>
-            </div>
-          ))}
-        </div>
+        {favs.length === 0 ? (
+          <div className="fav-empty">
+            <div className="fav-empty-icon">♡</div>
+            <h3>No jobs saved yet</h3>
+            <p>Browse jobs and tap the heart icon on any role you like — it'll show up here for easy access later.</p>
+            <Link to="/jobs" className="btn btn-coral">Browse jobs →</Link>
+          </div>
+        ) : (
+          <div className="jobs-grid">
+            {favs.map((j) => (
+              <JobCard
+                key={j.id}
+                job={j}
+                featured
+                onApply={handleApply}
+                applied={appliedIds.has(j.id)}
+                applyingId={applyingId}
+              />
+            ))}
+          </div>
+        )}
 
         {similar.length > 0 && (
           <div style={{ paddingTop: 24, borderTop: '1px solid var(--line)' }}>

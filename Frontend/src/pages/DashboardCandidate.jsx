@@ -19,6 +19,7 @@ import { LoadingState, ErrorState } from '../components/AsyncState.jsx';
 import ProfileCompletionCard from '../components/ProfileCompletionCard.jsx';
 import { toJobCardShape } from '../api/adapters.js';
 import { useApplyToJob } from '../hooks/useApplyToJob.js';
+import JobCard from '../components/JobCard.jsx';
 
 /**
  * Status → badge mapping for the Applied Jobs section.
@@ -377,78 +378,25 @@ export default function DashboardCandidate() {
                   {applyMessage.text}
                 </div>
               )}
-              <div className="app-list">
+              {/*
+                * "New matches" rail — uses JobCard's `row` variant so
+                * the dashboard list stays compact but visually
+                * consistent with every other surface (match tier,
+                * Apply Now states, hearts).
+                */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {matches.length === 0
                   ? <p className="muted" style={{ padding: '12px 0' }}>No matches yet — refine your <Link to="/preferences">preferences</Link>.</p>
-                  : matches.map((m) => {
-                    const alreadyApplied = appliedIds.has(m.id);
-                    const expired = !!m.isExpired;
-                    return (
-                      <div key={m.id} className="app-card">
-                        <Link
-                          to={`/jobs/${m.id}`}
-                          className={`mini-logo ${m.cl}`}
-                          aria-label={`Open ${m.title}`}
-                        >
-                          {m.l}
-                        </Link>
-                        <div className="app-card-info">
-                          <strong>
-                            <Link to={`/jobs/${m.id}`} style={{ color: 'inherit' }}>
-                              {m.title} · {m.co}
-                            </Link>
-                          </strong>
-                          <small>{m.loc} · {m.pay} · {m.time}</small>
-                        </div>
-                        <div className="app-card-meta">
-                          {m.match && <span className="pill pill-active">{m.match}</span>}
-                          <div>{(m.tags || []).slice(0, 3).join(' · ')}</div>
-                        </div>
-                        {/*
-                          * Per-row Apply control. Guarded on `isCandidate`
-                          * so the button never renders on non-candidate
-                          * sessions even if this page were reached by
-                          * mistake (shouldn't happen — the route is
-                          * candidate-only — but defensive nonetheless).
-                          */}
-                        {isCandidate && (
-                          alreadyApplied ? (
-                            <button
-                              className="btn btn-coral btn-sm apply-btn apply-btn-applied"
-                              type="button"
-                              disabled
-                              aria-disabled="true"
-                              style={{ minWidth: 132 }}
-                            >
-                              ✓ Already Applied
-                            </button>
-                          ) : expired ? (
-                            <button
-                              className="btn btn-coral btn-sm apply-btn apply-btn-expired"
-                              type="button"
-                              disabled
-                              aria-disabled="true"
-                              title="This job is no longer accepting applications"
-                              style={{ minWidth: 132 }}
-                            >
-                              Job Expired
-                            </button>
-                          ) : (
-                            <button
-                              className="btn btn-coral btn-sm apply-btn"
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); apply(m); }}
-                              disabled={applyingId === m.id}
-                              aria-busy={applyingId === m.id}
-                              style={{ minWidth: 132 }}
-                            >
-                              {applyingId === m.id ? 'Applying…' : 'Apply Now'}
-                            </button>
-                          )
-                        )}
-                      </div>
-                    );
-                  })}
+                  : matches.map((m) => (
+                      <JobCard
+                        key={m.id}
+                        job={m}
+                        variant="row"
+                        onApply={isCandidate ? apply : undefined}
+                        applied={appliedIds.has(m.id)}
+                        applyingId={applyingId}
+                      />
+                    ))}
               </div>
             </div>
 

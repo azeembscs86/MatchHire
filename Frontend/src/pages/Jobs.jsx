@@ -77,6 +77,35 @@ function RejectionModal({ result, onClose }) {
   );
 }
 
+/* ---------- Skeleton ------------------------------------------------------- */
+
+/**
+ * One placeholder row mirroring the JobCard's silhouette. We render a
+ * handful while the smart-jobs payload is in flight so the layout
+ * doesn't reflow once data lands.
+ */
+function JobSkeleton() {
+  return (
+    <div className="skel-card" aria-hidden="true">
+      <div className="skel-row">
+        <div className="skel-dot" />
+        <div style={{ flex: 1 }}>
+          <div className="skel-line w-50" />
+          <div className="skel-line sm w-30" style={{ marginTop: 6 }} />
+        </div>
+      </div>
+      <div className="skel-line lg w-70" />
+      <div className="skel-line w-90" />
+      <div className="skel-row" style={{ gap: 6 }}>
+        <div className="skel-line w-30" />
+        <div className="skel-line w-30" />
+        <div className="skel-line w-30" />
+      </div>
+      <div className="skel-line sm w-50" style={{ marginTop: 'auto' }} />
+    </div>
+  );
+}
+
 /* ---------- Constants ------------------------------------------------------ */
 
 const JOB_TYPES = [
@@ -86,9 +115,29 @@ const JOB_TYPES = [
   { value: 'internship', label: 'Internship' },
 ];
 
-const REMOTE_OPTIONS = [
+/**
+ * Work-mode segmented control. The backend's `remote` query param is
+ * a boolean (true/false/undefined), so we map UI labels onto that:
+ *   - Any     → undefined (don't filter)
+ *   - Remote  → true
+ *   - Onsite  → false
+ * The "Hybrid" pill is a visual third option but maps to `remote=false`
+ * with no extra backend support — the spec calls for the pill UI, not
+ * a separate column.
+ */
+const WORK_MODES = [
+  { label: 'Any', value: null },
   { label: 'Remote', value: true },
-  { label: 'Onsite/Hybrid', value: false },
+  { label: 'Hybrid', value: false },
+  { label: 'Onsite', value: false },
+];
+
+/** "Posted within" filter — client-side using `published_at`. */
+const POSTED_WITHIN = [
+  { label: 'Any time', days: null },
+  { label: '24h', days: 1 },
+  { label: '7 days', days: 7 },
+  { label: '30 days', days: 30 },
 ];
 
 const LEVELS = [
@@ -107,69 +156,56 @@ const SALARY_BANDS = [
   { label: '$180K+', min: 180000, max: undefined },
 ];
 
+/*
+ * Sort options. `best_match`, `latest`, `salary_high`, `experience`,
+ * and `featured` are honoured by the backend; the rest are derived on
+ * the client from data we already have on the card shape so we don't
+ * have to extend the API contract.
+ */
 const SORTS_AUTHED = [
-  { value: 'best_match', label: 'Best match' },
-  { value: 'latest', label: 'Most recent' },
-  { value: 'salary_high', label: 'Highest salary' },
-  { value: 'experience', label: 'Experience level' },
+  { value: 'best_match',    label: 'Best match' },
+  { value: 'latest',        label: 'Most recent' },
+  { value: 'salary_high',   label: 'Highest salary' },
+  { value: 'closing_soon',  label: 'Closing soon' },
+  { value: 'remote_first',  label: 'Remote first' },
+  { value: 'experience',    label: 'Experience level' },
 ];
 
 const SORTS_GUEST = [
-  { value: 'latest', label: 'Most recent' },
-  { value: 'featured', label: 'Featured first' },
-  { value: 'salary_high', label: 'Highest salary' },
+  { value: 'latest',        label: 'Most recent' },
+  { value: 'featured',      label: 'Featured first' },
+  { value: 'salary_high',   label: 'Highest salary' },
+  { value: 'closing_soon',  label: 'Closing soon' },
+  { value: 'remote_first',  label: 'Remote first' },
 ];
 
 const DEFAULT_FILTERS = {
   keyword: '', location: '', skills: '', job_type: '', experience_level: '',
-  remote: null, salary_min: undefined, salary_max: undefined, sort: 'best_match',
+  remote: null, salary_min: undefined, salary_max: undefined,
+  posted_within: null, match_threshold: 40, sort: 'best_match',
 };
 
 /* ---------- Helpers -------------------------------------------------------- */
 
-// MissingSkillChips removed — JobCard now renders the "Missing:" section
-// itself, as a sibling of the card body inside `.job-card-wrapper`. Keep
-// AILabel here because it's specific to this page's smart-match badge.
-
-function AILabel({ label }) {
-  if (!label) return null;
-  const tone = label.includes('Excellent')
-    ? { bg: 'rgba(232,93,60,.12)', fg: 'var(--coral)' }
-    : label.includes('Strong')
-      ? { bg: 'rgba(192,138,58,.12)', fg: '#c08a3a' }
-      : label.includes('Good')
-        ? { bg: 'rgba(63,127,89,.12)', fg: '#3f7f59' }
-        : { bg: 'rgba(90,98,104,.08)', fg: '#5a6268' };
-  return (
-    <span
-      style={{
-        position: 'absolute', top: 12, left: 12, padding: '4px 10px',
-        borderRadius: 100, fontSize: 11, fontWeight: 600,
-        background: tone.bg, color: tone.fg, border: `1px solid ${tone.fg}33`,
-      }}
-    >
-      ✨ {label}
-    </span>
-  );
-}
-
-/**
- * Wraps JobCard with the AI smart-match badge. JobCard itself now
- * owns the "Missing:" chip rendering (as a sibling of the card body
- * inside `.job-card-wrapper`).
+/*
+ * The legacy floating `AILabel` ("✨ Excellent match" at top-left) is
+ * retired in the Nov 2026 redesign — JobCard's new tiered MatchBadge
+ * carries the same signal ("Strong fit" / "Good fit") in a place that
+ * doesn't collide with the company logo on the compact card layout.
+ *
+ * Missing skills also moved INSIDE the card via JobCard's
+ * `WhyRecommended` ✓/✖ checklist, so this wrapper just forwards
+ * straight through.
  */
 function MatchCard({ job, onApply, applyingId, applied }) {
   return (
-    <div style={{ position: 'relative' }}>
-      {job.aiLabel && <AILabel label={job.aiLabel} />}
-      <JobCard
-        job={job}
-        featured
-        onApply={onApply}
-        applyingId={applyingId}
-        applied={applied}
-      />
-    </div>
+    <JobCard
+      job={job}
+      featured
+      onApply={onApply}
+      applyingId={applyingId}
+      applied={applied}
+    />
   );
 }
 
@@ -211,6 +247,12 @@ export default function Jobs() {
           remote: filters.remote ?? undefined,
           salary_min: filters.salary_min,
           salary_max: filters.salary_max,
+          // Only forward the AI match threshold for signed-in candidates
+          // — the param is meaningful on the personalised feed but a
+          // no-op for the guest listing, so we skip the round-trip noise.
+          threshold: isCandidate && Number.isFinite(filters.match_threshold)
+            ? filters.match_threshold
+            : undefined,
           sort: filters.sort,
         };
         const res = await homeApi.jobs(params);
@@ -222,17 +264,39 @@ export default function Jobs() {
             // Surface backend AI label on the card shape.
             v.aiLabel = r.aiRecommendationLabel || null;
             v.aiSummary = r.aiSummary || null;
+            v.publishedAt = r.published_at || r.created_at || null;
             return v;
           })
           .filter(Boolean);
 
-        // Client-side sort overrides for `salary_high` / `experience` so
-        // the dropdown works even when the auth-aware backend sorts by
-        // match% by default.
+        // Client-side "Posted within" filter — backend doesn't expose
+        // this knob, so we trim the list locally once it lands.
+        if (filters.posted_within) {
+          const cutoff = Date.now() - filters.posted_within * 86400000;
+          records = records.filter((r) => {
+            if (!r.publishedAt) return true;
+            const ts = new Date(r.publishedAt).getTime();
+            return Number.isFinite(ts) ? ts >= cutoff : true;
+          });
+        }
+
+        // Client-side sort overrides. The backend handles `best_match`,
+        // `latest`, `featured`, and `experience`; we layer the rest on
+        // top of whatever it returned.
         if (filters.sort === 'salary_high') {
           records.sort((a, b) => (b.payMax || 0) - (a.payMax || 0));
-        } else if (filters.sort === 'latest') {
-          records.sort((a, b) => 0); // backend already returns latest
+        } else if (filters.sort === 'closing_soon') {
+          records.sort((a, b) => {
+            const ax = a.deadlineRaw ? new Date(a.deadlineRaw).getTime() : Infinity;
+            const bx = b.deadlineRaw ? new Date(b.deadlineRaw).getTime() : Infinity;
+            return ax - bx;
+          });
+        } else if (filters.sort === 'remote_first') {
+          records.sort((a, b) => {
+            const ar = (a.isGlobalRemote || /remote/i.test(a.loc || '')) ? 0 : 1;
+            const br = (b.isGlobalRemote || /remote/i.test(b.loc || '')) ? 0 : 1;
+            return ar - br;
+          });
         }
         setData({
           records,
@@ -248,7 +312,7 @@ export default function Jobs() {
     }
     load();
     return () => { cancelled = true; };
-  }, [filters, page]);
+  }, [filters, page, isCandidate]);
 
   function update(patch) { setPage(1); setFilters((f) => ({ ...f, ...patch })); }
   function resetFilters() { setPage(1); setFilters({ ...DEFAULT_FILTERS, sort: isCandidate ? 'best_match' : 'latest' }); }
@@ -319,53 +383,87 @@ export default function Jobs() {
           <div className="filter-group">
             <h4>Keyword</h4>
             <input
+              className="filter-input"
               placeholder="Title, skill, or company"
               value={filters.keyword}
               onChange={(e) => update({ keyword: e.target.value })}
-              style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e0db' }}
             />
           </div>
           <div className="filter-group">
             <h4>Skills</h4>
             <input
-              placeholder="Comma-separated, e.g. react,node.js"
+              className="filter-input"
+              placeholder="e.g. react, node.js"
               value={filters.skills}
               onChange={(e) => update({ skills: e.target.value })}
-              style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e0db' }}
             />
-            <small className="muted" style={{ fontSize: 11 }}>
-              Filters jobs whose required skills overlap any you list.
-            </small>
+            <small className="filter-help">Match any of the skills you list.</small>
           </div>
           <div className="filter-group">
             <h4>Location</h4>
             <input
+              className="filter-input"
               placeholder="City or country"
               value={filters.location}
               onChange={(e) => update({ location: e.target.value })}
-              style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e0db' }}
             />
-            <div style={{ marginTop: 10 }}>
-              {REMOTE_OPTIONS.map((o) => (
-                <label key={String(o.value)} className="filter-opt">
-                  <span>
-                    <input
-                      type="radio" name="remote"
-                      checked={filters.remote === o.value}
-                      onChange={() => update({ remote: o.value })}
-                    />
-                    {o.label}
-                  </span>
-                </label>
-              ))}
-              <label className="filter-opt">
-                <span>
-                  <input type="radio" name="remote" checked={filters.remote == null} onChange={() => update({ remote: null })} />
-                  Any
-                </span>
-              </label>
+            {/*
+              * Work-mode segmented pill — replaces the old radio list.
+              * Two pills map to `remote=false` (Hybrid + Onsite) since
+              * the backend only stores a boolean; the UI nuance is
+              * still useful for candidates picking between them.
+              */}
+            <div className="seg-row" role="group" aria-label="Work mode" style={{ marginTop: 10 }}>
+              {WORK_MODES.map((m) => {
+                const active = (filters.remote === m.value) || (filters.remote == null && m.value === null);
+                return (
+                  <button
+                    key={m.label}
+                    type="button"
+                    className={`seg-btn${active ? ' active' : ''}`}
+                    onClick={() => update({ remote: m.value })}
+                  >
+                    {m.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
+          <div className="filter-group">
+            <h4>Posted within</h4>
+            <div className="seg-row" role="group" aria-label="Posted within">
+              {POSTED_WITHIN.map((p) => (
+                <button
+                  key={p.label}
+                  type="button"
+                  className={`seg-btn${filters.posted_within === p.days ? ' active' : ''}`}
+                  onClick={() => update({ posted_within: p.days })}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {isCandidate && (
+            <div className="filter-group">
+              <h4>AI match minimum</h4>
+              <input
+                type="range"
+                min={0}
+                max={95}
+                step={5}
+                value={filters.match_threshold ?? 40}
+                onChange={(e) => update({ match_threshold: Number(e.target.value) })}
+                className="match-slider"
+                aria-label="Minimum AI match percentage"
+              />
+              <div className="match-slider-row">
+                <span>0%</span>
+                <strong style={{ color: 'var(--ink)' }}>{filters.match_threshold ?? 40}%+</strong>
+                <span>95%</span>
+              </div>
+            </div>
+          )}
           <div className="filter-group">
             <h4>Job type</h4>
             {JOB_TYPES.map((t) => (
@@ -461,11 +559,16 @@ export default function Jobs() {
           )}
 
           {loading
-            ? <LoadingState label={isCandidate ? 'Matching jobs to your profile…' : 'Searching jobs…'} />
+            ? (
+              <div className="jobs-list" aria-busy="true">
+                {Array.from({ length: 6 }).map((_, i) => <JobSkeleton key={i} />)}
+              </div>
+            )
             : error
               ? <ErrorState error={error} onRetry={() => setFilters({ ...filters })} />
               : data.records.length === 0
-                ? <EmptyState
+                ? (
+                  <EmptyState
                     title={
                       data.profileIncomplete
                         ? 'Complete your profile to unlock matches'
@@ -478,10 +581,11 @@ export default function Jobs() {
                       || (data.profileIncomplete
                         ? 'Complete your profile and add your skills to get better job recommendations.'
                         : isCandidate
-                          ? 'Add more skills or update your profile to improve recommendations.'
-                          : 'Try clearing one filter at a time.')
+                          ? 'Try lowering the AI match minimum, clearing a filter, or updating your skills.'
+                          : 'Try clearing one filter at a time, or broaden your keyword.')
                     }
                   />
+                )
                 : (
                   <div className="jobs-list">
                     {data.records.map((j) => (

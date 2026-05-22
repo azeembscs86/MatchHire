@@ -117,6 +117,17 @@ export function toJobCardShape(j) {
     deadlineRaw: j.application_deadline || null,
     isExpired: j.is_expired === true
       || (j.application_deadline ? new Date(j.application_deadline).getTime() < Date.now() : false),
+    // True when the application deadline is within the next 3 days
+    // (and the job isn't already past). Drives the "Closing soon"
+    // trust badge on JobCard so candidates can prioritise time-
+    // sensitive roles at a glance.
+    closingSoon: (() => {
+      if (!j.application_deadline) return false;
+      const ts = new Date(j.application_deadline).getTime();
+      if (!Number.isFinite(ts)) return false;
+      const ms = ts - Date.now();
+      return ms > 0 && ms <= 3 * 86400000;
+    })(),
     time: relativeTime(j.published_at || j.created_at),
     // Real backend match score (0..100) when present; the old
     // "60+x*5" simulation is gone now that the API returns real values.
