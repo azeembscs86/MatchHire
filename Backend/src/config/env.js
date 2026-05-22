@@ -101,7 +101,13 @@ const config = {
     port: num('SMTP_PORT', 587),
     secure: String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true',
     user: process.env.SMTP_USER || '',
-    pass: process.env.SMTP_PASS || '',
+    // Gmail's App Password UI shows the secret as 4×4 groups separated by
+    // spaces (e.g. `abcd efgh ijkl mnop`). Operators routinely paste it
+    // verbatim into .env, then waste an afternoon debugging 535-5.7.8.
+    // Strip whitespace here so either form (`abcd efgh ijkl mnop` OR
+    // `abcdefghijklmnop`) works identically. Real passwords don't contain
+    // spaces, so this is safe.
+    pass: String(process.env.SMTP_PASS || '').replace(/\s+/g, ''),
     from: process.env.MAIL_FROM || process.env.SMTP_USER || '',
     // Operational tuning (each has a safe default).
     maxRetries: num('MAIL_MAX_RETRIES', 3),
