@@ -18,6 +18,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { LoadingState, ErrorState } from '../components/AsyncState.jsx';
 import ProfileCompletionCard from '../components/ProfileCompletionCard.jsx';
 import { toJobCardShape } from '../api/adapters.js';
+import { useApplyToJob } from '../hooks/useApplyToJob.js';
 
 /**
  * Status → badge mapping for the Applied Jobs section.
@@ -96,6 +97,29 @@ export default function DashboardCandidate() {
   const [onboarding, setOnboarding] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [appliedIds, setAppliedIds] = useState(() => new Set());
+  const [applyMessage, setApplyMessage] = useState(null);
+
+  // Centralised Apply Now wiring. The dashboard's "New matches" rail
+  // uses a custom horizontal card (`.app-card`) — not <JobCard /> —
+  // but it still routes the apply action through the same hook so the
+  // gating rules (logged-in candidate, expired, in-flight) stay
+  // identical across every surface.
+  const { apply, applyingId, isCandidate } = useApplyToJob({
+    onSuccess: ({ job }) => {
+      setAppliedIds((prev) => {
+        const next = new Set(prev);
+        next.add(job.id);
+        return next;
+      });
+      setApplyMessage({ ok: true, text: `Application submitted to ${job.co}.` });
+      setTimeout(() => setApplyMessage(null), 5000);
+    },
+    onError: ({ message }) => {
+      setApplyMessage({ ok: false, text: message });
+      setTimeout(() => setApplyMessage(null), 5000);
+    },
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -340,22 +364,91 @@ export default function DashboardCandidate() {
                 <h3>New matches <small>· based on your skills</small></h3>
                 <Link to="/jobs">Browse all →</Link>
               </div>
+              {applyMessage && (
+                <div
+                  role="status"
+                  style={{
+                    margin: '8px 0 12px', padding: '10px 12px', borderRadius: 8,
+                    background: applyMessage.ok ? '#e6f4ea' : '#fde9e3',
+                    color: applyMessage.ok ? '#0f5132' : '#b3361b',
+                    fontSize: 13,
+                  }}
+                >
+                  {applyMessage.text}
+                </div>
+              )}
               <div className="app-list">
                 {matches.length === 0
                   ? <p className="muted" style={{ padding: '12px 0' }}>No matches yet — refine your <Link to="/preferences">preferences</Link>.</p>
-                  : matches.map((m) => (
-                    <div key={m.id} className="app-card">
-                      <div className={`mini-logo ${m.cl}`}>{m.l}</div>
-                      <div className="app-card-info">
-                        <strong>{m.title} · {m.co}</strong>
-                        <small>{m.loc} · {m.pay} · {m.time}</small>
+                  : matches.map((m) => {
+                    const alreadyApplied = appliedIds.has(m.id);
+                    const expired = !!m.isExpired;
+                    return (
+                      <div key={m.id} className="app-card">
+                        <Link
+                          to={`/jobs/${m.id}`}
+                          className={`mini-logo ${m.cl}`}
+                          aria-label={`Open ${m.title}`}
+                        >
+                          {m.l}
+                        </Link>
+                        <div className="app-card-info">
+                          <strong>
+                            <Link to={`/jobs/${m.id}`} style={{ color: 'inherit' }}>
+                              {m.title} · {m.co}
+                            </Link>
+                          </strong>
+                          <small>{m.loc} · {m.pay} · {m.time}</small>
+                        </div>
+                        <div className="app-card-meta">
+                          {m.match && <span className="pill pill-active">{m.match}</span>}
+                          <div>{(m.tags || []).slice(0, 3).join(' · ')}</div>
+                        </div>
+                        {/*
+                          * Per-row Apply control. Guarded on `isCandidate`
+                          * so the button never renders on non-candidate
+                          * sessions even if this page were reached by
+                          * mistake (shouldn't happen — the route is
+                          * candidate-only — but defensive nonetheless).
+                          */}
+                        {isCandidate && (
+                          alreadyApplied ? (
+                            <button
+                              className="btn btn-coral btn-sm apply-btn apply-btn-applied"
+                              type="button"
+                              disabled
+                              aria-disabled="true"
+                              style={{ minWidth: 132 }}
+                            >
+                              ✓ Already Applied
+                            </button>
+                          ) : expired ? (
+                            <button
+                              className="btn btn-coral btn-sm apply-btn apply-btn-expired"
+                              type="button"
+                              disabled
+                              aria-disabled="true"
+                              title="This job is no longer accepting applications"
+                              style={{ minWidth: 132 }}
+                            >
+                              Job Expired
+                            </button>
+                          ) : (
+                            <button
+                              className="btn btn-coral btn-sm apply-btn"
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); apply(m); }}
+                              disabled={applyingId === m.id}
+                              aria-busy={applyingId === m.id}
+                              style={{ minWidth: 132 }}
+                            >
+                              {applyingId === m.id ? 'Applying…' : 'Apply Now'}
+                            </button>
+                          )
+                        )}
                       </div>
-                      <div className="app-card-meta">
-                        {m.match && <span className="pill pill-active">{m.match}</span>}
-                        <div>{(m.tags || []).slice(0, 3).join(' · ')}</div>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
               </div>
             </div>
 

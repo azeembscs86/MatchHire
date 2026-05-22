@@ -251,14 +251,27 @@ export default function SavedJobs() {
                 )}
 
                 <div className="fav-card-actions">
-                  <button
-                    className="btn btn-coral"
-                    onClick={() => handleApply(j)}
-                    disabled={actingId === j.id}
-                    type="button"
-                  >
-                    {actingId === j.id ? 'Checking…' : 'Apply now'}
-                  </button>
+                  {exp === 'Expired' ? (
+                    <button
+                      className="btn btn-coral apply-btn apply-btn-expired"
+                      type="button"
+                      disabled
+                      aria-disabled="true"
+                      title="This job is no longer accepting applications"
+                    >
+                      Job Expired
+                    </button>
+                  ) : (
+                    <button
+                      className="btn btn-coral apply-btn"
+                      onClick={() => handleApply(j)}
+                      disabled={actingId === j.id}
+                      aria-busy={actingId === j.id}
+                      type="button"
+                    >
+                      {actingId === j.id ? 'Checking…' : 'Apply Now'}
+                    </button>
+                  )}
                   <Link to={`/jobs/${j.id}`} className="btn btn-ghost">View details</Link>
                 </div>
               </div>

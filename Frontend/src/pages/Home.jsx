@@ -22,6 +22,7 @@ import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.j
 import { homeApi } from '../api/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { toJobCardShape } from '../api/adapters.js';
+import { useApplyToJob } from '../hooks/useApplyToJob.js';
 
 function fmt(n) {
   if (n == null) return '—';
@@ -195,7 +196,7 @@ function CtaBand({ block, tone = 'light' }) {
 }
 
 export default function Home() {
-  const { user, role } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   const [payload, setPayload] = useState(null);
@@ -203,6 +204,31 @@ export default function Home() {
   const [error, setError] = useState(null);
   const [keyword, setKeyword] = useState('');
   const [location, setLocation] = useState('');
+  const [applyMessage, setApplyMessage] = useState(null);
+  // Track which jobs the candidate just applied to in this session so
+  // we can swap their card to "Already Applied" without needing a
+  // refetch. The backend listing already excludes applied rows on the
+  // NEXT fetch — this state covers the in-between.
+  const [appliedIds, setAppliedIds] = useState(() => new Set());
+
+  const { apply, applyingId, isCandidate } = useApplyToJob({
+    onSuccess: ({ job, result }) => {
+      setAppliedIds((prev) => {
+        const next = new Set(prev);
+        next.add(job.id);
+        return next;
+      });
+      setApplyMessage({
+        ok: true,
+        text: `Application submitted to ${job.co}${result?.match_score != null ? ` · ${result.match_score}% match` : ''}.`,
+      });
+      setTimeout(() => setApplyMessage(null), 5000);
+    },
+    onError: ({ message }) => {
+      setApplyMessage({ ok: false, text: message });
+      setTimeout(() => setApplyMessage(null), 5000);
+    },
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -232,7 +258,9 @@ export default function Home() {
   const aiSuggestions = payload?.aiSuggestions || null;
   const cta = payload?.cta || null;
   const profileCompletion = payload?.viewer?.profileCompletion ?? null;
-  const isCandidate = role === 'candidate';
+  // `isCandidate` comes from useApplyToJob() above so the apply-button
+  // visibility check and the rest of the page (hero copy, AI panels)
+  // agree on a single source of truth.
 
   const heroStats = useMemo(() => ([
     { num: hero.openJobs, lbl: 'Open Roles' },
@@ -342,6 +370,20 @@ export default function Home() {
             <Link to="/jobs" className="section-link">Browse all jobs →</Link>
           </div>
 
+          {applyMessage && (
+            <div
+              role="status"
+              style={{
+                margin: '0 0 16px', padding: '10px 12px', borderRadius: 8,
+                background: applyMessage.ok ? '#e6f4ea' : '#fde9e3',
+                color: applyMessage.ok ? '#0f5132' : '#b3361b',
+                fontSize: 13,
+              }}
+            >
+              {applyMessage.text}
+            </div>
+          )}
+
           {loading ? <LoadingState label="Loading recommendations…" />
             : error ? <ErrorState error={error} onRetry={() => homeApi.home().then(setPayload).catch(setError)} />
             : (
@@ -355,7 +397,14 @@ export default function Home() {
                 : (
                   <div className="jobs-grid" id="recommended-jobs">
                     {(recommended.length ? recommended : latestJobs).slice(0, 6).map((j) => (
-                      <JobCard key={j.id} job={j} featured />
+                      <JobCard
+                        key={j.id}
+                        job={j}
+                        featured
+                        onApply={isCandidate ? apply : undefined}
+                        applied={appliedIds.has(j.id)}
+                        applyingId={applyingId}
+                      />
                     ))}
                   </div>
                 )
@@ -382,7 +431,16 @@ export default function Home() {
               <Link to="/jobs?sort=best_match" className="section-link">See all matches →</Link>
             </div>
             <div className="jobs-grid">
-              {latestMatched.slice(0, 6).map((j) => <JobCard key={j.id} job={j} featured />)}
+              {latestMatched.slice(0, 6).map((j) => (
+                <JobCard
+                  key={j.id}
+                  job={j}
+                  featured
+                  onApply={isCandidate ? apply : undefined}
+                  applied={appliedIds.has(j.id)}
+                  applyingId={applyingId}
+                />
+              ))}
             </div>
           </div>
         </section>

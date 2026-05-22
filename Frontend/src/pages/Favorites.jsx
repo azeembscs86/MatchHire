@@ -33,6 +33,11 @@ export default function Favorites() {
   const [error, setError] = useState(null);
   const [applyMessage, setApplyMessage] = useState(null);
   const [applyingId, setApplyingId] = useState(null);
+  // Tracks which favourited jobs the candidate just applied to so the
+  // card can flip its Apply button to "Already Applied" without
+  // disappearing — favourites is an interest surface, not a pipeline
+  // one, so the row stays.
+  const [appliedIds, setAppliedIds] = useState(() => new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -68,10 +73,17 @@ export default function Favorites() {
   }, [favs]);
 
   async function handleApply(job) {
+    if (job?.isExpired) return;
+    if (appliedIds.has(job.id)) return;
     setApplyingId(job.id);
     setApplyMessage(null);
     try {
       await candidatesApi.applications.apply(job.id, {});
+      setAppliedIds((prev) => {
+        const next = new Set(prev);
+        next.add(job.id);
+        return next;
+      });
       setApplyMessage({ ok: true, text: `Application submitted to ${job.co}.` });
       // Don't drop the row from the Favorites list — favourites express
       // interest, not pipeline state. But DO drop it from the similar-
@@ -184,14 +196,36 @@ export default function Favorites() {
                 <div className="job-time">Saved · {j.time}</div>
               </div>
               <div className="fav-card-actions">
-                <button
-                  className="btn btn-coral"
-                  onClick={() => handleApply(j)}
-                  disabled={applyingId === j.id}
-                  type="button"
-                >
-                  {applyingId === j.id ? 'Applying…' : 'Apply now'}
-                </button>
+                {appliedIds.has(j.id) ? (
+                  <button
+                    className="btn btn-coral apply-btn apply-btn-applied"
+                    type="button"
+                    disabled
+                    aria-disabled="true"
+                  >
+                    ✓ Already Applied
+                  </button>
+                ) : j.isExpired ? (
+                  <button
+                    className="btn btn-coral apply-btn apply-btn-expired"
+                    type="button"
+                    disabled
+                    aria-disabled="true"
+                    title="This job is no longer accepting applications"
+                  >
+                    Job Expired
+                  </button>
+                ) : (
+                  <button
+                    className="btn btn-coral apply-btn"
+                    onClick={() => handleApply(j)}
+                    disabled={applyingId === j.id}
+                    aria-busy={applyingId === j.id}
+                    type="button"
+                  >
+                    {applyingId === j.id ? 'Applying…' : 'Apply Now'}
+                  </button>
+                )}
                 <Link to={`/jobs/${j.id}`} className="btn btn-ghost">View role</Link>
               </div>
             </div>
@@ -208,7 +242,15 @@ export default function Favorites() {
               <Link to="/jobs" className="section-link">Browse all →</Link>
             </div>
             <div className="jobs-grid">
-              {similar.map((j) => <JobCard key={j.id} job={j} featured onApply={handleApply} />)}
+              {similar.map((j) => (
+                <JobCard
+                  key={j.id}
+                  job={j}
+                  featured
+                  onApply={handleApply}
+                  applyingId={applyingId}
+                />
+              ))}
             </div>
           </div>
         )}

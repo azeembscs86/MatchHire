@@ -158,11 +158,17 @@ function AILabel({ label }) {
  * owns the "Missing:" chip rendering (as a sibling of the card body
  * inside `.job-card-wrapper`).
  */
-function MatchCard({ job, onApply }) {
+function MatchCard({ job, onApply, applyingId, applied }) {
   return (
     <div style={{ position: 'relative' }}>
       {job.aiLabel && <AILabel label={job.aiLabel} />}
-      <JobCard job={job} featured onApply={onApply} />
+      <JobCard
+        job={job}
+        featured
+        onApply={onApply}
+        applyingId={applyingId}
+        applied={applied}
+      />
     </div>
   );
 }
@@ -482,7 +488,8 @@ export default function Jobs() {
                       <MatchCard
                         key={j.id}
                         job={j}
-                        onApply={isCandidate && applyingId !== j.id ? handleApply : undefined}
+                        onApply={isCandidate ? handleApply : undefined}
+                        applyingId={applyingId}
                       />
                     ))}
                   </div>

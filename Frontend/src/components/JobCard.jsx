@@ -29,13 +29,17 @@
  *     </div>
  *   </div>
  *
- * @param {object}   props.job       View-model from `toJobCardShape(...)`
- * @param {boolean}  [props.featured] Show the FEATURED ribbon
- * @param {function} [props.onApply]  Optional handler; renders Apply button
- *                                    only when onApply is provided
- * @param {boolean}  [props.applied]  Render "Already Applied" pill instead
- *                                    of Apply button (defensive — applied
- *                                    jobs are already filtered server-side)
+ * @param {object}   props.job          View-model from `toJobCardShape(...)`
+ * @param {boolean}  [props.featured]   Show the FEATURED ribbon
+ * @param {function} [props.onApply]    Optional handler; renders Apply button
+ *                                       only when onApply is provided. Pages
+ *                                       gate this on `isCandidate` so guests,
+ *                                       employers, and admins never see it.
+ * @param {boolean}  [props.applied]    Render "Already Applied" pill instead
+ *                                       of Apply button (defensive — applied
+ *                                       jobs are already filtered server-side)
+ * @param {number}   [props.applyingId] When equal to job.id, render the
+ *                                       Apply button in its loading state.
  */
 import { useNavigate } from 'react-router-dom';
 import { useFavorites } from '../context/FavoritesContext.jsx';
@@ -79,7 +83,7 @@ function MatchBadge({ score }) {
   );
 }
 
-export default function JobCard({ job, featured = false, onApply, applied = false }) {
+export default function JobCard({ job, featured = false, onApply, applied = false, applyingId = null }) {
   const navigate = useNavigate();
   const { isSaved, toggleSave } = useFavorites();
   const { isSavedForLater, toggleSave: toggleSavedForLater } = useSavedJobs();
@@ -208,22 +212,62 @@ export default function JobCard({ job, featured = false, onApply, applied = fals
           <div className="job-time">{job.time}</div>
         </div>
 
-        {/* Apply row (View Details removed — whole card is clickable) */}
-        <div className="job-actions-row">
-          {applied ? (
-            <span className="pill pill-applied" style={{ alignSelf: 'center' }}>Already Applied</span>
-          ) : onApply ? (
-            <button
-              className="btn btn-coral btn-sm"
-              onClick={(e) => { e.stopPropagation(); onApply(job); }}
-              type="button"
-              disabled={job.isExpired}
-              style={{ width: '100%' }}
-            >
-              {job.isExpired ? 'Expired' : 'Apply now'}
-            </button>
-          ) : null}
-        </div>
+        {/*
+          * Apply row.
+          *
+          * Three mutually-exclusive states, each disables further
+          * interaction so the action surface always reads as one
+          * decisive control:
+          *
+          *   applied=true      → "Already Applied" pill, disabled.
+          *   job.isExpired     → "Job Expired" button, disabled.
+          *   default           → "Apply Now" button (with loading
+          *                       state when this card is the one
+          *                       currently submitting).
+          *
+          * The whole row is only rendered when the parent supplies
+          * `onApply` — pages gate that prop on logged-in candidate so
+          * guests, employer, and admin viewers never see the button.
+          */}
+        {(applied || onApply) && (
+          <div className="job-actions-row">
+            {applied ? (
+              <button
+                className="btn btn-coral btn-sm apply-btn apply-btn-applied"
+                type="button"
+                disabled
+                aria-disabled="true"
+                onClick={(e) => e.stopPropagation()}
+                style={{ width: '100%' }}
+              >
+                ✓ Already Applied
+              </button>
+            ) : job.isExpired ? (
+              <button
+                className="btn btn-coral btn-sm apply-btn apply-btn-expired"
+                type="button"
+                disabled
+                aria-disabled="true"
+                onClick={(e) => e.stopPropagation()}
+                title="This job is no longer accepting applications"
+                style={{ width: '100%' }}
+              >
+                Job Expired
+              </button>
+            ) : (
+              <button
+                className="btn btn-coral btn-sm apply-btn"
+                onClick={(e) => { e.stopPropagation(); onApply(job); }}
+                type="button"
+                disabled={applyingId === job.id}
+                aria-busy={applyingId === job.id}
+                style={{ width: '100%' }}
+              >
+                {applyingId === job.id ? 'Applying…' : 'Apply Now'}
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/*

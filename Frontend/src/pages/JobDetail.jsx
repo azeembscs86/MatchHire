@@ -121,6 +121,15 @@ export default function JobDetail() {
   const [actionMessage, setActionMessage] = useState(null);
   const [hasApplied, setHasApplied] = useState(false);
   const [applicationStatus, setApplicationStatus] = useState(null);
+  // Per-card applying state for the "Recommended for you" rail at the
+  // bottom of the page. Tracked separately from the hero `applying`
+  // flag so the hero button doesn't show a spinner while the rail
+  // card the candidate just clicked submits.
+  const [similarApplyingId, setSimilarApplyingId] = useState(null);
+  // In-session record of similar-rail jobs the candidate just applied
+  // to. The rail removes them after success anyway, but this covers
+  // the moment between API success and React re-render.
+  const [similarAppliedIds, setSimilarAppliedIds] = useState(() => new Set());
 
   // Load detail + similar in parallel. Re-runs when the URL :id changes
   // (e.g. clicking a recommended card) so the page swaps in-place.
@@ -274,19 +283,37 @@ export default function JobDetail() {
           {/* ACTION BAR — Apply / Save / Favourite */}
           <div className="jd-actions">
             {hasApplied ? (
-              <button className="btn btn-coral" disabled type="button" style={{ minWidth: 180 }}>
+              <button
+                className="btn btn-coral apply-btn apply-btn-applied"
+                disabled
+                aria-disabled="true"
+                type="button"
+                style={{ minWidth: 180 }}
+              >
                 ✓ Already Applied
+              </button>
+            ) : isExpired ? (
+              <button
+                className="btn btn-coral apply-btn apply-btn-expired"
+                disabled
+                aria-disabled="true"
+                type="button"
+                style={{ minWidth: 180 }}
+                title="This job is no longer accepting applications"
+              >
+                Job Expired
               </button>
             ) : (
               <button
-                className="btn btn-coral"
+                className="btn btn-coral apply-btn"
                 onClick={handleApply}
-                disabled={applying || isExpired}
+                disabled={applying}
+                aria-busy={applying}
                 type="button"
                 style={{ minWidth: 180 }}
-                title={isExpired ? 'Job deadline has passed' : 'Apply to this job'}
+                title="Apply to this job"
               >
-                {isExpired ? 'Expired' : applying ? 'Submitting…' : 'Apply now'}
+                {applying ? 'Submitting…' : 'Apply Now'}
               </button>
             )}
             <button
@@ -433,10 +460,19 @@ export default function JobDetail() {
                   key={j.id}
                   job={j}
                   featured
+                  applied={similarAppliedIds.has(j.id)}
+                  applyingId={similarApplyingId}
                   onApply={isCandidate ? async (target) => {
                     if (!isCandidate) { openAuth('signin'); return; }
+                    if (target.isExpired) return;
+                    setSimilarApplyingId(target.id);
                     try {
                       await candidatesApi.validateAndApply(target.id, {});
+                      setSimilarAppliedIds((prev) => {
+                        const next = new Set(prev);
+                        next.add(target.id);
+                        return next;
+                      });
                       // Drop the freshly-applied row from the rail so the
                       // candidate doesn't see Apply on it twice.
                       setSimilar((rows) => rows.filter((r) => r.id !== target.id));
@@ -449,6 +485,8 @@ export default function JobDetail() {
                           ? data.message
                           : (err.message || 'Could not submit application.'),
                       });
+                    } finally {
+                      setSimilarApplyingId(null);
                     }
                   } : undefined}
                 />

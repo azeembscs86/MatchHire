@@ -297,6 +297,22 @@
    */
   .job-actions-row{display:flex;gap:8px;margin-top:10px;align-items:stretch}
   .job-actions-row .btn{padding:10px 14px;font-size:13px;border-radius:10px;font-weight:500}
+  /*
+   * Apply Now button — globally consistent across every JobCard
+   * surface (Home rails, Jobs feed, Favourites' similar rail, JobDetail
+   * recommendations, Dashboard matches). Text stays perfectly centered
+   * vertically and horizontally regardless of width.
+   */
+  .apply-btn{
+    display:inline-flex;align-items:center;justify-content:center;
+    line-height:1.2;text-align:center;letter-spacing:.01em;min-height:38px;
+  }
+  .apply-btn:disabled{cursor:not-allowed;transform:none;box-shadow:none}
+  .apply-btn-applied{background:#3f7f59;color:#fff;opacity:.95}
+  .apply-btn-applied:disabled{background:#3f7f59;color:#fff;opacity:.95}
+  .apply-btn-expired{background:#8b5448;color:#fff;opacity:.9}
+  .apply-btn-expired:disabled{background:#8b5448;color:#fff;opacity:.9}
+  .apply-btn[aria-busy="true"]{opacity:.85}
   .job-view-link{display:none}
   /* legacy class kept for back-compat with any callers still using it */
   .job-apply-row{margin-top:12px}
