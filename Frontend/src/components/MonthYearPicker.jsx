@@ -34,7 +34,7 @@
  * @param {object} props
  * @param {string} props.value         Current value `"YYYY-MM"` (or empty).
  * @param {(v: string) => void} props.onChange  Emits `"YYYY-MM"` or `""`.
- * @param {string} [props.min]         Lower bound `"YYYY-MM"`, default `"2000-01"`.
+ * @param {string} [props.min]         Lower bound `"YYYY-MM"`, default `"1990-01"`.
  * @param {string} [props.max]         Upper bound `"YYYY-MM"`, default current month.
  * @param {boolean} [props.disabled]   Read-only mode.
  * @param {string} [props.id]          For label `htmlFor` association.
@@ -46,7 +46,10 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 
-const FLOOR_YEAR = 2000;
+// Year-range floor. Set to 1990 per product spec so candidates can
+// log earlier-career roles. Per-instance lower bounds can still
+// raise this via the `min` prop (e.g. end-date floored to start).
+const FLOOR_YEAR = 1990;
 const MONTHS = [
   { value: '01', label: 'January'  },
   { value: '02', label: 'February' },

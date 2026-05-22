@@ -49,6 +49,26 @@ export const candidatesApi = {
     remove(jobId) { return call(api.post(`/candidates/favorites/${jobId}/remove`)); },
   },
 
+  /**
+   * Saved-for-later jobs (apply intent surface).
+   *
+   * Distinct from `favorites` — see migration 035. The save endpoint
+   * is idempotent server-side (re-saving touches `updated_at`), so
+   * the SPA can call it as a fire-and-forget toggle without
+   * pre-checking existence.
+   *
+   * `eligibility` is a no-write dry-run that returns the same verdict
+   * shape `validate-and-apply` uses (`{ can_apply, decision,
+   * match_score, missing, message }`). The apply modal hits it
+   * before opening so the Apply button can be gated client-side.
+   */
+  savedJobs: {
+    list(body = {}) { return call(api.post('/candidates/saved-jobs/list', body)); },
+    save(jobId)     { return call(api.post(`/candidates/saved-jobs/${jobId}/save`)); },
+    remove(jobId)   { return call(api.post(`/candidates/saved-jobs/${jobId}/remove`)); },
+    eligibility(jobId) { return call(api.post(`/candidates/saved-jobs/${jobId}/eligibility`)); },
+  },
+
   applications: {
     apply(jobId, payload = {}) { return call(api.post(`/candidates/applications/${jobId}`, payload)); },
     list(body = {}) { return call(api.post('/candidates/applications/list', body)); },

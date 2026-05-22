@@ -33,6 +33,7 @@ import ReviewProfile from './pages/ReviewProfile.jsx';
 import Onboarding from './pages/Onboarding.jsx';
 import Preferences from './pages/Preferences.jsx';
 import Favorites from './pages/Favorites.jsx';
+import SavedJobs from './pages/SavedJobs.jsx';
 import EmployerOnboarding from './pages/EmployerOnboarding.jsx';
 import DashboardCandidate from './pages/DashboardCandidate.jsx';
 import DashboardCompany from './pages/DashboardCompany.jsx';
@@ -73,6 +74,7 @@ export default function App() {
           <Route path="/onboarding" element={<Onboarding />} />
           <Route path="/preferences" element={<Preferences />} />
           <Route path="/favorites" element={<Favorites />} />
+          <Route path="/saved-jobs" element={<SavedJobs />} />
           <Route path="/dashboard/candidate" element={<DashboardCandidate />} />
         </Route>
 

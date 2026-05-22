@@ -20,6 +20,7 @@
  *                                     Apply action is invoked.
  */
 import { useFavorites } from '../context/FavoritesContext.jsx';
+import { useSavedJobs } from '../context/SavedJobsContext.jsx';
 
 function HeartIcon({ filled }) {
   if (filled) {
@@ -32,6 +33,19 @@ function HeartIcon({ filled }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+    </svg>
+  );
+}
+
+/**
+ * Bookmark icon for the "save for later" toggle. Sits next to the
+ * heart so candidates can distinguish "I like this" (♥) from "I plan
+ * to apply" (⌘ bookmark).
+ */
+function BookmarkIcon({ filled }) {
+  return (
+    <svg viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+      <path d="M5 4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v18l-7-4-7 4V4z" />
     </svg>
   );
 }
@@ -56,7 +70,9 @@ function MatchBadge({ score }) {
 
 export default function JobCard({ job, featured = false, onApply }) {
   const { isSaved, toggleSave } = useFavorites();
+  const { isSavedForLater, toggleSave: toggleSavedForLater } = useSavedJobs();
   const saved = isSaved(job.id);
+  const savedForLater = isSavedForLater(job.id);
   const score = job.matchScore;
   return (
     <div className={`job-card${featured && job.featured ? ' featured' : ''}`}>
@@ -67,6 +83,25 @@ export default function JobCard({ job, featured = false, onApply }) {
         type="button"
       >
         <HeartIcon filled={saved} />
+      </button>
+      {/*
+        * Bookmark sits just below the heart so the two toggles stack
+        * inside the existing card layout without needing CSS changes.
+        * Heart = like, Bookmark = plan-to-apply.
+        */}
+      <button
+        onClick={(e) => { e.stopPropagation(); toggleSavedForLater(job.id); }}
+        title={savedForLater ? 'Remove from saved-for-later' : 'Save for later (track apply deadline)'}
+        type="button"
+        style={{
+          position: 'absolute', top: 44, right: 12,
+          width: 32, height: 32, padding: 0,
+          background: 'transparent', border: 0, cursor: 'pointer',
+          color: savedForLater ? 'var(--coral, #e85d3c)' : 'var(--muted, #6B6258)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+      >
+        <BookmarkIcon filled={savedForLater} />
       </button>
       <div className="job-head">
         <div className={`job-logo ${job.cl}`}>{job.l}</div>

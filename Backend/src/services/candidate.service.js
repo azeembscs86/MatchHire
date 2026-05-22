@@ -31,10 +31,40 @@ async function getProfile(user_id) {
   return { profile, skills, preferences };
 }
 
+/**
+ * Safe-merge predicate for partial profile updates.
+ *
+ * Background: the frontend save handlers (Profile.jsx) historically
+ * sent the FULL form on every submit — including empty strings for
+ * fields the user hadn't touched. Those empties would land in the
+ * `IF (k in payload)` allowlist below and overwrite saved values
+ * (e.g. saving the bio would clear an unrelated `linkedin_url`).
+ *
+ * Rule going forward:
+ *   - `undefined`  → not in payload → skipped (existing behaviour)
+ *   - `null`       → SKIPPED. Treat as "not supplied" rather than
+ *                    "explicit clear" — the UI never sends null on
+ *                    purpose today, and clearing is rare.
+ *   - `''`         → SKIPPED. Same logic; empty input rarely means
+ *                    "clear", more often means "no change".
+ *   - `false`, `0` → kept. Valid boolean / numeric values.
+ *   - `[]`         → kept. Empty array can be a legitimate value
+ *                    (e.g. languages = none).
+ *
+ * If we ever need a true "explicit clear" path, add a dedicated
+ * mutator (`POST /candidates/profile/clear-field`) so the intent
+ * is unambiguous server-side.
+ */
+function isMeaningfulValue(v) {
+  if (v === undefined || v === null) return false;
+  if (typeof v === 'string' && v.trim() === '') return false;
+  return true;
+}
+
 async function updateProfile(user_id, payload) {
   const userFields = {};
   for (const k of ['full_name', 'phone', 'avatar_url']) {
-    if (k in payload) userFields[k] = payload[k];
+    if (k in payload && isMeaningfulValue(payload[k])) userFields[k] = payload[k];
   }
   if (Object.keys(userFields).length) await userRepo.updateById(user_id, userFields);
 
@@ -50,7 +80,7 @@ async function updateProfile(user_id, payload) {
     'education',
   ];
   for (const k of allowed) {
-    if (k in payload) profileFields[k] = payload[k];
+    if (k in payload && isMeaningfulValue(payload[k])) profileFields[k] = payload[k];
   }
 
   // Derive `open_to_remote` from `relocation_scope` when the caller

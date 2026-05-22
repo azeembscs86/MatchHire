@@ -21,6 +21,7 @@ import App from './App.jsx';
 import { AuthProvider } from './context/AuthContext.jsx';
 import { AuthModalProvider } from './context/AuthModalContext.jsx';
 import { FavoritesProvider } from './context/FavoritesContext.jsx';
+import { SavedJobsProvider } from './context/SavedJobsContext.jsx';
 import './styles.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -29,7 +30,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <AuthProvider>
         <AuthModalProvider>
           <FavoritesProvider>
-            <App />
+            <SavedJobsProvider>
+              <App />
+            </SavedJobsProvider>
           </FavoritesProvider>
         </AuthModalProvider>
       </AuthProvider>

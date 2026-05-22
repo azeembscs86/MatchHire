@@ -16,9 +16,9 @@
  * call goes through the wrappers passed in via props so the Profile
  * page can re-pull completion / publish state at the same moment.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { candidatesApi } from '../api/index.js';
-import MonthYearPicker from './MonthYearPicker.jsx';
+import MonthYearDatePicker from './MonthYearDatePicker.jsx';
 
 const BLANK = {
   company: '',
@@ -55,6 +55,14 @@ function monthLabel(d) {
 export default function WorkExperienceCard({ experiences, onChange, onAfterWrite }) {
   // `editingId === 0` means "adding a new role"; `null` means nothing open.
   const [editingId, setEditingId] = useState(null);
+  /*
+   * Transient success banner — shows for 4 seconds after a save
+   * or delete so the user has unambiguous feedback that their
+   * action persisted. Surfaces the new total count so adding a
+   * 2nd / 3rd / 4th experience is obviously distinct from
+   * "saved over the first one".
+   */
+  const [successText, setSuccessText] = useState(null);
   const [draft, setDraft] = useState(BLANK);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -102,15 +110,29 @@ export default function WorkExperienceCard({ experiences, onChange, onAfterWrite
       description: draft.description?.trim() || null,
     };
     try {
-      if (editingId && editingId > 0) {
+      const wasEditing = !!(editingId && editingId > 0);
+      if (wasEditing) {
         await candidatesApi.experience.update(editingId, payload);
       } else {
         await candidatesApi.experience.create(payload);
       }
+      // Refetch the full list so the new/updated row appears with
+      // its server-assigned id + canonical date format.
       const data = await candidatesApi.experience.list();
-      onChange?.(data?.experiences || []);
+      const nextList = data?.experiences || [];
+      onChange?.(nextList);
       onAfterWrite?.();
       cancel();
+      // Visible confirmation — auto-dismiss after 4s. Total count
+      // makes "I added another one" feel different from "I edited
+      // the existing one".
+      const total = nextList.length;
+      setSuccessText(
+        wasEditing
+          ? `Experience updated. ${total} total on your profile.`
+          : `Experience added. ${total} total on your profile.`
+      );
+      setTimeout(() => setSuccessText(null), 4000);
     } catch (err) {
       setError(err);
     } finally {
@@ -126,9 +148,12 @@ export default function WorkExperienceCard({ experiences, onChange, onAfterWrite
     try {
       await candidatesApi.experience.remove(id);
       const data = await candidatesApi.experience.list();
-      onChange?.(data?.experiences || []);
+      const nextList = data?.experiences || [];
+      onChange?.(nextList);
       onAfterWrite?.();
       if (editingId === id) cancel();
+      setSuccessText(`Experience removed. ${nextList.length} remaining.`);
+      setTimeout(() => setSuccessText(null), 4000);
     } catch (err) {
       setError(err);
     } finally {
@@ -138,10 +163,30 @@ export default function WorkExperienceCard({ experiences, onChange, onAfterWrite
 
   const isEmpty = experiences.length === 0 && editingId == null;
 
+  // Render newest-first so a freshly-added row visibly surfaces at
+  // the top. `is_current` always sorts ahead of past roles; then
+  // sorted by start_date desc.
+  const sortedExperiences = [...experiences].sort((a, b) => {
+    if (!!a.is_current !== !!b.is_current) return a.is_current ? -1 : 1;
+    return String(b.start_date || '').localeCompare(String(a.start_date || ''));
+  });
+
   return (
     <div className="form-card">
       <div className="form-card-head">
-        <h3>Work experience</h3>
+        <h3>
+          Work experience
+          {experiences.length > 0 && (
+            <span style={{
+              marginLeft: 10, fontSize: 12, fontWeight: 500,
+              padding: '2px 10px', borderRadius: 100,
+              background: 'var(--bone, #f5f0e6)',
+              color: 'var(--muted, #6B6258)',
+            }}>
+              {experiences.length} role{experiences.length === 1 ? '' : 's'}
+            </span>
+          )}
+        </h3>
         <span className="step">04 / 05</span>
       </div>
 
@@ -151,14 +196,20 @@ export default function WorkExperienceCard({ experiences, onChange, onAfterWrite
         </div>
       )}
 
+      {successText && (
+        <div role="status" style={{ background: '#e6f4ea', color: '#0f5132', padding: '10px 12px', borderRadius: 8, marginBottom: 12, fontSize: 13 }}>
+          ✓ {successText}
+        </div>
+      )}
+
       {isEmpty && (
         <p className="muted" style={{ fontSize: 13, marginBottom: 14 }}>
           Add the roles that shaped your career. Recruiters look here first.
         </p>
       )}
 
-      {/* Saved entries — collapsed summary view */}
-      {experiences.map((exp) => {
+      {/* Saved entries — collapsed summary view (newest first) */}
+      {sortedExperiences.map((exp) => {
         if (editingId === exp.id) {
           return (
             <ExperienceForm
@@ -168,6 +219,8 @@ export default function WorkExperienceCard({ experiences, onChange, onAfterWrite
               onCancel={cancel}
               onSave={save}
               busy={busy}
+              error={error}
+              onClearError={() => setError(null)}
             />
           );
         }
@@ -224,6 +277,8 @@ export default function WorkExperienceCard({ experiences, onChange, onAfterWrite
           onCancel={cancel}
           onSave={save}
           busy={busy}
+          error={error}
+          onClearError={() => setError(null)}
         />
       )}
 
@@ -245,15 +300,32 @@ export default function WorkExperienceCard({ experiences, onChange, onAfterWrite
  * Inline form for one experience row. Used by both "edit existing"
  * and "add new" paths so the layout is identical.
  */
-function ExperienceForm({ draft, setDraft, onCancel, onSave, busy }) {
+function ExperienceForm({ draft, setDraft, onCancel, onSave, busy, error, onClearError }) {
   function update(patch) { setDraft((d) => ({ ...d, ...patch })); }
-  // Per-picker validity surfaced via MonthYearPicker.onValidate. Used
-  // ONLY to gate the Save button locally — the picker itself already
-  // renders an inline error message in red so the user sees what's
-  // wrong without an extra render here.
-  const [startDateError, setStartDateError] = useState(null);
-  const [endDateError, setEndDateError] = useState(null);
-  const hasDateError = !!startDateError || (!draft.is_current && !!endDateError);
+
+  /*
+   * `triedSave` gates the inline validation messages. The form opens
+   * clean (no red banner, no red inline messages) until the user has
+   * actually clicked Save. After a failed save, errors appear and
+   * stay visible until the user fixes them — at which point a
+   * `useEffect` below clears the banner so the form looks healthy
+   * again the moment the fields become valid.
+   */
+  const [triedSave, setTriedSave] = useState(false);
+
+  const isCompanyMissing = !draft.company?.trim();
+  const isTitleMissing = !draft.title?.trim();
+  const isStartMissing = !draft.start_date;
+
+  // Auto-clear the parent-owned banner the moment all required
+  // fields are filled. Matches the spec rule:
+  //   "Hide error immediately after fields are valid."
+  useEffect(() => {
+    if (!error) return;
+    if (!isCompanyMissing && !isTitleMissing && !isStartMissing) {
+      onClearError?.();
+    }
+  }, [error, isCompanyMissing, isTitleMissing, isStartMissing, onClearError]);
 
   return (
     <div style={{ padding: '14px 0 6px', borderTop: '1px dashed var(--line)', marginTop: 4 }}>
@@ -265,7 +337,16 @@ function ExperienceForm({ draft, setDraft, onCancel, onSave, busy }) {
             onChange={(e) => update({ company: e.target.value })}
             placeholder="Acme Inc."
             maxLength={190}
+            aria-invalid={triedSave && isCompanyMissing || undefined}
+            style={triedSave && isCompanyMissing
+              ? { borderColor: 'var(--coral, #E85D3C)' }
+              : undefined}
           />
+          {triedSave && isCompanyMissing && (
+            <div role="alert" style={{ marginTop: 6, fontSize: 12, color: 'var(--coral-deep, #C73E1D)' }}>
+              ⚠ Company is required.
+            </div>
+          )}
         </div>
         <div className="form-field">
           <label>Job title *</label>
@@ -274,44 +355,56 @@ function ExperienceForm({ draft, setDraft, onCancel, onSave, busy }) {
             onChange={(e) => update({ title: e.target.value })}
             placeholder="Senior Frontend Engineer"
             maxLength={190}
+            aria-invalid={triedSave && isTitleMissing || undefined}
+            style={triedSave && isTitleMissing
+              ? { borderColor: 'var(--coral, #E85D3C)' }
+              : undefined}
           />
+          {triedSave && isTitleMissing && (
+            <div role="alert" style={{ marginTop: 6, fontSize: 12, color: 'var(--coral-deep, #C73E1D)' }}>
+              ⚠ Job title is required.
+            </div>
+          )}
         </div>
       </div>
       <div className="form-row">
         {/*
-         * Themed month/year pickers replacing the prior native
-         * <input type="month">. Both emit "YYYY-MM" so the
-         * surrounding fromMonthInput()/toMonthInput() pipeline and
-         * the YYYY-MM-01 backend payload are unchanged.
+         * Modern popover date pickers (year list + month grid +
+         * calendar icon) replacing the older dual-select shape.
+         * Both emit "YYYY-MM" so `fromMonthInput()`/`toMonthInput()`
+         * + the `YYYY-MM-01` backend payload are unchanged.
          *
-         * Year range: 2000 .. current year (computed dynamically
-         * inside the picker via new Date().getFullYear()).
-         * Future months are disabled; end-date is further floored
-         * by the chosen start-date.
+         * Year range: 1990 → current year (live via
+         * `new Date().getFullYear()`). Future months disabled.
+         * The end-date picker's `min` is the start date, so
+         * picking an end before start is impossible at the UI
+         * level (no need for a post-validation race).
          */}
         <div className="form-field">
           <label htmlFor="exp-start-date">Start date *</label>
-          <MonthYearPicker
+          <MonthYearDatePicker
             id="exp-start-date"
             ariaLabel="Start date"
             value={draft.start_date}
             onChange={(v) => update({ start_date: v })}
-            onValidate={setStartDateError}
+            placeholder="Pick start month"
+            // Inline error shown ONLY after a save attempt: see
+            // `triedSave` gate below. Avoids the "validation
+            // shouting on page load" UX problem.
+            errorText={triedSave && !draft.start_date ? 'Start date is required.' : null}
           />
         </div>
         <div className="form-field">
           <label htmlFor="exp-end-date">End date</label>
-          <MonthYearPicker
+          <MonthYearDatePicker
             id="exp-end-date"
             ariaLabel="End date"
             value={draft.is_current ? '' : draft.end_date}
-            // End date can't be earlier than start. If start is empty
-            // the picker falls back to its built-in 2000-01 floor.
+            // Floor end-date at the chosen start month.
             min={draft.start_date || undefined}
             disabled={draft.is_current}
             onChange={(v) => update({ end_date: v })}
-            onValidate={setEndDateError}
-            placeholder={draft.is_current ? 'Present' : 'Year'}
+            placeholder={draft.is_current ? 'Present' : 'Pick end month'}
           />
         </div>
       </div>
@@ -346,16 +439,17 @@ function ExperienceForm({ draft, setDraft, onCancel, onSave, busy }) {
           Cancel
         </button>
         {/*
-         * Save is gated on busy AND date validity. The picker
-         * already renders the precise error inline, so the button's
-         * only job is to be unclickable while the form is invalid.
+         * Save click — flips `triedSave` on so inline errors render
+         * BEFORE delegating to the parent's `onSave`. The new
+         * popover date picker already prevents picking an end date
+         * before start at the UI level, so we no longer need a
+         * separate `hasDateError` race-condition guard.
          */}
         <button
           type="button"
           className="btn btn-coral"
-          onClick={onSave}
-          disabled={busy || hasDateError}
-          title={hasDateError ? 'Fix the highlighted date before saving' : undefined}
+          onClick={(e) => { setTriedSave(true); onSave?.(e); }}
+          disabled={busy}
         >
           {busy ? 'Saving…' : 'Save role'}
         </button>

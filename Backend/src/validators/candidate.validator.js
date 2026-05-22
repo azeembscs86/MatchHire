@@ -181,6 +181,18 @@ const listFilters = Joi.object({
   limit: Joi.number().integer().min(1).max(100).default(10),
 }).unknown(false);
 
+/**
+ * Saved-jobs list filters. Same pagination shape as `listFilters`, plus
+ * an `include_expired` toggle reserved for a future "Saved – expired"
+ * tab. Defaults to false so the dashboard only sees rows the candidate
+ * can still act on.
+ */
+const savedJobsList = Joi.object({
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(100).default(10),
+  include_expired: Joi.boolean().default(false),
+}).unknown(false);
+
 /** Body for /candidates/recommended-jobs: just an optional limit. */
 const recommendedFilters = Joi.object({
   limit: Joi.number().integer().min(1).max(50).default(10),
@@ -230,4 +242,5 @@ module.exports = {
   experienceUpdate,
   experienceIdParam,
   onboardingAdvance,
+  savedJobsList,
 };

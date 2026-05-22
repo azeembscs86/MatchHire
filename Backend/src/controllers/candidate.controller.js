@@ -18,6 +18,7 @@ const profileImageService = require('../services/profileImage.service');
 const reviewProfileService = require('../services/reviewProfile.service');
 const experienceService = require('../services/candidateExperience.service');
 const onboardingService = require('../services/onboarding.service');
+const savedJobService = require('../services/savedJob.service');
 const candidateRepo = require('../repositories/candidate.repository');
 const response = require('../utils/response.helper');
 const { buildPagination } = require('../utils/pagination');
@@ -160,6 +161,47 @@ exports.listFavorites = async (req, res) => {
   const limit = req.body?.limit || 10;
   const { rows, total } = await service.listFavorites(req.user.id, { page, limit });
   return response.list(res, rows, buildPagination(page, limit, total), 'Favorites returned');
+};
+
+/* ----------------------------------------------------------------
+ * Saved-for-later (apply intent surface)
+ * ----------------------------------------------------------------
+ * Distinct from favourites — see migration 035 + savedJob.service
+ * docstrings. The set of endpoints intentionally mirrors the
+ * favourites trio (add/remove/list) plus an eligibility dry-run
+ * the SPA hits before opening the apply modal.
+ * ---------------------------------------------------------------- */
+
+/** Save a job for apply later. Idempotent — re-saving touches updated_at. */
+exports.saveJob = async (req, res) => {
+  const data = await savedJobService.save(req.user.id, Number(req.params.jobId));
+  return response.created(res, data, 'Job saved');
+};
+
+/** Remove a saved-for-later row. */
+exports.unsaveJob = async (req, res) => {
+  await savedJobService.remove(req.user.id, Number(req.params.jobId));
+  return response.success(res, {}, 'Saved job removed');
+};
+
+/** Paginated list of the candidate's active saved-for-later jobs. */
+exports.listSavedJobs = async (req, res) => {
+  const page = req.body?.page || 1;
+  const limit = req.body?.limit || 10;
+  const include_expired = !!req.body?.include_expired;
+  const { rows, total } = await savedJobService.list(req.user.id, { page, limit, include_expired });
+  return response.list(res, rows, buildPagination(page, limit, total), 'Saved jobs returned');
+};
+
+/**
+ * Dry-run eligibility check. Returns the match-score verdict the
+ * apply modal needs to gate the "Apply" button without writing
+ * anything. Always 200 — the can_apply flag carries the decision
+ * so the SPA can render a tailored UI.
+ */
+exports.checkApplyEligibility = async (req, res) => {
+  const data = await savedJobService.checkEligibility(req.user.id, Number(req.params.jobId));
+  return response.success(res, data, 'Eligibility checked');
 };
 
 /** Submit a job application. Duplicate applications are rejected by the service. */

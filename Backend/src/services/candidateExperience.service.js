@@ -59,9 +59,27 @@ async function remove(user_id, id) {
   return true;
 }
 
+/**
+ * Validate that end_date is on/after start_date.
+ *
+ * BUG FIX (May 2026): the previous implementation compared the
+ * values via `String(...)`, which for Date objects produces text
+ * like `"Sat Dec 01 2007 00:00:00 GMT+0000"`. Lexicographic
+ * comparison of those strings only matched chronological order
+ * when both dates happened to share a day-of-week / month prefix.
+ * Real-world cases like `start=2005-01-01, end=2007-12-01` would
+ * fire `end < start` incorrectly because `"Sat Dec" < "Sat Jan"`
+ * (`D` < `J` in ASCII).
+ *
+ * Fix: coerce both to `Date` and compare via `getTime()`. Works
+ * regardless of whether Joi handed us a `Date` object (default)
+ * or a string (manual call paths from tests).
+ */
 function validateDates(p) {
   if (p.start_date && p.end_date && !p.is_current) {
-    if (String(p.end_date) < String(p.start_date)) {
+    const startMs = new Date(p.start_date).getTime();
+    const endMs = new Date(p.end_date).getTime();
+    if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs < startMs) {
       throw new AppError('End date cannot be before start date.', 422);
     }
   }

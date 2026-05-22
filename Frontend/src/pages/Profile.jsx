@@ -90,6 +90,17 @@ export default function Profile() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [profile, setProfile] = useState(null);
+  /*
+   * Baseline snapshot — captured once after the initial /profile
+   * load. Subsequent saves diff the current form against this
+   * baseline and ONLY send the keys the candidate actually
+   * changed. Combined with the backend safe-merge filter
+   * (candidate.service.updateProfile > isMeaningfulValue), this
+   * means saving "About you" can never blow away an unrelated
+   * field like linkedin_url. The baseline is refreshed after
+   * every successful save so subsequent edits diff cleanly.
+   */
+  const [baseline, setBaseline] = useState(null);
 
   // Skills: list of { id, name, category, proficiency, years_experience }.
   // `null` id means "custom — backend will ensure-or-create on save".
@@ -160,6 +171,32 @@ export default function Profile() {
           github_url: p.github_url || '',
           education: p.education || '',
         });
+        // Snapshot what we just loaded so the diff-on-save logic
+        // has a "what existed before the user opened this page"
+        // reference. Kept INSIDE the try so we never baseline an
+        // error state.
+        if (!cancelled) {
+          setBaseline({
+            full_name: p.full_name || user?.full_name || '',
+            phone: p.phone || user?.phone || '',
+            headline: p.headline || '',
+            current_title: p.current_title || '',
+            desired_role: p.desired_role || '',
+            summary: p.summary || '',
+            location: p.location || '',
+            country: p.country || '',
+            relocation_scope: fallbackScope,
+            work_preference: p.work_preference || '',
+            expected_salary_min: p.expected_salary_min ?? '',
+            expected_salary_max: p.expected_salary_max ?? '',
+            salary_currency: p.salary_currency || 'USD',
+            availability: p.availability || 'negotiable',
+            linkedin_url: p.linkedin_url || '',
+            portfolio_url: p.portfolio_url || '',
+            github_url: p.github_url || '',
+            education: p.education || '',
+          });
+        }
       } catch (err) {
         if (!cancelled) setError(err);
       } finally {
@@ -228,28 +265,79 @@ export default function Profile() {
     setSavedAt(null);
     setDraftSavedAt(null);
     try {
-      const payload = {
-        full_name: form.full_name?.trim() || undefined,
-        phone: form.phone?.trim() || null,
-        headline: form.headline?.trim() || null,
-        current_title: form.current_title?.trim() || null,
-        desired_role: form.desired_role?.trim() || null,
-        summary: form.summary?.trim() || null,
-        location: form.location?.trim() || null,
-        country: form.country?.trim() || null,
-        relocation_scope: form.relocation_scope || null,
-        work_preference: form.work_preference || null,
-        salary_currency: form.salary_currency || 'USD',
-        availability: form.availability || 'negotiable',
-        linkedin_url: form.linkedin_url?.trim() || null,
-        portfolio_url: form.portfolio_url?.trim() || null,
-        github_url: form.github_url?.trim() || null,
-        education: form.education?.trim() || null,
+      /*
+       * Diff against the baseline snapshot. ONLY changed keys go in
+       * the request — so saving "About you" sends just { summary },
+       * never blowing away an unrelated field. Backend's safe-merge
+       * filter (candidate.service.js > isMeaningfulValue) is the
+       * second line of defence.
+       *
+       * Empty-string after trim is treated as "no value" (matches
+       * server behaviour). To support an explicit "Clear" affordance
+       * later, send `null` (server still skips null today; flip that
+       * if/when an explicit clear endpoint lands).
+       */
+      const cleanForSubmit = {
+        full_name:           form.full_name?.trim() || '',
+        phone:               form.phone?.trim() || '',
+        headline:            form.headline?.trim() || '',
+        current_title:       form.current_title?.trim() || '',
+        desired_role:        form.desired_role?.trim() || '',
+        summary:             form.summary?.trim() || '',
+        location:            form.location?.trim() || '',
+        country:             form.country?.trim() || '',
+        relocation_scope:    form.relocation_scope || '',
+        work_preference:     form.work_preference || '',
+        salary_currency:     form.salary_currency || 'USD',
+        availability:        form.availability || 'negotiable',
+        linkedin_url:        form.linkedin_url?.trim() || '',
+        portfolio_url:       form.portfolio_url?.trim() || '',
+        github_url:          form.github_url?.trim() || '',
+        education:           form.education?.trim() || '',
+        expected_salary_min: form.expected_salary_min === '' ? '' : Number(form.expected_salary_min),
+        expected_salary_max: form.expected_salary_max === '' ? '' : Number(form.expected_salary_max),
       };
-      if (form.expected_salary_min !== '') payload.expected_salary_min = Number(form.expected_salary_min);
-      if (form.expected_salary_max !== '') payload.expected_salary_max = Number(form.expected_salary_max);
+
+      // Build delta against baseline. If baseline is null (first
+      // render before load completed) we fall back to sending the
+      // full payload — safer than dropping the user's edit.
+      const payload = {};
+      if (baseline) {
+        for (const k of Object.keys(cleanForSubmit)) {
+          const cur = cleanForSubmit[k];
+          const old = baseline[k];
+          // Only include when the value genuinely differs. Skip
+          // empty-string fields outright — server treats them as
+          // no-op anyway, and omitting keeps the wire payload tight.
+          if (String(cur) === String(old)) continue;
+          if (cur === '' || cur === null || cur === undefined) continue;
+          payload[k] = cur;
+        }
+      } else {
+        // No baseline yet — send only the non-empty fields. Server
+        // safe-merge will still protect against the rest.
+        for (const [k, v] of Object.entries(cleanForSubmit)) {
+          if (v !== '' && v !== null && v !== undefined) payload[k] = v;
+        }
+      }
+
+      // Nothing changed? Skip the network call entirely (matches
+      // spec rule: "If user does not change bio, do not send update
+      // request.").
+      if (Object.keys(payload).length === 0) {
+        // Still honour the publish-state toggle even if no field
+        // changed — the user may be flipping draft ↔ publish.
+        await candidatesApi.setPublishState(publish);
+        setIsPublic(publish);
+        await refreshMe();
+        if (publish) setSavedAt(new Date()); else setDraftSavedAt(new Date());
+        return;
+      }
 
       await candidatesApi.updateProfile(payload);
+      // Refresh the baseline so subsequent edits diff against the
+      // just-saved state.
+      setBaseline({ ...baseline, ...cleanForSubmit });
       await candidatesApi.setPublishState(publish);
       setIsPublic(publish);
 

@@ -1743,3 +1743,95 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:3500/api/v1/cand
 ```
 
 Browse the new endpoints interactively at **`http://localhost:3500/api-docs`** under the **Candidates** tag (filter on "resume").
+
+
+## 35. Saved-for-later jobs (May 2026)
+
+Apply-intent surface that complements `favorites`. Two parallel signals:
+
+| Signal | Table | Semantics | Expiry |
+| --- | --- | --- | --- |
+| Favourite | `favorites` | "I like this role" | Never |
+| Saved for later | `saved_jobs` | "I plan to apply to this role" | Auto-drops when the job's `application_deadline` passes |
+
+The two surfaces are kept separate per product spec — the candidate dashboard renders them as different sections with different actions.
+
+### Migration
+
+`Backend/src/database/migrations/035_create_saved_jobs.js` creates the `saved_jobs` table with `UNIQUE (candidate_user_id, job_id)`, `expires_at` (denormalised snapshot of `jobs.application_deadline` at save-time), `status ENUM('active','archived')` (today only `active` is written; admin tooling can flip rows later), plus CASCADE FKs to `users` + `jobs`. Idempotent via `information_schema` guard.
+
+### Why `expires_at` is denormalised server-side
+
+We snapshot the deadline at save-time rather than recomputing on read. Two reasons:
+
+1. **Tamper-proof window** — a client-supplied deadline could extend the apply window arbitrarily. The service reads `jobs.application_deadline` from the trusted row and writes that.
+2. **Intent integrity** — if the employer later moves the deadline, the candidate's "I saved this NOW" intent stays bound to the deadline that existed at save-time.
+
+If the existing deadline is already in the past at save-time, the service refuses with a 400 instead of silently inserting a row that immediately expires.
+
+### Backend surface
+
+All routes are POST per the project rule, mounted at `/candidates/saved-jobs/*`:
+
+| Route | Description |
+| --- | --- |
+| `POST /candidates/saved-jobs/list` | Paginated list, expired rows filtered by default. Body `{ page?, limit?, include_expired? }`. |
+| `POST /candidates/saved-jobs/:jobId/save` | Idempotent save. `expires_at` is derived server-side. Re-saving touches `updated_at`. 400 if past deadline. |
+| `POST /candidates/saved-jobs/:jobId/remove` | Hard delete by composite key. 404 if not saved. |
+| `POST /candidates/saved-jobs/:jobId/eligibility` | **Dry-run** match check — does NOT create an application. Returns `{ can_apply, decision, match_score, missing, gaps, message }`. Always 200. |
+
+The eligibility endpoint reuses `match.service.validateApplication()` so the verdict stays in lockstep with the actual `validate-and-apply` write path. The SPA's apply modal hits this before posting so the Apply button can be gated with a tailored message.
+
+### Frontend
+
+- `Frontend/src/api/candidates.js > savedJobs.*` — `list`, `save`, `remove`, `eligibility`.
+- `Frontend/src/context/SavedJobsContext.jsx` — sibling of `FavoritesContext`; owns the set of saved job ids, hydrated on auth changes, optimistic toggle.
+- `Frontend/src/components/JobCard.jsx` — bookmark icon (⌘) stacked under the heart (♥); heart = like, bookmark = plan-to-apply.
+- `Frontend/src/pages/SavedJobs.jsx` — `/saved-jobs` route. Layout mirrors `Favorites.jsx`. Each card shows the deadline-derived expiry label ("Expires in 4d", "Expires tomorrow" rendered coral) and runs the eligibility dry-run before submitting.
+- `Frontend/src/pages/DashboardCandidate.jsx` — sidebar now distinguishes `♥ Favourites` from `⌘ Saved for Later`.
+
+### Live smoke test (verified)
+
+```
+1. Login as candidate                                          → access_token
+2. GET /public/jobs?limit=5                                    → 5 jobs
+3. POST /candidates/saved-jobs/228/save                        → 201 Job saved
+4. POST /candidates/saved-jobs/228/save (idempotent)           → 201 (no 409)
+5. POST /candidates/saved-jobs/list                            → 3 items (after 3 saves)
+6. POST /candidates/saved-jobs/228/eligibility                 → 200 { can_apply:false, match_score:25, missing:[…] }
+7. POST /candidates/saved-jobs/228/remove                      → 200 Saved job removed
+8. POST /candidates/saved-jobs/228/remove (already gone)       → 404 Saved job not found
+9. POST /candidates/saved-jobs/list (after cleanup)            → records: 0
+
+Repository-level expiry filter:
+  insert row with expires_at = yesterday
+  → list (default)         → 0 rows  (expired filtered out)
+  → list (include_expired) → 1 row
+  → exists()               → false
+```
+
+### Testing recipe
+
+```bash
+TOKEN=$(curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"email":"azeembscs16@gmail.com","password":"@@Super253##"}' \
+  http://localhost:3500/api/v1/auth/login | jq -r .Data.access_token)
+
+JOB_ID=228
+
+curl -s -X POST -H "Authorization: Bearer $TOKEN" \
+  http://localhost:3500/api/v1/candidates/saved-jobs/$JOB_ID/save
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"page":1,"limit":10}' \
+  http://localhost:3500/api/v1/candidates/saved-jobs/list
+curl -s -X POST -H "Authorization: Bearer $TOKEN" \
+  http://localhost:3500/api/v1/candidates/saved-jobs/$JOB_ID/eligibility
+curl -s -X POST -H "Authorization: Bearer $TOKEN" \
+  http://localhost:3500/api/v1/candidates/saved-jobs/$JOB_ID/remove
+```
+
+Swagger: open `http://localhost:3500/api-docs` and filter the **Candidates** tag on "saved-jobs".
+
+### Why no match-score cache table
+
+Match scoring is computed in sub-millisecond by `match.service.scoreJob`. Caching it in a `job_match_scores` table introduces an invalidation problem (recompute on profile edit / skills change / preferences change / new job, etc.) for no measurable win. The dashboard re-scores on each list call; if listing becomes a hot path, denormalise inside `applications.match_score` (already done for the apply-time path).

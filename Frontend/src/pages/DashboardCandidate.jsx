@@ -175,7 +175,8 @@ export default function DashboardCandidate() {
           <ul className="dash-nav">
             <li><a className="active"><span className="ic">●</span> Overview</a></li>
             <li><a><span className="ic">▤</span> My Applications <span className="badge">{appsTotal}</span></a></li>
-            <li><Link to="/favorites"><span className="ic">♥</span> Saved Jobs <span className="badge">{favoritesTotal}</span></Link></li>
+            <li><Link to="/favorites"><span className="ic">♥</span> Favourites <span className="badge">{favoritesTotal}</span></Link></li>
+            <li><Link to="/saved-jobs"><span className="ic">⌘</span> Saved for Later</Link></li>
             <li><Link to="/jobs"><span className="ic">★</span> Job Matches</Link></li>
             <li><Link to="/profile"><span className="ic">⚙</span> Edit Profile</Link></li>
             <li><Link to="/preferences"><span className="ic">⚙</span> Job Preferences</Link></li>

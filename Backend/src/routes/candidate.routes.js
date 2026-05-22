@@ -503,6 +503,114 @@ router.post('/favorites/:jobId/remove', validate(pubV.jobIdParam, 'params'), asy
  */
 router.post('/favorites/list', validate(v.listFilters), asyncHandler(controller.listFavorites));
 
+/* ----------------------------------------------------------------
+ * Saved-for-later jobs (apply intent surface)
+ * ----------------------------------------------------------------
+ * Distinct from /favorites. The literal `/list` and `/eligibility`
+ * paths are declared BEFORE the `:jobId` routes so Express doesn't
+ * treat them as path params.
+ * ---------------------------------------------------------------- */
+
+/**
+ * @swagger
+ * /candidates/saved-jobs/list:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: List the candidate's saved-for-later jobs (paginated, expired filtered)
+ *     description: |
+ *       Returns active saves only by default. A row drops out of the
+ *       active list automatically when its snapshot `expires_at`
+ *       (denormalised from `jobs.application_deadline` at save-time)
+ *       has passed. Set `include_expired: true` to override.
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               page: { type: integer, minimum: 1, default: 1 }
+ *               limit: { type: integer, minimum: 1, maximum: 100, default: 10 }
+ *               include_expired: { type: boolean, default: false }
+ *           example: { page: 1, limit: 10 }
+ *     responses:
+ *       '200': { $ref: '#/components/responses/PaginatedJobs' }
+ */
+router.post('/saved-jobs/list', validate(v.savedJobsList), asyncHandler(controller.listSavedJobs));
+
+/**
+ * @swagger
+ * /candidates/saved-jobs/{jobId}/save:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: Save a job for "apply later"
+ *     description: |
+ *       Idempotent — re-saving the same job just touches updated_at
+ *       and re-activates the row if it was previously archived.
+ *       `expires_at` is snapshotted server-side from the job's
+ *       `application_deadline` so the apply window can't be extended
+ *       by a tampered request. Rejects with 400 if the deadline is
+ *       already past.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: jobId, in: path, required: true, schema: { type: integer } }]
+ *     responses:
+ *       '201': { description: Saved, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ *       '400': { description: Job closed or past its deadline, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+ *       '404': { $ref: '#/components/responses/NotFoundError' }
+ */
+router.post('/saved-jobs/:jobId/save',   validate(pubV.jobIdParam, 'params'), asyncHandler(controller.saveJob));
+
+/**
+ * @swagger
+ * /candidates/saved-jobs/{jobId}/remove:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: Remove a job from saved-for-later
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: jobId, in: path, required: true, schema: { type: integer } }]
+ *     responses:
+ *       '200': { $ref: '#/components/responses/EmptySuccess' }
+ *       '404': { $ref: '#/components/responses/NotFoundError' }
+ */
+router.post('/saved-jobs/:jobId/remove', validate(pubV.jobIdParam, 'params'), asyncHandler(controller.unsaveJob));
+
+/**
+ * @swagger
+ * /candidates/saved-jobs/{jobId}/eligibility:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: Dry-run match check for a job (no application is created)
+ *     description: |
+ *       Returns the same verdict shape that `validate-and-apply` uses,
+ *       but without persisting anything. The SPA hits this before
+ *       opening the apply modal so the Apply button can be gated and
+ *       a tailored "you're missing X / score 38" message can be shown.
+ *
+ *       Always returns 200 — the `can_apply` flag in the body carries
+ *       the decision (false for: profile incomplete, already applied,
+ *       job closed, or match below threshold).
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: jobId, in: path, required: true, schema: { type: integer } }]
+ *     responses:
+ *       '200':
+ *         description: Eligibility verdict
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/SuccessEnvelope' }
+ *             example:
+ *               Response: { responseCode: 1, status: 'Success', message: 'Eligibility checked' }
+ *               Data:
+ *                 can_apply: false
+ *                 decision: 'rejected'
+ *                 match_score: 38
+ *                 reasons: []
+ *                 missing: ['react', 'typescript']
+ *                 message: 'Your profile is missing key skills for this role: react, typescript.'
+ *       '404': { $ref: '#/components/responses/NotFoundError' }
+ */
+router.post('/saved-jobs/:jobId/eligibility', validate(pubV.jobIdParam, 'params'), asyncHandler(controller.checkApplyEligibility));
+
 // `/applications/list` must be declared BEFORE `/applications/:jobId`,
 // otherwise Express captures the literal string "list" as the :jobId param.
 
