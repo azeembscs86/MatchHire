@@ -127,25 +127,9 @@ const DEFAULT_FILTERS = {
 
 /* ---------- Helpers -------------------------------------------------------- */
 
-function MissingSkillChips({ skills }) {
-  if (!Array.isArray(skills) || skills.length === 0) return null;
-  return (
-    <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-      <span style={{ fontSize: 11, color: 'var(--muted)', alignSelf: 'center' }}>Missing:</span>
-      {skills.slice(0, 4).map((s) => (
-        <span
-          key={s}
-          style={{
-            padding: '2px 8px', borderRadius: 12, background: '#fde9e3',
-            color: '#b3361b', fontSize: 11, border: '1px solid #f8c8b8',
-          }}
-        >
-          {s}
-        </span>
-      ))}
-    </div>
-  );
-}
+// MissingSkillChips removed — JobCard now renders the "Missing:" section
+// itself, as a sibling of the card body inside `.job-card-wrapper`. Keep
+// AILabel here because it's specific to this page's smart-match badge.
 
 function AILabel({ label }) {
   if (!label) return null;
@@ -170,15 +154,15 @@ function AILabel({ label }) {
 }
 
 /**
- * Wraps JobCard with the AI badge + missing-skill chips. Keeps JobCard
- * itself untouched (any other page using JobCard renders identically).
+ * Wraps JobCard with the AI smart-match badge. JobCard itself now
+ * owns the "Missing:" chip rendering (as a sibling of the card body
+ * inside `.job-card-wrapper`).
  */
 function MatchCard({ job, onApply }) {
   return (
     <div style={{ position: 'relative' }}>
       {job.aiLabel && <AILabel label={job.aiLabel} />}
       <JobCard job={job} featured onApply={onApply} />
-      <MissingSkillChips skills={job.missing} />
     </div>
   );
 }
@@ -271,6 +255,15 @@ export default function Jobs() {
     try {
       const result = await candidatesApi.validateAndApply(job.id, {});
       setApplyMessage({ ok: true, text: `Application submitted to ${job.co} (match ${result.match_score}%).` });
+      // Optimistic UX — after a successful apply, drop the row from the
+      // visible list immediately so the candidate doesn't see "Apply"
+      // on a role they're already in the pipeline for. The backend
+      // listing also excludes applied jobs on the next fetch.
+      setData((prev) => ({
+        ...prev,
+        records: (prev.records || []).filter((r) => r.id !== job.id),
+        total: Math.max(0, Number(prev.total || 0) - 1),
+      }));
     } catch (err) {
       const data = err.original?.response?.data?.Data;
       if (data && data.decision === 'rejected') {

@@ -71,6 +71,105 @@ async function findById(id) {
   );
 }
 
+/**
+ * Similar / recommended jobs for the Job Detail page's "Recommended
+ * Jobs for You" rail. Scored against the anchor job (same category +
+ * skill overlap + experience-level match) and optionally re-ranked
+ * with a candidate context (their skills add to the score; their
+ * applied jobs are excluded).
+ *
+ * Always excludes:
+ *   - the anchor job itself
+ *   - expired jobs (application_deadline in the past)
+ *   - closed / archived / unapproved postings
+ *   - when `candidate_user_id` is supplied: jobs the candidate has
+ *     already applied to
+ *
+ * Returns rows in the same shape as `listPublic()` so the SPA can
+ * pipe them through the existing `toJobCardShape` adapter.
+ */
+async function findSimilar(anchorJobId, { candidate_user_id, limit = 6 } = {}) {
+  // Pull the anchor's category + skill tags + experience level so we
+  // can build a score expression based on overlap.
+  const anchor = await db.queryOne(
+    `SELECT id, category_id, skills_tags, experience_level FROM jobs WHERE id = ? LIMIT 1`,
+    [anchorJobId]
+  );
+  if (!anchor) return [];
+
+  const skillList = String(anchor.skills_tags || '')
+    .split(',').map((s) => s.trim()).filter(Boolean)
+    .slice(0, 10);
+
+  // Score expression — params bound in the SELECT clause must come
+  // before WHERE params in the final params array (see §36 docs note
+  // on placeholder ordering for the recommended query).
+  const scoreParts = ['0'];
+  const scoreParams = [];
+
+  if (anchor.category_id) {
+    scoreParts.push(`(CASE WHEN j.category_id = ? THEN 6 ELSE 0 END)`);
+    scoreParams.push(anchor.category_id);
+  }
+  if (anchor.experience_level) {
+    scoreParts.push(`(CASE WHEN j.experience_level = ? THEN 3 ELSE 0 END)`);
+    scoreParams.push(anchor.experience_level);
+  }
+  for (const sk of skillList) {
+    scoreParts.push(`(CASE WHEN j.skills_tags LIKE ? THEN 2 ELSE 0 END)`);
+    scoreParams.push(`%${sk}%`);
+  }
+
+  // If we have a candidate context, also boost rows that match their
+  // own skill set so the rail feels personalised, not just "more from
+  // this category".
+  if (candidate_user_id) {
+    const candSkills = await db.query(
+      `SELECT s.name FROM candidate_skills cs INNER JOIN skills s ON s.id = cs.skill_id
+       WHERE cs.candidate_user_id = ? LIMIT 10`,
+      [candidate_user_id]
+    );
+    for (const s of candSkills) {
+      scoreParts.push(`(CASE WHEN j.skills_tags LIKE ? THEN 1 ELSE 0 END)`);
+      scoreParams.push(`%${s.name}%`);
+    }
+  }
+
+  // WHERE clause.
+  const where = [
+    "j.status = 'open'",
+    "j.admin_status = 'approved'",
+    "j.deleted_at IS NULL",
+    "c.status = 'active'",
+    "j.id <> ?",
+    "(j.application_deadline IS NULL OR j.application_deadline > NOW())",
+  ];
+  const whereParams = [anchorJobId];
+
+  if (candidate_user_id) {
+    where.push(`NOT EXISTS (
+      SELECT 1 FROM applications a
+      WHERE a.job_id = j.id AND a.candidate_user_id = ?
+    )`);
+    whereParams.push(Number(candidate_user_id));
+  }
+
+  const params = [...scoreParams, ...whereParams, Number(limit)];
+
+  const rows = await db.query(
+    `SELECT ${jobsListSelect()},
+            (${scoreParts.join(' + ')}) AS match_score
+     FROM jobs j
+     INNER JOIN companies c ON c.id = j.company_id
+     LEFT JOIN job_categories cat ON cat.id = j.category_id
+     WHERE ${where.join(' AND ')}
+     ORDER BY match_score DESC, j.is_featured DESC, j.published_at DESC, j.id DESC
+     LIMIT ?`,
+    params
+  );
+  return rows;
+}
+
 async function ownsJob(jobId, userId) {
   const row = await db.queryOne(
     `SELECT j.id FROM jobs j
@@ -117,10 +216,22 @@ async function listPublic(filters) {
   const {
     keyword, category, location, job_type, experience_level, salary_min, salary_max,
     remote, company_id, is_featured, page = 1, limit = 10, sort = 'latest',
+    // When a candidate is signed in, the route layer threads their user id
+    // here so we can hide jobs they've already applied to. Guests pass
+    // `undefined` and see the unfiltered list.
+    exclude_applied_for_user_id,
   } = filters;
 
   const where = ["j.status = 'open'", "j.admin_status = 'approved'", "j.deleted_at IS NULL", "c.status = 'active'"];
   const params = [];
+
+  if (exclude_applied_for_user_id) {
+    where.push(`NOT EXISTS (
+      SELECT 1 FROM applications a
+      WHERE a.job_id = j.id AND a.candidate_user_id = ?
+    )`);
+    params.push(Number(exclude_applied_for_user_id));
+  }
 
   if (keyword) {
     where.push('(j.title LIKE ? OR j.description LIKE ? OR j.skills_tags LIKE ? OR c.name LIKE ?)');
@@ -217,29 +328,47 @@ async function recommendedForUser(user_id, limit = 10) {
     [user_id]
   );
 
-  const params = [];
-  const where = ["j.status = 'open'", "j.admin_status = 'approved'", "j.deleted_at IS NULL"];
+  // Personalised recommendations always exclude jobs the candidate has
+  // already applied to — there's no value in suggesting a role they're
+  // already in the pipeline for.
+  //
+  // IMPORTANT: this query mixes `?` placeholders in BOTH the SELECT
+  // (score CASE..LIKE) and the WHERE (NOT EXISTS) clauses. MySQL2 binds
+  // positional params in SQL appearance order, so we must collect score
+  // params first and the WHERE param last — otherwise the user_id we
+  // want to feed NOT EXISTS lands in a SELECT LIKE and the filter
+  // silently no-ops.
+  const scoreParams = [];
+  const where = [
+    "j.status = 'open'",
+    "j.admin_status = 'approved'",
+    "j.deleted_at IS NULL",
+    `NOT EXISTS (SELECT 1 FROM applications a WHERE a.job_id = j.id AND a.candidate_user_id = ?)`,
+  ];
   let scoreParts = ['0'];
 
   const titles = pref?.desired_titles?.split(',').filter(Boolean) || [];
   for (const t of titles) {
     scoreParts.push(`(CASE WHEN j.title LIKE ? THEN 3 ELSE 0 END)`);
-    params.push(`%${t.trim()}%`);
+    scoreParams.push(`%${t.trim()}%`);
   }
   for (const sk of skills.slice(0, 8)) {
     scoreParts.push(`(CASE WHEN j.skills_tags LIKE ? THEN 2 ELSE 0 END)`);
-    params.push(`%${sk.name}%`);
+    scoreParams.push(`%${sk.name}%`);
   }
   const locations = pref?.preferred_locations?.split(',').filter(Boolean) || [];
   for (const loc of locations) {
     scoreParts.push(`(CASE WHEN j.location LIKE ? THEN 2 ELSE 0 END)`);
-    params.push(`%${loc.trim()}%`);
+    scoreParams.push(`%${loc.trim()}%`);
   }
   if (profile?.open_to_remote) scoreParts.push(`(CASE WHEN j.is_remote = 1 THEN 1 ELSE 0 END)`);
   if (profile?.location) {
     scoreParts.push(`(CASE WHEN j.location LIKE ? THEN 1 ELSE 0 END)`);
-    params.push(`%${profile.location}%`);
+    scoreParams.push(`%${profile.location}%`);
   }
+  // Final params order = SELECT placeholders first (scoreParams),
+  // then WHERE placeholders (NOT EXISTS user_id), then LIMIT.
+  const params = [...scoreParams, Number(user_id)];
 
   const rows = await db.query(
     `SELECT ${jobsListSelect()},
@@ -274,9 +403,19 @@ async function totalCount() {
 async function listLocationBased({
   country, city, role, skills, experience_level,
   job_scope = 'hybrid', limit = 20, page = 1,
+  // Same convention as listPublic — when a candidate id is supplied,
+  // hide jobs they've already applied to.
+  exclude_applied_for_user_id,
 }) {
   const where = ["j.status = 'open'", "j.admin_status = 'approved'", "j.deleted_at IS NULL", "c.status = 'active'"];
   const params = [];
+  if (exclude_applied_for_user_id) {
+    where.push(`NOT EXISTS (
+      SELECT 1 FROM applications a
+      WHERE a.job_id = j.id AND a.candidate_user_id = ?
+    )`);
+    params.push(Number(exclude_applied_for_user_id));
+  }
   if (role) { where.push('j.title LIKE ?'); params.push(`%${role}%`); }
   if (experience_level) { where.push('j.experience_level = ?'); params.push(experience_level); }
 
@@ -393,6 +532,7 @@ module.exports = {
   listAdmin,
   recommendedForUser,
   listLocationBased,
+  findSimilar,
   loadCandidateContext,
   totalCount,
 };

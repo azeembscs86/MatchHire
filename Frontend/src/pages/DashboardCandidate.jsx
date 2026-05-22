@@ -19,15 +19,27 @@ import { LoadingState, ErrorState } from '../components/AsyncState.jsx';
 import ProfileCompletionCard from '../components/ProfileCompletionCard.jsx';
 import { toJobCardShape } from '../api/adapters.js';
 
+/**
+ * Status → badge mapping for the Applied Jobs section.
+ *
+ * Class names map to the badge palette defined in styles.css under
+ * "Application status badges (May 2026)". The label set covers the
+ * five product-spec states (Applied, Under Review, Shortlisted,
+ * Rejected, Accepted) plus the existing DB enum values so legacy
+ * rows render with consistent colours instead of falling through to
+ * the generic "Applied" pill.
+ */
 const STATUS_PILL = {
-  applied: { cls: 'pill-applied', label: 'Applied' },
-  reviewing: { cls: 'pill-review', label: 'Under review' },
-  shortlisted: { cls: 'pill-active', label: 'Shortlisted' },
-  interview: { cls: 'pill-interview', label: 'Interview scheduled' },
-  offered: { cls: 'pill-offer', label: 'Offer received' },
-  hired: { cls: 'pill-offer', label: 'Hired' },
-  rejected: { cls: 'pill-rejected', label: 'Not selected' },
-  withdrawn: { cls: 'pill-rejected', label: 'Withdrawn' },
+  applied:      { cls: 'pill-applied',     label: 'Applied' },
+  reviewing:    { cls: 'pill-review',      label: 'Under Review' },
+  under_review: { cls: 'pill-review',      label: 'Under Review' },
+  shortlisted:  { cls: 'pill-shortlisted', label: 'Shortlisted' },
+  interview:    { cls: 'pill-interview',   label: 'Interview Scheduled' },
+  offered:      { cls: 'pill-accepted',    label: 'Accepted' },
+  hired:        { cls: 'pill-accepted',    label: 'Accepted' },
+  accepted:     { cls: 'pill-accepted',    label: 'Accepted' },
+  rejected:     { cls: 'pill-rejected',    label: 'Rejected' },
+  withdrawn:    { cls: 'pill-rejected',    label: 'Withdrawn' },
 };
 
 function initials(name = '') {
@@ -263,38 +275,53 @@ export default function DashboardCandidate() {
           <div className="dash-row split">
             <div className="dash-panel">
               <div className="dash-panel-head">
-                <h3>Recent applications</h3>
-                <a>See all {appsTotal} →</a>
+                <h3>Job Applications</h3>
+                <Link to="/applications">See all {appsTotal} →</Link>
               </div>
               {apps.length === 0 ? (
-                <p className="muted" style={{ padding: '12px 0' }}>No applications yet — browse jobs to get started.</p>
+                <div className="dash-empty">
+                  <div className="dash-empty-icon">▤</div>
+                  <h4>No applications yet</h4>
+                  <p>You haven't applied to any jobs so far. Browse open roles and apply to the ones that fit you best.</p>
+                  <Link to="/jobs" className="btn btn-coral">Browse jobs →</Link>
+                </div>
               ) : (
-                <table className="dash-table">
-                  <thead>
-                    <tr><th>Company / Role</th><th>Applied</th><th>Status</th><th></th></tr>
-                  </thead>
-                  <tbody>
-                    {apps.map((a) => {
-                      const pill = STATUS_PILL[a.status] || STATUS_PILL.applied;
-                      return (
-                        <tr key={a.id}>
-                          <td>
-                            <div className="table-co">
-                              <div className="mini-logo lg-1">{(a.company_name || '·')[0]}</div>
-                              <div>
-                                <strong>{a.company_name || 'Company'}</strong>
-                                <small>{a.job_title || 'Role'}</small>
-                              </div>
-                            </div>
-                          </td>
-                          <td>{relative(a.applied_at)}</td>
-                          <td><span className={`pill ${pill.cls}`}>{pill.label}</span></td>
-                          <td><div className="row-actions"><button className="icon-btn">→</button></div></td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <div className="app-rows">
+                  {apps.map((a) => {
+                    const pill = STATUS_PILL[a.status] || STATUS_PILL.applied;
+                    const location = a.job_location || (a.is_remote ? 'Remote' : '—');
+                    return (
+                      <div key={a.id} className="app-row">
+                        <div className={`mini-logo lg-${(Number(a.company_id || a.id) % 7) + 1}`}>
+                          {(a.company_name || '·')[0]}
+                        </div>
+                        <div className="app-row-main">
+                          <div className="app-row-title text-truncate" title={a.job_title || 'Role'}>
+                            {a.job_title || 'Role'}
+                          </div>
+                          <div className="app-row-sub">
+                            <span className="text-truncate" title={a.company_name}>{a.company_name || 'Company'}</span>
+                            <span>·</span>
+                            <span className="text-truncate" title={location}>{location}</span>
+                          </div>
+                          <div className="app-row-meta">
+                            <span title={a.applied_at ? new Date(a.applied_at).toLocaleString() : ''}>
+                              Applied {relative(a.applied_at)}
+                            </span>
+                            <span className={`pill ${pill.cls}`}>{pill.label}</span>
+                          </div>
+                        </div>
+                        <Link
+                          to={`/jobs/${a.job_id}`}
+                          className="btn btn-ghost btn-sm app-row-view"
+                          aria-label={`View details for ${a.job_title || 'role'}`}
+                        >
+                          View details
+                        </Link>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
 

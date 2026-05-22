@@ -26,6 +26,7 @@ import Layout from './components/Layout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import Home from './pages/Home.jsx';
 import Jobs from './pages/Jobs.jsx';
+import JobDetail from './pages/JobDetail.jsx';
 import Companies from './pages/Companies.jsx';
 import Candidates from './pages/Candidates.jsx';
 import Profile from './pages/Profile.jsx';
@@ -50,6 +51,9 @@ export default function App() {
         {/* Public discovery */}
         <Route path="/" element={<Home />} />
         <Route path="/jobs" element={<Jobs />} />
+        {/* Public job detail page. Auth status changes the action bar
+            (Apply / Save / Favourite) but anyone can view the posting. */}
+        <Route path="/jobs/:id" element={<JobDetail />} />
         <Route path="/companies" element={<Companies />} />
         <Route path="/candidates" element={<Candidates />} />
         <Route path="/employer-onboarding" element={<EmployerOnboarding />} />

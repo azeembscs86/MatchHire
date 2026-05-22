@@ -210,6 +210,9 @@ async function matchJobs(user_id, payload = {}) {
     job_scope: payload.job_scope || candidate.job_scope || 'hybrid',
     page: payload.page || 1,
     limit: 60, // over-fetch a little so post-scoring still has volume
+    // Hide jobs the candidate has already applied to — the smart-match
+    // surface is for new opportunities only.
+    exclude_applied_for_user_id: user_id,
   };
   const { rows } = await jobRepo.listLocationBased(filters);
   const scored = rows

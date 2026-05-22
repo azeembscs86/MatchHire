@@ -11,6 +11,15 @@ export const publicApi = {
   jobs(params = {}) { return call(api.get('/public/jobs', { params })); },
   searchJobs(params = {}) { return call(api.get('/public/jobs/search', { params })); },
   job(id) { return call(api.get(`/public/jobs/${id}`)); },
+  /**
+   * "Recommended Jobs for You" rail on the Job Detail page. When the
+   * client is signed in, the backend re-ranks by the candidate's own
+   * skills and excludes already-applied rows. Always excludes expired
+   * postings and the anchor job itself.
+   */
+  similarJobs(id, limit = 6) {
+    return call(api.get(`/public/jobs/${id}/similar`, { params: { limit } }));
+  },
 
   companies(params = {}) { return call(api.get('/public/companies', { params })); },
   company(id) { return call(api.get(`/public/companies/${id}`)); },

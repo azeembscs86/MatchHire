@@ -53,6 +53,40 @@ function relativeTime(iso) {
   return `${Math.floor(diff / 604800)}w ago`;
 }
 
+/** Map an experience_level enum to a human-readable label. */
+function experienceLabel(level) {
+  if (!level) return null;
+  const map = {
+    entry: 'Entry-level',
+    junior: 'Junior',
+    mid: 'Mid-level',
+    senior: 'Senior',
+    lead: 'Lead',
+    executive: 'Executive',
+  };
+  return map[String(level).toLowerCase()] || level;
+}
+
+/**
+ * Compact deadline label for the JobCard's metadata row.
+ *   - past         → "Expired"
+ *   - within 24h   → "Closes today" / "Closes tomorrow"
+ *   - within 7d    → "Closes in 4d"
+ *   - else         → "Closes Aug 12"
+ */
+function deadlineLabel(iso) {
+  if (!iso) return null;
+  const ts = new Date(iso).getTime();
+  if (!Number.isFinite(ts)) return null;
+  const ms = ts - Date.now();
+  if (ms <= 0) return 'Expired';
+  const days = Math.floor(ms / 86400000);
+  if (days === 0) return 'Closes today';
+  if (days === 1) return 'Closes tomorrow';
+  if (days <= 7) return `Closes in ${days}d`;
+  return `Closes ${new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+}
+
 /** Map a backend job record into the JobCard's `job` prop shape. */
 export function toJobCardShape(j) {
   if (!j) return null;
@@ -76,6 +110,13 @@ export function toJobCardShape(j) {
     type: jobTypeLabel,
     pay: formatSalary(j.salary_min, j.salary_max, j.salary_currency),
     tags: splitTags(j.skills_tags).slice(0, 4),
+    // Compact metadata used by the JobCard's secondary chip row, so every
+    // critical field is visible without making the card taller:
+    experience: experienceLabel(j.experience_level),
+    deadline: deadlineLabel(j.application_deadline),
+    deadlineRaw: j.application_deadline || null,
+    isExpired: j.is_expired === true
+      || (j.application_deadline ? new Date(j.application_deadline).getTime() < Date.now() : false),
     time: relativeTime(j.published_at || j.created_at),
     // Real backend match score (0..100) when present; the old
     // "60+x*5" simulation is gone now that the API returns real values.

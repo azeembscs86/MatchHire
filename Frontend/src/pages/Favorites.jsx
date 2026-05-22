@@ -73,6 +73,10 @@ export default function Favorites() {
     try {
       await candidatesApi.applications.apply(job.id, {});
       setApplyMessage({ ok: true, text: `Application submitted to ${job.co}.` });
+      // Don't drop the row from the Favorites list — favourites express
+      // interest, not pipeline state. But DO drop it from the similar-
+      // roles rail so a freshly-applied job doesn't show "Apply" again.
+      setSimilar((rows) => rows.filter((r) => r.id !== job.id));
     } catch (err) {
       setApplyMessage({ ok: false, text: err.message || 'Could not submit application.' });
     } finally {
@@ -188,7 +192,7 @@ export default function Favorites() {
                 >
                   {applyingId === j.id ? 'Applying…' : 'Apply now'}
                 </button>
-                <button className="btn btn-ghost" type="button">View role</button>
+                <Link to={`/jobs/${j.id}`} className="btn btn-ghost">View role</Link>
               </div>
             </div>
           ))}

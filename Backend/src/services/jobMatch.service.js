@@ -157,12 +157,15 @@ async function recommendedFor(userId, opts = {}) {
   if (!candidate) return { records: [], candidateMissing: true };
 
   const oversample = Math.min(Math.max(Number(opts.oversample) || 80, 20), 200);
+  // Recommendations always hide jobs the candidate has already applied
+  // to — suggesting a role they're already in the pipeline for is noise.
   const { rows } = await jobRepo.listLocationBased({
     country: candidate.country || undefined,
     city: candidate.city || undefined,
     job_scope: candidate.job_scope || 'hybrid',
     page: 1,
     limit: oversample,
+    exclude_applied_for_user_id: userId,
   });
 
   // If the location-based pull came back light, top up with the generic
@@ -170,7 +173,10 @@ async function recommendedFor(userId, opts = {}) {
   // results.
   let pool = rows;
   if (pool.length < 20) {
-    const fallback = await jobRepo.listPublic({ page: 1, limit: oversample, sort: 'latest' });
+    const fallback = await jobRepo.listPublic({
+      page: 1, limit: oversample, sort: 'latest',
+      exclude_applied_for_user_id: userId,
+    });
     const seen = new Set(pool.map((r) => r.id));
     for (const j of fallback.rows) {
       if (!seen.has(j.id)) pool.push(j);

@@ -1835,3 +1835,276 @@ Swagger: open `http://localhost:3500/api-docs` and filter the **Candidates** tag
 ### Why no match-score cache table
 
 Match scoring is computed in sub-millisecond by `match.service.scoreJob`. Caching it in a `job_match_scores` table introduces an invalidation problem (recompute on profile edit / skills change / preferences change / new job, etc.) for no measurable win. The dashboard re-scores on each list call; if listing becomes a hot path, denormalise inside `applications.match_score` (already done for the apply-time path).
+
+
+## 36. Candidate Job Listing UX overhaul (May 2026)
+
+A coordinated backend + frontend pass on the candidate-facing job listings and the Applied Jobs section of the dashboard. Five pillars:
+
+### 36.1 Already-applied jobs are hidden from candidate listings
+
+The candidate-facing listings now exclude jobs the candidate is already in the pipeline for. Filter is SQL-side via a correlated `NOT EXISTS` subquery on `applications`, so it holds across pagination and sort order.
+
+| Endpoint | Filter behaviour |
+| --- | --- |
+| `GET /public/jobs` | Guests see everything; signed-in candidates have their applied jobs filtered out (optionalAuth) |
+| `GET /public/jobs/search` | Same — alias |
+| `GET /public/jobs/location-based` | Same — already had optionalAuth |
+| `GET /public/featured-jobs` | Same |
+| `POST /candidates/recommended-jobs` | Always filtered (auth required) |
+| `POST /candidates/jobs/match` | Always filtered (smart-match surface) |
+
+Repo signature (additive — guests pass `undefined` and see no change):
+
+```js
+jobRepo.listPublic({ ...filters, exclude_applied_for_user_id })
+jobRepo.listLocationBased({ ...filters, exclude_applied_for_user_id })
+jobRepo.recommendedForUser(user_id, limit)   // always filtered
+```
+
+The cache key for `listPublic` is built from the full filter set (`queryString(filters)`), so adding `exclude_applied_for_user_id` automatically scopes the cached response per-candidate. Guests still hit a single shared cache key.
+
+**Gotcha** (worth flagging — fixed in this pass): `recommendedForUser` mixes `?` placeholders in both the SELECT (per-skill / per-title `CASE…LIKE ?`) and the WHERE (`NOT EXISTS (… ?)`). MySQL2 binds positional params in the order they appear in the SQL, so the score params must come BEFORE the WHERE param. The repo collects them in `scoreParams[]` first, then appends the user id last.
+
+### 36.2 Equal-height, truncated JobCard
+
+`Frontend/src/components/JobCard.jsx` + `styles.css`:
+
+- The card is a flex column with `min-height: 340px` and `height: 100%`, so every card in a `repeat(N, 1fr)` grid renders at the same height regardless of content length.
+- The footer + Apply row pin to the bottom via `margin-top: auto` on `.job-foot` and a flex spacer.
+- Long titles use `.text-clamp-2` (`-webkit-line-clamp: 2`); long company / location / pay strings use `.text-truncate` (single-line ellipsis); skill tags also truncate with a per-tag max width.
+- Top-right action cluster (`.job-card-actions`) now stacks ♥ Favourite + ⌘ Save-for-later **on the same row** with consistent spacing. Each icon uses `.job-icon-btn`; the `is-active` modifier paints coral fill.
+
+Responsive (existing breakpoints; cards collapse 3→2 cols at ≤1024px, 2→1 at ≤640px). Mobile tightens padding and removes the `min-height` on the title.
+
+### 36.3 Job Applications section (Candidate dashboard)
+
+Old: a 4-column table inside a single dash panel.
+New: a card-list of "app rows" that shows Job Title, Company, Location, Applied date, status badge, and a **View Details** button per row. Source: `candidatesApi.applications.list({ page:1, limit:6 })` — the existing repo query already returns every field the design needs.
+
+#### Status badge palette
+
+The `STATUS_PILL` map in `DashboardCandidate.jsx` covers every DB enum value plus the product-spec labels:
+
+| DB enum         | UI label              | Class               |
+| ---             | ---                   | ---                 |
+| `applied`       | Applied               | `.pill-applied`     (blue) |
+| `reviewing`     | Under Review          | `.pill-review`      (amber) |
+| `shortlisted`   | Shortlisted           | `.pill-shortlisted` (sage) |
+| `interview`     | Interview Scheduled   | `.pill-interview`   (coral) |
+| `offered` / `hired` / `accepted` | Accepted | `.pill-accepted`    (deep green, bold) |
+| `rejected` / `withdrawn` | Rejected / Withdrawn | `.pill-rejected`    (rust) |
+
+### 36.4 Post-apply: immediate row removal
+
+After a successful `validate-and-apply` the SPA drops the job from the visible list immediately (no reload required). The next backend fetch agrees because of §36.1.
+
+| Page | Behaviour |
+| --- | --- |
+| `Jobs.jsx` | `setData({ records: prev.records.filter(r => r.id !== job.id), total: max(0, total-1) })` |
+| `SavedJobs.jsx` | drops the row; best-effort cleanup via `candidatesApi.savedJobs.remove(jobId)` |
+| `Favorites.jsx` | KEEPS the favourite row (favourites express interest, not pipeline state) but drops the job from the "similar roles" rail |
+
+### 36.5 Smoke-test results (verified)
+
+```
+GUEST /public/jobs              → 20 ids (unfiltered)
+CANDIDATE /public/jobs          → 20 ids; LEAK with applied set [222,46,31,3,260,67,1,258] → [] PASS
+featured-jobs leak              → PASS
+recommended-jobs leak           → PASS (after fixing the placeholder-order bug)
+```
+
+### 36.6 Testing recipe
+
+```bash
+# Guest baseline
+curl -s 'http://localhost:3500/api/v1/public/jobs?page=1&limit=10' | jq '.Data.records | length'
+
+# Candidate filtered listing
+TOKEN=$(curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"email":"azeembscs16@gmail.com","password":"@@Super253##"}' \
+  http://localhost:3500/api/v1/auth/login | jq -r .Data.access_token)
+curl -s -H "Authorization: Bearer $TOKEN" \
+  'http://localhost:3500/api/v1/public/jobs?page=1&limit=10' | jq '.Data.records | length'
+
+# Confirm filter respects ALL three public surfaces
+for path in jobs featured-jobs jobs/search; do
+  echo "$path:";
+  curl -s -H "Authorization: Bearer $TOKEN" \
+    "http://localhost:3500/api/v1/public/$path?page=1&limit=20" | jq '.Data.records | length'
+done
+
+# Recommended (POST, auth required)
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"limit":10}' http://localhost:3500/api/v1/candidates/recommended-jobs | jq '.Data.records | length'
+```
+
+Swagger: open `/api-docs`, look under **Public** — `GET /public/jobs` carries the new "filtered when candidate token present" note in its description.
+
+
+## 37. Job Detail page + Recommended Jobs rail (May 2026)
+
+A coordinated backend + frontend pass that ships a full Job Detail page and fixes the content-visibility regression on the JobCard.
+
+### 37.1 JobCard — content visibility fix
+
+The previous "equal-height" pass had clipped tags via `max-height` and forced an artificial `min-height` on the title that hid real content. This rev:
+
+- Drops the tag `max-height` clip. Skills overflow into a single `+N` pill rather than disappearing.
+- Adds a **meta-chip row** between the title and skills showing **experience level · job type · deadline** so those three product-spec fields are always visible.
+- Adds a permanent **View details →** link beside the Apply button (in a dedicated `.job-actions-row`). The link wires every card to the Job Detail page.
+- Apply button disables when `job.isExpired` and renders "Expired" copy.
+- New `applied={true}` prop renders an "Already Applied" pill instead of Apply (defensive — applied jobs are already filtered server-side; see §36).
+
+`toJobCardShape(...)` in `Frontend/src/api/adapters.js` now exposes:
+- `experience`     — human label ("Senior", "Mid-level", …)
+- `deadline`       — compact label ("Closes in 4d", "Closes tomorrow", "Expired")
+- `deadlineRaw`    — ISO timestamp for tooltip
+- `isExpired`      — boolean
+
+### 37.2 GET /public/jobs/:id — per-viewer decoration
+
+The cached job payload now picks up per-viewer flags before being returned, computed fresh on each call (cheap point lookups, never cached):
+
+| Flag | Source | Notes |
+| --- | --- | --- |
+| `is_applied` | `applications.findByJobAndCandidate` | True if the candidate has any application row |
+| `application_status` | same | `applied`, `reviewing`, `shortlisted`, `interview`, `offered`, `hired`, `rejected`, `withdrawn` |
+| `is_favorited` | `favorites.exists` | True if in `favorites` |
+| `is_saved_for_later` | `savedJobs.exists` | True if in `saved_jobs` AND not expired |
+| `is_expired` | derived from `application_deadline` | True when deadline is in the past |
+
+Guests get all flags as `false` (or `null` for status).
+
+### 37.3 GET /public/jobs/:id/similar — Recommended Jobs rail
+
+New endpoint backing the "Recommended Jobs for You" rail on the detail page. Repo: `job.repository.findSimilar(anchorJobId, { candidate_user_id, limit })`. Scoring:
+
+| Signal | Weight |
+| --- | --- |
+| Same `category_id` as anchor | +6 |
+| Same `experience_level` as anchor | +3 |
+| `skills_tags` overlap with anchor (per skill) | +2 |
+| Candidate's own skill matches (per skill, when signed-in) | +1 |
+
+Always excluded: the anchor itself, expired jobs (`application_deadline < NOW()`), closed/archived/unapproved postings. Candidate-only: jobs they've already applied to.
+
+**Placeholder ordering** (same gotcha as §36): score `?`s live in the SELECT, the WHERE `?`s come after. The repo collects them as `scoreParams[]` first, then `whereParams[]`, then concatenates so MySQL2's positional binding stays correct.
+
+### 37.4 JobDetail page (frontend)
+
+`Frontend/src/pages/JobDetail.jsx` at route `/jobs/:id`. Sections:
+
+1. **Hero** — logo, company, title, location/type/experience/deadline meta-chips. Renders `Expired` pill when the deadline has passed, and the candidate's current `application_status` pill when they've already applied.
+2. **Action bar** — Apply Now / Favourite / Save for later.
+   - Apply: replaced with "✓ Already Applied" pill when `is_applied=true`. Disabled when `is_expired`. Uses `/candidates/applications/:jobId/validate-and-apply` so the same match-score gate as the listing applies. Rejection messages render inline.
+   - Favourite / Save: hydrate from `FavoritesContext` + `SavedJobsContext` so toggles propagate to other surfaces (header badge, JobCard hearts, dashboard counters) instantly. Disabled when expired.
+3. **2-column body** — Description / Responsibilities / Requirements / Benefits / Skills on the left; **Quick facts** (salary, type, experience, location, posted, deadline, applications, views) + **About the company** snippet on the right (sticky).
+4. **Recommended Jobs for You** — grid of `JobCard` from `/public/jobs/:id/similar`. Each card has Favourite + Save + Apply + View Details. Empty state renders when zero similar rows are returned.
+
+CSS: see the `Job Detail page` block at the bottom of `Frontend/src/styles.css`. Responsive: `.jd-grid` collapses to single column at ≤1024px; hero stacks vertically + action buttons go full-width at ≤640px.
+
+### 37.5 Wiring of View Details
+
+| Source | Target |
+| --- | --- |
+| `JobCard` "View details →" button | `Link to=/jobs/:id` (every job listing surface) |
+| Dashboard's Job Applications row "View details" | `Link to=/jobs/:id` |
+| `Favorites.jsx` card "View role" | `Link to=/jobs/:id` |
+| `SavedJobs.jsx` card "View details" | `Link to=/jobs/:id` |
+
+### 37.6 Save / Favourite lifetime
+
+- **Saved Jobs** (`saved_jobs` table): the row's `expires_at` is snapshotted from the job's `application_deadline` at save-time (§35). Reads filter `expires_at IS NULL OR expires_at > NOW()`, so saved rows auto-drop the moment the job expires. The JobDetail action button is also disabled when `is_expired=true`.
+- **Favourites** (`favorites` table): no row-level expiry — favouriting is interest, not pipeline state. The JobDetail action button is disabled when `is_expired=true` so users can't toggle a favourite on a job they can no longer apply to.
+
+### 37.7 Smoke-test results (verified)
+
+```
+GUEST /public/jobs/:id             → 200, is_applied=false, is_expired=false
+CANDIDATE /public/jobs/:id         → 200, viewer flags hydrated
+GUEST /public/jobs/:id/similar     → 200, 6 records, anchor excluded
+CANDIDATE /public/jobs/:id/similar → 200, 6 records, applied-jobs leak: 0 (PASS)
+404 on bad job id                  → 404
+Cache consistency (2× detail call) → PASS
+Vite build                         → ✓ 123 modules · 469.67 kB JS / 61.89 kB CSS
+```
+
+### 37.8 Testing recipe
+
+```bash
+TOKEN=$(curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"email":"azeembscs16@gmail.com","password":"@@Super253##"}' \
+  http://localhost:3500/api/v1/auth/login | jq -r .Data.access_token)
+
+JOB_ID=228
+
+# Detail (guest)
+curl -s "http://localhost:3500/api/v1/public/jobs/$JOB_ID" | jq '.Data | {id,title,is_applied,is_expired,is_favorited,is_saved_for_later}'
+
+# Detail (candidate)
+curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:3500/api/v1/public/jobs/$JOB_ID" | jq '.Data | {is_applied,application_status,is_favorited,is_saved_for_later,is_expired}'
+
+# Similar (candidate — applied jobs excluded)
+curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:3500/api/v1/public/jobs/$JOB_ID/similar?limit=6" | jq '.Data.records | map({id,title})'
+```
+
+Swagger: open `/api-docs`, the **Public** tag now lists `GET /public/jobs/{id}` (with the viewer-flag note) and `GET /public/jobs/{id}/similar`.
+
+
+## 38. JobCard: clickable + Missing-Skills relocation (May 2026)
+
+Visual + interaction pass on the JobCard, aligned to the latest design spec image:
+
+### 38.1 Structure — wrapper + sibling missing section
+
+The "Missing: …" row was previously rendered INSIDE the card body (or as a sibling injected by a per-page `MatchCard` wrapper). It was being clipped — once the card grew `border-radius`, padding, and any future `overflow:hidden` it had nowhere safe to live. It now lives in a wrapper as a **sibling of the card**:
+
+```html
+<div class="job-card-wrapper">
+  <div class="job-card clickable" role="button" tabindex="0">…</div>
+  <div class="missing-skills-section">
+    <span class="missing-skills-label">Missing:</span>
+    <div class="missing-skills-chips">
+      <span class="missing-chip">react.js</span>
+      <span class="missing-chip">next.js</span>
+      …
+    </div>
+  </div>
+</div>
+```
+
+The chips wrap freely (`flex-wrap`), use a light-coral palette (`rgba(232,93,60,.10)` background, coral-deep text), and never horizontally scroll. When `job.missing` is empty, the section doesn't render.
+
+### 38.2 Whole-card click → /jobs/:id
+
+`<View details →` was removed. Instead, the card body is now `role="button" tabindex={0}` with an `onClick` that calls `useNavigate()` → `/jobs/:id`. Inner buttons (Apply / Favourite / Save) call `e.stopPropagation()` so they retain their own activation.
+
+Keyboard accessibility: `Enter` / `Space` on the card opens the detail page; pressing them while focused on a button activates the button (not the card) — the handler bails out when `e.target.tagName` is `BUTTON | A | INPUT`.
+
+### 38.3 Grid: 2 cards per row on desktop
+
+`.jobs-grid` was `repeat(3, 1fr)`. Per the design spec it's now `repeat(2, 1fr)`, with `align-items:start` so a shorter card doesn't get its missing section visually stretched by a taller neighbour. Existing breakpoints already collapse to 2 cols at ≤1024px and 1 col at ≤640px.
+
+### 38.4 Removed duplicate
+
+`Frontend/src/pages/Jobs.jsx > MatchCard` was rendering its own `<MissingSkillChips />` as a sibling of `<JobCard />`. Now that JobCard owns the missing section, the legacy chip component is gone. `MatchCard` still applies the AI smart-match badge overlay.
+
+### 38.5 Backwards compatibility
+
+- `.job-view-link{display:none}` retained as a no-op class so any straggler caller can't crash.
+- `JobCard` API is unchanged (`job`, `featured`, `onApply`, `applied`) — call sites in Home, Jobs, Favorites' similar rail, and JobDetail's recommended rail all render correctly without modification.
+
+### 38.6 Verified
+
+```
+Vite build → ✓ 123 modules · 469.78 kB JS / 62.58 kB CSS
+```
+
+Manual QA checklist (no backend changes):
+
+- [ ] Click anywhere on a JobCard body (not the icons / Apply) → opens `/jobs/:id`.
+- [ ] Click ♥ / ⌘ / Apply → does NOT open detail page; performs the action.
+- [ ] `Tab` to a card, press `Enter` → opens detail page.
+- [ ] Missing-skill chips wrap freely on narrow widths; never clip behind the card.
+- [ ] 2 cards per row at desktop; 1 at mobile (≤640px).

@@ -114,6 +114,14 @@ export default function SavedJobs() {
       // Match cleared the bar — submit the application.
       await candidatesApi.applications.apply(job.id, {});
       showMessage(job.id, { ok: true, text: `Application submitted to ${job.co}.` });
+      // Saved-for-later is an apply-intent surface — once the candidate
+      // has actually applied, drop the row from view (they don't need
+      // the "Apply" button on it anymore).
+      setSaved((rows) => rows.filter((r) => r.id !== job.id));
+      // Best-effort cleanup of the backing saved_jobs row so the
+      // backend list stays consistent on the next fetch. Errors here
+      // don't affect the apply outcome.
+      candidatesApi.savedJobs.remove(job.id).catch(() => {});
     } catch (err) {
       showMessage(job.id, { ok: false, text: err.message || 'Could not submit application.' });
     } finally {
@@ -251,13 +259,7 @@ export default function SavedJobs() {
                   >
                     {actingId === j.id ? 'Checking…' : 'Apply now'}
                   </button>
-                  <button
-                    className="btn btn-ghost"
-                    onClick={() => handleRemove(j)}
-                    type="button"
-                  >
-                    Remove
-                  </button>
+                  <Link to={`/jobs/${j.id}`} className="btn btn-ghost">View details</Link>
                 </div>
               </div>
             );

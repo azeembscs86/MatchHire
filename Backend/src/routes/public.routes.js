@@ -39,7 +39,7 @@ const v = require('../validators/public.validator');
  *     responses:
  *       '200': { $ref: '#/components/responses/PaginatedJobs' }
  */
-router.get('/jobs/search', validate(v.jobsQuery, 'query'), asyncHandler(controller.searchJobs));
+router.get('/jobs/search', optionalAuth, validate(v.jobsQuery, 'query'), asyncHandler(controller.searchJobs));
 
 /**
  * @swagger
@@ -75,6 +75,17 @@ router.get('/jobs/location-based', optionalAuth, asyncHandler(controller.locatio
  *   get:
  *     tags: [Public]
  *     summary: List jobs with filters (cached for 10 minutes)
+ *     description: |
+ *       Public job listing — guests see everything that's open + approved.
+ *       When called with a candidate bearer token, the response is
+ *       automatically filtered to exclude jobs the candidate has
+ *       already applied to. This is enforced at the SQL layer via a
+ *       `NOT EXISTS` correlated subquery on `applications`, so the
+ *       filter holds even if pagination would otherwise include the
+ *       row. Cache keys are scoped per filter set (the candidate id
+ *       becomes part of the key) so per-candidate filtered pages don't
+ *       overwrite the shared guest cache.
+ *     security: []
  *     parameters:
  *       - { name: keyword, in: query, schema: { type: string } }
  *       - { name: category, in: query, schema: { type: string } }
@@ -86,7 +97,7 @@ router.get('/jobs/location-based', optionalAuth, asyncHandler(controller.locatio
  *     responses:
  *       '200': { $ref: '#/components/responses/PaginatedJobs' }
  */
-router.get('/jobs', validate(v.jobsQuery, 'query'), asyncHandler(controller.listJobs));
+router.get('/jobs', optionalAuth, validate(v.jobsQuery, 'query'), asyncHandler(controller.listJobs));
 
 /**
  * @swagger
@@ -94,12 +105,63 @@ router.get('/jobs', validate(v.jobsQuery, 'query'), asyncHandler(controller.list
  *   get:
  *     tags: [Public]
  *     summary: Job detail (cached for 15 minutes)
+ *     description: |
+ *       Returns the full job posting (including responsibilities,
+ *       requirements, benefits, application_deadline).
+ *
+ *       When called with a CANDIDATE bearer token, the response is
+ *       decorated with per-viewer flags so the SPA can render the
+ *       right action state without a second round-trip:
+ *
+ *         - `is_applied`         — candidate already has an application
+ *         - `application_status` — status of that application (or null)
+ *         - `is_favorited`       — present in favorites
+ *         - `is_saved_for_later` — present in saved_jobs (and not expired)
+ *         - `is_expired`         — application_deadline is in the past
+ *
+ *       The base job payload is cached; the per-viewer flags are
+ *       computed fresh each call (they're cheap point lookups).
+ *     security: []
  *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
  *     responses:
  *       '200': { description: Job detail, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
  *       '404': { $ref: '#/components/responses/NotFoundError' }
  */
-router.get('/jobs/:id', validate(v.idParam, 'params'), asyncHandler(controller.getJob));
+router.get('/jobs/:id', optionalAuth, validate(v.idParam, 'params'), asyncHandler(controller.getJob));
+
+/**
+ * @swagger
+ * /public/jobs/{id}/similar:
+ *   get:
+ *     tags: [Public]
+ *     summary: Recommended jobs rail — similar to the anchor
+ *     description: |
+ *       Returns up to `limit` open job postings similar to the supplied
+ *       anchor job. Scoring is based on:
+ *
+ *         - same job_category               (+6)
+ *         - same experience_level           (+3)
+ *         - skill-tag overlap with anchor   (+2 per match)
+ *         - candidate's own skills (if signed in, +1 per match)
+ *
+ *       Always excluded:
+ *         - the anchor job itself
+ *         - expired postings (application_deadline in the past)
+ *         - closed / archived / unapproved postings
+ *         - candidate's already-applied jobs (when signed in)
+ *
+ *       Returns an empty array if no similar jobs are found. Use this
+ *       endpoint to render the "Recommended Jobs for You" rail on the
+ *       Job Detail page.
+ *     security: []
+ *     parameters:
+ *       - { name: id,    in: path,  required: true, schema: { type: integer } }
+ *       - { name: limit, in: query, schema: { type: integer, default: 6, minimum: 1, maximum: 12 } }
+ *     responses:
+ *       '200': { description: Similar jobs returned, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ *       '404': { $ref: '#/components/responses/NotFoundError' }
+ */
+router.get('/jobs/:id/similar', optionalAuth, validate(v.idParam, 'params'), asyncHandler(controller.similarJobs));
 
 /**
  * @swagger
@@ -250,7 +312,7 @@ router.get('/featured-companies', asyncHandler(controller.featuredCompanies));
  *     responses:
  *       '200': { description: Featured jobs, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
  */
-router.get('/featured-jobs', asyncHandler(controller.featuredJobs));
+router.get('/featured-jobs', optionalAuth, asyncHandler(controller.featuredJobs));
 
 /**
  * @swagger

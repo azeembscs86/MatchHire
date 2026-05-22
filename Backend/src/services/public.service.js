@@ -23,6 +23,9 @@ const cache = require('../cache/cache.helper');
 const { buildPagination } = require('../utils/pagination');
 const AppError = require('../utils/AppError');
 const db = require('../config/database');
+const appRepo = require('../repositories/application.repository');
+const favRepo = require('../repositories/favorite.repository');
+const savedJobRepo = require('../repositories/savedJob.repository');
 
 function queryString(obj) {
   const entries = Object.entries(obj || {})
@@ -40,18 +43,62 @@ async function listJobs(filters) {
   });
 }
 
-async function getJob(id) {
+async function getJob(id, viewerUserId = null) {
   const key = cache.Keys.jobDetail(id);
   const cached = await cache.getCache(key);
+  let job;
   if (cached) {
-    await jobRepo.incrementViews(id);
-    return cached;
+    job = cached;
+  } else {
+    job = await jobRepo.findById(id);
+    if (!job || job.status === 'archived') throw new AppError('Job not found', 404);
+    await cache.setCache(key, job, cache.TTL.JOB_DETAIL);
   }
-  const job = await jobRepo.findById(id);
-  if (!job || job.status === 'archived') throw new AppError('Job not found', 404);
   await jobRepo.incrementViews(id);
-  await cache.setCache(key, job, cache.TTL.JOB_DETAIL);
-  return job;
+
+  // Decorate with the candidate's relationship to this job so the
+  // detail page can render the right action state (Apply vs Already
+  // Applied) without a second round-trip. These flags are NEVER
+  // cached — they're per-viewer and cheap to compute.
+  let viewer = {
+    is_applied: false,
+    is_favorited: false,
+    is_saved_for_later: false,
+    application_status: null,
+  };
+  const deadline = job.application_deadline ? new Date(job.application_deadline).getTime() : null;
+  const isExpired = deadline != null && deadline < Date.now();
+  if (viewerUserId) {
+    const [applied, fav, saved] = await Promise.all([
+      appRepo.findByJobAndCandidate(id, viewerUserId),
+      favRepo.exists(viewerUserId, id),
+      savedJobRepo.exists(viewerUserId, id),
+    ]);
+    viewer = {
+      is_applied: !!applied,
+      is_favorited: !!fav,
+      is_saved_for_later: !!saved,
+      application_status: applied?.status || null,
+    };
+  }
+  return { ...job, ...viewer, is_expired: isExpired };
+}
+
+/**
+ * "Recommended Jobs for You" rail on the Job Detail page. Combines
+ * the anchor job's category/skills with the candidate's own skills
+ * (when present) so signed-in candidates get personalised picks while
+ * guests still see relevant similar postings.
+ */
+async function similarJobs(anchorJobId, viewerUserId = null, limit = 6) {
+  const rows = await jobRepo.findSimilar(anchorJobId, {
+    candidate_user_id: viewerUserId || undefined,
+    limit,
+  });
+  // Decorate with a normalised matchPercentage when a candidate is
+  // logged in. We don't run the full match.service here (too heavy
+  // for a 6-item rail) — just expose the score for the badge.
+  return rows;
 }
 
 async function listCompanies(filters) {
@@ -207,6 +254,7 @@ async function listCities(country_id) {
 module.exports = {
   listJobs,
   getJob,
+  similarJobs,
   listCompanies,
   getCompany,
   listCandidates,
