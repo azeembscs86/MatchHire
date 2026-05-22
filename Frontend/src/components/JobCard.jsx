@@ -117,8 +117,22 @@ export default function JobCard({ job, featured = false, onApply, applied = fals
         onKeyDown={handleCardKey}
         aria-label={`Open details for ${job.title} at ${job.co}`}
       >
-        {/* Top-right action cluster (♥ Favourite | ⌘ Save-for-later) */}
+        {/*
+          * Top-right action cluster. Order is:
+          *
+          *     [ FEATURED ]   [ ♥ Favourite ]   [ ⌘ Save-for-later ]
+          *
+          * The FEATURED badge used to sit at the card's top-LEFT via a
+          * `::before` pseudo-element where it overlapped the company
+          * logo. Moving it inline here keeps the head row clean and
+          * lets the badge sit alongside the icons it visually relates
+          * to. On narrow widths the cluster wraps to a second line so
+          * the badge doesn't push the icons off the edge.
+          */}
         <div className="job-card-actions" aria-label="Card actions">
+          {featured && job.featured && (
+            <span className="featured-badge" aria-label="Featured job">FEATURED</span>
+          )}
           <button
             className={`job-icon-btn${saved ? ' is-active' : ''}`}
             onClick={(e) => { e.stopPropagation(); toggleSave(job.id); }}

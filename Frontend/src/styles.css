@@ -244,13 +244,17 @@
   }
   .job-card:hover{transform:translateY(-3px);box-shadow:var(--shadow-lg);border-color:var(--ink)}
   .job-card.featured{border-color:rgba(232,93,60,.35);box-shadow:0 1px 0 rgba(232,93,60,.05)}
-  .job-card.featured::before{
-    content:"FEATURED";position:absolute;top:14px;left:14px;
-    font-size:9px;letter-spacing:.12em;font-weight:600;
-    color:var(--coral);background:rgba(232,93,60,.12);
-    padding:3px 8px;border-radius:4px;z-index:2;
-  }
+  /*
+   * FEATURED badge was previously a `::before` pseudo-element at the
+   * top-left of the card where it overlapped the company logo. It now
+   * lives as a real element inside `.job-card-actions` (top-right,
+   * before the heart + bookmark icons) — see `.featured-badge` below.
+   */
   .job-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:14px;padding-right:84px}
+  /* When the card is featured, the action cluster carries an extra
+   * chip (FEATURED). Reserve a bit more space on the right so the
+   * head text never tucks behind the cluster. */
+  .job-card.featured .job-head{padding-right:160px}
   .job-head-text{min-width:0;flex:1}
   .job-logo{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;font-family:'Fraunces',serif;font-size:20px;font-weight:600;flex-shrink:0}
   .job-co{font-size:12px;color:var(--ink-soft);font-weight:600;margin-bottom:2px;letter-spacing:.02em}
@@ -332,10 +336,30 @@
   .text-truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;max-width:100%}
   .text-clamp-2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
 
-  /* ───── Card top-right action row (♥ Favourite + ⌘ Save) ───── */
+  /*
+   * Card top-right action cluster. Holds the optional FEATURED badge
+   * plus the ♥ and ⌘ icons. `flex-wrap` lets the cluster spill to a
+   * second line on narrow widths so the badge never pushes the icons
+   * off the edge.
+   */
   .job-card-actions{
     position:absolute;top:14px;right:14px;z-index:3;
-    display:flex;align-items:center;gap:6px;
+    display:flex;align-items:center;justify-content:flex-end;gap:8px;
+    max-width:calc(100% - 28px);flex-wrap:wrap;row-gap:6px;
+  }
+  /*
+   * FEATURED badge — small coral chip. Lives alongside the heart and
+   * bookmark icons (same visual weight as them — fits inside a 24-26px
+   * tall line). The colour is the existing brand coral but a softer
+   * tinted background so it reads as a label, not a button.
+   */
+  .featured-badge{
+    display:inline-flex;align-items:center;height:24px;
+    padding:0 9px;border-radius:6px;
+    font-size:9.5px;letter-spacing:.14em;font-weight:700;
+    color:var(--coral);background:rgba(232,93,60,.12);
+    border:1px solid rgba(232,93,60,.18);
+    text-transform:uppercase;line-height:1;white-space:nowrap;
   }
   .job-icon-btn{
     width:34px;height:34px;border-radius:50%;
@@ -583,6 +607,10 @@
     .job-card{min-height:auto;padding:18px}
     .job-title{font-size:17px;min-height:auto}
     .job-head{padding-right:78px}
+    /* On mobile the action cluster wraps to two lines so the FEATURED
+     * badge sits above the icons. Head gets standard padding because
+     * the cluster's effective WIDTH is narrower (single icon column). */
+    .job-card.featured .job-head{padding-right:120px}
     .job-actions-row{flex-direction:column}
     .job-view-link{flex:none}
     .search-bar{grid-template-columns:1fr}
