@@ -2108,3 +2108,96 @@ Manual QA checklist (no backend changes):
 - [ ] `Tab` to a card, press `Enter` → opens detail page.
 - [ ] Missing-skill chips wrap freely on narrow widths; never clip behind the card.
 - [ ] 2 cards per row at desktop; 1 at mobile (≤640px).
+
+
+## 39. Gmail SMTP integration — setup & operations (May 2026)
+
+The mail integration in `src/services/mail/*` already implements every line of the production spec:
+
+| Spec requirement | Where it lives |
+| --- | --- |
+| Reusable transporter | `src/services/mail/transporter.js` (pooled, lazily created, periodic re-verify) |
+| `sendMail()` helper | `src/services/mail/mail.service.js` |
+| `sendOTPEmail()` | `src/services/mail/mail.service.js` |
+| `sendWelcomeEmail()` | `src/services/mail/mail.service.js` |
+| `sendPasswordResetEmail()` / `sendPasswordChangedEmail()` | same |
+| HTML templates | `src/templates/{welcome,otp,password-reset,password-changed,_layout}.template.js` |
+| Env-var validation at boot | `src/config/mail.config.js > assertMailConfig()` (called in `server.js`) |
+| Retry / backoff | inside `mail.service.js > sendMail()` — exponential, `MAIL_MAX_RETRIES` / `MAIL_RETRY_BASE_MS` |
+| Centralised error handling | `mail.controller.js` translates service errors to the spec response envelope |
+| Queue-ready seam | `src/queues/email.queue.js` (BullMQ skeleton; mail service has a dispatch hook for future `mailQueue.add()`) |
+| Swagger | `src/routes/mail.routes.js` — `/send-test`, `/send-otp`, `/send-welcome`, `/verify` |
+| Validators | `src/validators/mail.validator.js` (Joi) |
+| `.env.example` | `Backend/.env.example` (mail section, lines 44–66) |
+| Sample test endpoint | `POST /api/v1/mail/send-test` — exact response shape per spec |
+
+### 39.1 Test endpoint — response shape (matches spec verbatim)
+
+```bash
+curl -s -X POST 'http://localhost:3500/api/v1/mail/send-test' \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com"}'
+```
+
+Success:
+```json
+{ "Response": { "responseCode": 1, "status": "Success", "message": "Email Sent Successfully" }, "Data": { "messageId": "<...>" } }
+```
+
+Failure:
+```json
+{ "Response": { "responseCode": 0, "status": "Failed", "message": "Unable to Send Email" }, "Data": null }
+```
+
+### 39.2 Gmail App Password — required
+
+Gmail's SMTP server stopped accepting regular account passwords in **2022** ("less-secure-app access" was deprecated). Every send attempt with an account password fails with:
+
+```
+535-5.7.8 Username and Password not accepted
+```
+
+Procedure (one-time, per Google account):
+
+1. Visit `https://myaccount.google.com/security` → enable **2-Step Verification** (mandatory).
+2. Visit `https://myaccount.google.com/apppasswords`.
+3. App name: "MatchHire SMTP" → **Create**.
+4. Copy the 16-char string (e.g. `abcd efgh ijkl mnop` — strip the spaces).
+5. Paste into `Backend/.env.local`:
+   ```
+   SMTP_PASS=abcdefghijklmnop
+   ```
+6. Restart the backend. `mail.config: SMTP_PASS does not look like a Gmail App Password` warning should disappear.
+
+`assertMailConfig()` runs at boot and logs `Mail config OK` when the env shape is valid; the actual handshake happens lazily on the first `sendMail()` (or eagerly via `GET /api/v1/mail/verify`).
+
+### 39.3 Security recommendations
+
+- **Never commit `.env.local`** — it's gitignored (`Backend/.gitignore:5`). The repo only ships `.env.example` with placeholders.
+- **Rotate the App Password** if you ever paste it into chat, screen-share, or a public log. Google lets you revoke individual app passwords at `https://myaccount.google.com/apppasswords` without affecting your main account.
+- **Use a service account in production**. The candidate-facing emails should not come from a developer's personal Gmail. Provision a dedicated Google Workspace user (e.g. `noreply@matchhire.com`) and use its App Password.
+- **Lock down SPF / DKIM / DMARC** on the sending domain once you migrate off `@gmail.com` — Gmail's reputation will not carry to your own domain.
+- **Cap rate**: Gmail SMTP is throttled to ~500 recipients/day per account. This is fine for OTP + welcome traffic at low scale; not enough for marketing blasts. See §39.5 for migration notes.
+
+### 39.4 Production-ready operations
+
+- **`MAIL_MAX_RETRIES=3`, `MAIL_RETRY_BASE_MS=1000`** — defaults handle transient SMTP errors (4xx, connection timeouts) gracefully. Increase only if you see legitimate transient failures in `logger.warn('mail.send.retry')` lines.
+- **Connection pooling** is on (`pool: true`, `maxConnections: 3`, `maxMessages: 100`). The pool re-verifies after 10 minutes idle.
+- **PII masking in logs** — `mail.service.js` masks the recipient address before writing to logs (`[email protected]`-style). Audit any new logger calls you add to keep this invariant.
+- **Queue-ready** — the queue skeleton at `src/queues/email.queue.js` is wired but not enabled. To turn it on:
+  1. Move the `transporter.sendMail()` call from `mail.service.js > sendMail()` into the queue worker handler.
+  2. Replace the synchronous call with `mailQueue.add('send', payload)`.
+  3. Behind a `MAIL_QUEUE_ENABLED=true` env flag so the migration is reversible.
+
+### 39.5 Future migration paths (AWS SES / SendGrid / Postmark)
+
+The mail service is the single seam — `transporter.js` is the only file that touches Nodemailer's transport options. To migrate provider:
+
+| Provider | What changes | What stays |
+| --- | --- | --- |
+| AWS SES (SMTP) | `SMTP_HOST=email-smtp.<region>.amazonaws.com`, `SMTP_PORT=587`, `SMTP_USER=<IAM access key id>`, `SMTP_PASS=<IAM secret>` (signed). | Everything else — templates, validators, retry, routes, controllers. |
+| AWS SES (SDK API) | Replace `nodemailer.createTransport` with `nodemailer.createTransport({ SES: new SESClient(...) })`. | Same — Nodemailer's SES transport is API-compatible with the SMTP path. |
+| SendGrid | Swap the transporter for SendGrid's nodemailer plugin OR replace `sendMail()` body with their Web API; keep the same `{ to, subject, html, text }` shape so callers are untouched. | Templates, routes, controllers, validators. |
+| Postmark | Same approach as SendGrid — `mail.service.js` is the only file that needs to change. | Everything else. |
+
+Recommendation: when you outgrow Gmail's 500/day cap, move to **AWS SES** first (cheapest, SDK transport is a near-zero-effort drop-in) and revisit a dedicated transactional provider (Postmark / Resend) only if you need delivery analytics or template editors a non-engineer can use.
