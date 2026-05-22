@@ -11,6 +11,8 @@
     "seed": "node src/database/seed.js",
     "seed:bulk": "node src/database/seed.bulk.js",
     "seed:bulk:rollback": "node src/database/seed.bulk.js rollback",
+    "seed:fresh-jobs": "node src/database/seed.fresh-jobs.js",
+    "seed:fresh-jobs:rollback": "node src/database/seed.fresh-jobs.js rollback",
     "seed:industries": "node src/database/seed.industries.js",
     "seed:industries:rollback": "node src/database/seed.industries.js rollback",
     "seed:expand": "node src/database/seed.expand.js",
