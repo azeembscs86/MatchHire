@@ -73,7 +73,11 @@ exports.listCandidates = async (req, res) => {
 };
 
 exports.getCandidate = async (req, res) => {
-  const data = await service.getCandidate(Number(req.params.id));
+  // Forward the authenticated viewer so the service can decorate
+  // the response with employer-only fields (email). `req.user` is
+  // populated by the `optionalAuth` middleware on this route and
+  // stays null for guests.
+  const data = await service.getCandidate(Number(req.params.id), req.user || null);
   return response.success(res, data, 'Candidate detail returned');
 };
 

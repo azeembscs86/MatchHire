@@ -94,6 +94,18 @@ exports.dashboardStats = async (req, res) => {
 };
 
 /**
+ * AI-ranked candidates that match this employer's active jobs above
+ * the 50% floor. Replaces the generic candidate browse for company
+ * viewers — they don't see the public candidate list anymore, just
+ * the slice that's relevant to what they're hiring for.
+ */
+exports.recommendedCandidates = async (req, res) => {
+  const limit = Math.min(Math.max(Number(req.body?.limit) || 50, 1), 100);
+  const data = await service.recommendedCandidates(req.user.id, { limit });
+  return response.success(res, data, 'Recommended candidates returned');
+};
+
+/**
  * Matching jobs for a candidate, scoped to the logged-in employer's
  * company. Powers the "Matching jobs from your company" panel on the
  * candidate detail page. Returns only jobs with match score > 60.

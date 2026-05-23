@@ -224,7 +224,7 @@ router.get('/candidates', validate(v.candidatesQuery, 'query'), asyncHandler(con
  *       '200': { description: Candidate detail, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
  *       '404': { $ref: '#/components/responses/NotFoundError' }
  */
-router.get('/candidates/:id', validate(v.idParam, 'params'), asyncHandler(controller.getCandidate));
+router.get('/candidates/:id', optionalAuth, validate(v.idParam, 'params'), asyncHandler(controller.getCandidate));
 
 /**
  * @swagger

@@ -630,6 +630,45 @@
   .co-card.clickable:hover{border-color:rgba(14,17,22,.22)}
   .cand-rank{position:absolute;top:24px;right:24px;font-family:'Fraunces',serif;font-size:14px;color:var(--muted);font-style:italic}
   .cand-rank.top{color:var(--coral);font-weight:600}
+  /*
+   * Match-pill (employer "Recommended candidates" surface) — takes
+   * the place of `.cand-rank` at the top-right when a card is
+   * decorated with a match score. Reuses the JobCard tier palette
+   * so a recommended row and a recommended job read as siblings.
+   */
+  .cand-match-pill{
+    position:absolute;top:18px;right:18px;
+    display:inline-flex;align-items:center;gap:6px;
+    padding:4px 10px;border-radius:100px;
+    font-size:11px;font-weight:600;letter-spacing:.01em;
+    border:1px solid transparent;line-height:1.2;white-space:nowrap;
+  }
+  .cand-match-job{
+    font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.4;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .cand-match-job-label{
+    font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--muted-2);font-weight:600;margin-right:4px;
+  }
+  .cand-skill-row{
+    display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;
+  }
+  .cand-card-actions{
+    display:flex;gap:8px;margin-top:14px;padding-top:14px;
+    border-top:1px solid var(--line-soft);
+  }
+  .cand-card-actions .btn{flex:1;justify-content:center}
+
+  /* Hero "Contact" button on CandidateDetail (employer only). Sits
+     on the far right of the hero, above the meta-chip row on
+     mobile via flex-wrap. */
+  .jd-hero-actions{margin-left:auto;flex-shrink:0}
+  .jd-contact-btn{min-width:120px;justify-content:center}
+  @media (max-width:640px){
+    .jd-hero-actions{margin-left:0;width:100%}
+    .jd-contact-btn{width:100%}
+  }
   .cand-avatar{width:72px;height:72px;border-radius:50%;display:grid;place-items:center;font-family:'Fraunces',serif;font-size:28px;font-weight:500;margin-bottom:18px;border:2px solid var(--line)}
   .cand-name{font-family:'Fraunces',serif;font-size:22px;font-weight:500;letter-spacing:-.01em;margin-bottom:4px}
   .cand-role{font-size:13px;color:var(--muted);margin-bottom:18px}

@@ -256,6 +256,19 @@ router.post('/dashboard/stats', asyncHandler(controller.dashboardStats));
 
 /**
  * @swagger
+ * /employers/recommended-candidates:
+ *   post:
+ *     tags: [Employers]
+ *     summary: AI-ranked candidates matching the viewer's active jobs (score > 50)
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       '200': { description: Recommendations, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ *       '403': { $ref: '#/components/responses/ForbiddenError' }
+ */
+router.post('/recommended-candidates', asyncHandler(controller.recommendedCandidates));
+
+/**
+ * @swagger
  * /employers/candidates/{candidateId}/matching-jobs:
  *   post:
  *     tags: [Employers]

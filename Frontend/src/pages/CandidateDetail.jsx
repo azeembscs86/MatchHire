@@ -132,6 +132,31 @@ export default function CandidateDetail() {
                 )}
               </div>
             </div>
+            {/*
+              * Contact CTA — only renders for employer viewers. Backend
+              * decorates `c.email` for the employer role; falls back to
+              * an alert when email isn't available so the button never
+              * silently misfires. A proper in-app messaging flow can
+              * swap this `mailto:` for the chat surface later.
+              */}
+            {isEmployer && (
+              <div className="jd-hero-actions">
+                <button
+                  type="button"
+                  className="btn btn-coral jd-contact-btn"
+                  onClick={() => {
+                    if (!c.email) {
+                      window.alert(`No contact email available for ${c.full_name}.`);
+                      return;
+                    }
+                    const subject = `MatchHire: A role at our company`;
+                    window.location.href = `mailto:${c.email}?subject=${encodeURIComponent(subject)}`;
+                  }}
+                >
+                  Contact
+                </button>
+              </div>
+            )}
           </div>
         </header>
 

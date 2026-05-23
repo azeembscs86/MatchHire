@@ -41,4 +41,14 @@ export const employersApi = {
   matchingJobsForCandidate(candidateId) {
     return call(api.post(`/employers/candidates/${candidateId}/matching-jobs`));
   },
+
+  /**
+   * AI-ranked candidates that match the viewer's active jobs above
+   * 50%. Replaces the generic candidate browse for company viewers.
+   * Server enforces the floor + sorts by best score; the client just
+   * renders.
+   */
+  recommendedCandidates(body = {}) {
+    return call(api.post('/employers/recommended-candidates', body));
+  },
 };

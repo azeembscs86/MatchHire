@@ -1,18 +1,67 @@
 /**
- * Candidates discovery page - grid of top-rated open candidates,
- * shown to employers as the "Find candidates" funnel entry point.
+ * Candidates page.
  *
- * Sourced from `/public/candidates`. The page exposes a small filter
- * surface (keyword, skill, remote) so employers can refine the list
- * before reaching out.
+ * Two distinct surfaces share one route:
+ *   - **Guest / candidate viewers**: the original public discovery
+ *     grid powered by `GET /public/candidates`.
+ *   - **Employer viewers (role=employer)**: the AI-ranked
+ *     "Recommended candidates" feed powered by
+ *     `POST /employers/recommended-candidates`. The generic browse
+ *     is intentionally hidden — companies should only see the
+ *     candidates relevant to their active job board (match > 50%).
+ *
+ * The component picks the right branch by reading `useAuth().role`
+ * and renders into the same `.cand-grid` either way, so the visual
+ * language is consistent.
  */
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import CandidateCard from '../components/CandidateCard.jsx';
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.jsx';
-import { publicApi } from '../api/index.js';
+import { publicApi, employersApi } from '../api/index.js';
 import { toCandidateCardShape } from '../api/adapters.js';
+import { useAuth } from '../context/AuthContext.jsx';
+
+/**
+ * Adapt a row from `/employers/recommended-candidates` onto the
+ * existing CandidateCard view-model + a `match` decoration. Keeps
+ * the card component agnostic about which endpoint sourced the row.
+ */
+function toRecommendedShape(r, idx = 0) {
+  const view = toCandidateCardShape({
+    id: r.candidate_id,
+    full_name: r.candidate_name,
+    avatar_url: r.profile_image,
+    headline: r.title,
+    current_title: r.title,
+    years_experience: r.experience,
+    location: r.location,
+    country: r.country,
+    profile_strength: r.profile_strength,
+    skills: (r.candidate_skills || []).map((name) => ({ name })),
+  }, idx);
+  if (!view) return null;
+  // Replace the default rate string with "12 yrs" style so the match
+  // card reads as a hiring view rather than a marketplace listing.
+  if (r.experience != null) {
+    view.rate = `${Math.round(Number(r.experience))} yrs`;
+  }
+  return {
+    view,
+    match: {
+      score: r.match_score,
+      jobTitle: r.matched_job?.job_title?.replace(/\s*\[match-seed-v1-\d+\]$/, '') || r.matched_job?.job_title,
+      matched: r.matched_skills || [],
+      missing: r.missing_skills || [],
+      email: r.email,
+    },
+  };
+}
 
 export default function Candidates() {
+  const { role } = useAuth();
+  const isEmployer = role === 'employer';
+
   const [filters, setFilters] = useState({ keyword: '', skill: '', remote: null });
   const [candidates, setCandidates] = useState([]);
   const [total, setTotal] = useState(null);
@@ -25,14 +74,28 @@ export default function Candidates() {
       setLoading(true);
       setError(null);
       try {
-        const params = { page: 1, limit: 24 };
-        if (filters.keyword) params.keyword = filters.keyword;
-        if (filters.skill) params.skill = filters.skill;
-        if (filters.remote === true) params.remote = true;
-        const res = await publicApi.candidates(params);
-        if (cancelled) return;
-        setCandidates((res?.records || []).map((c, i) => toCandidateCardShape(c, i)).filter(Boolean));
-        setTotal(res?.pagination?.total ?? null);
+        if (isEmployer) {
+          // Employer branch — no keyword/skill filters yet (the
+          // matches are already narrowed to the company's job board).
+          const res = await employersApi.recommendedCandidates({ limit: 100 });
+          if (cancelled) return;
+          setCandidates(
+            (res?.records || []).map((r, i) => toRecommendedShape(r, i)).filter(Boolean)
+          );
+          setTotal(res?.total ?? null);
+        } else {
+          const params = { page: 1, limit: 24 };
+          if (filters.keyword) params.keyword = filters.keyword;
+          if (filters.skill) params.skill = filters.skill;
+          if (filters.remote === true) params.remote = true;
+          const res = await publicApi.candidates(params);
+          if (cancelled) return;
+          setCandidates(
+            (res?.records || []).map((c, i) => ({ view: toCandidateCardShape(c, i), match: null }))
+              .filter((x) => x.view)
+          );
+          setTotal(res?.pagination?.total ?? null);
+        }
       } catch (err) {
         if (!cancelled) setError(err);
       } finally {
@@ -41,57 +104,112 @@ export default function Candidates() {
     }
     load();
     return () => { cancelled = true; };
-  }, [filters]);
+  }, [isEmployer, filters]);
 
   function update(patch) { setFilters((f) => ({ ...f, ...patch })); }
+
+  function handleContact(rowIdx) {
+    const row = candidates[rowIdx];
+    if (!row?.match?.email) {
+      window.alert(`No email available for ${row?.view?.n}. Use the candidate detail page.`);
+      return;
+    }
+    // Open the user's default mail client. A proper in-app messaging
+    // flow can replace this when the chat surface ships.
+    const subject = `MatchHire: ${row.match.jobTitle || 'A role at our company'}`;
+    window.location.href = `mailto:${row.match.email}?subject=${encodeURIComponent(subject)}`;
+  }
 
   return (
     <section className="view active" id="view-candidates">
       <div className="page-header">
         <div className="container">
           <span className="eyebrow" style={{ display: 'block', marginBottom: 18 }}>
-            ★ For employers · {total != null ? Number(total).toLocaleString() : '—'} candidates
+            {isEmployer
+              ? `★ AI matched · ${total != null ? Number(total).toLocaleString() : '—'} above 50%`
+              : `★ For employers · ${total != null ? Number(total).toLocaleString() : '—'} candidates`}
           </span>
-          <h1 className="display">Hand-picked <span className="ital" style={{ fontStyle: 'italic', color: 'var(--coral)' }}>talent</span>, ready to interview.</h1>
-          <p>Browse our highest-rated open candidates. Every profile is verified, references checked, and actively job-hunting.</p>
+          <h1 className="display">
+            {isEmployer ? (
+              <>Recommended <span className="ital" style={{ fontStyle: 'italic', color: 'var(--coral)' }}>candidates</span>.</>
+            ) : (
+              <>Hand-picked <span className="ital" style={{ fontStyle: 'italic', color: 'var(--coral)' }}>talent</span>, ready to interview.</>
+            )}
+          </h1>
+          <p>
+            {isEmployer
+              ? 'Candidates matching your active posted jobs above 50% — ranked highest match first.'
+              : 'Browse our highest-rated open candidates. Every profile is verified, references checked, and actively job-hunting.'}
+          </p>
         </div>
       </div>
-      <div className="container" style={{ padding: '32px 0 24px' }}>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 24 }}>
-          <input
-            placeholder="Search by name or headline"
-            value={filters.keyword}
-            onChange={(e) => update({ keyword: e.target.value })}
-            style={{ flex: '1 1 240px', padding: '10px 12px', borderRadius: 8, border: '1px solid #e2e0db' }}
-          />
-          <input
-            placeholder="Skill (e.g. React)"
-            value={filters.skill}
-            onChange={(e) => update({ skill: e.target.value })}
-            style={{ flex: '1 1 180px', padding: '10px 12px', borderRadius: 8, border: '1px solid #e2e0db' }}
-          />
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+
+      {/* Filters bar — only renders on the public branch. The employer
+          recommendations endpoint sorts on the server, and the
+          downstream candidate set is small enough that client-side
+          re-filtering doesn't add real value yet. */}
+      {!isEmployer && (
+        <div className="container" style={{ padding: '32px 0 24px' }}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 24 }}>
             <input
-              type="checkbox"
-              checked={filters.remote === true}
-              onChange={(e) => update({ remote: e.target.checked ? true : null })}
+              placeholder="Search by name or headline"
+              value={filters.keyword}
+              onChange={(e) => update({ keyword: e.target.value })}
+              style={{ flex: '1 1 240px', padding: '10px 12px', borderRadius: 8, border: '1px solid #e2e0db' }}
             />
-            Open to remote
-          </label>
+            <input
+              placeholder="Skill (e.g. React)"
+              value={filters.skill}
+              onChange={(e) => update({ skill: e.target.value })}
+              style={{ flex: '1 1 180px', padding: '10px 12px', borderRadius: 8, border: '1px solid #e2e0db' }}
+            />
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+              <input
+                type="checkbox"
+                checked={filters.remote === true}
+                onChange={(e) => update({ remote: e.target.checked ? true : null })}
+              />
+              Open to remote
+            </label>
+          </div>
         </div>
-      </div>
-      <div className="container" style={{ padding: '0 0 80px' }}>
+      )}
+
+      <div className="container" style={{ padding: isEmployer ? '32px 0 80px' : '0 0 80px' }}>
         {loading
-          ? <LoadingState label="Loading candidates…" />
+          ? <LoadingState label={isEmployer ? 'Scoring candidates against your jobs…' : 'Loading candidates…'} />
           : error
             ? <ErrorState error={error} />
             : candidates.length === 0
-              ? <EmptyState title="No candidates match these filters" />
+              ? (
+                <EmptyState
+                  title={isEmployer
+                    ? 'No strong candidate matches found yet'
+                    : 'No candidates match these filters'}
+                  message={isEmployer
+                    ? 'No active jobs at your company score above 50% against the current public candidate pool. Add more required skills to your postings or check back as more candidates join.'
+                    : 'Try adjusting your filters or check back as more talent joins.'}
+                />
+              )
               : (
                 <div className="cand-grid">
-                  {candidates.map((c, i) => <CandidateCard key={c.id} candidate={c} rankTop={i < 3} />)}
+                  {candidates.map((row, i) => (
+                    <CandidateCard
+                      key={row.view.id}
+                      candidate={row.view}
+                      rankTop={!isEmployer && i < 3}
+                      match={row.match}
+                      onContact={isEmployer ? () => handleContact(i) : null}
+                    />
+                  ))}
                 </div>
               )}
+
+        {isEmployer && candidates.length === 0 && (
+          <div style={{ marginTop: 24, fontSize: 13, color: 'var(--muted)' }}>
+            Tip: open <Link to="/dashboard/company" style={{ color: 'var(--coral)' }}>your dashboard</Link> to manage active postings.
+          </div>
+        )}
       </div>
     </section>
   );

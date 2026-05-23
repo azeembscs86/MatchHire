@@ -241,6 +241,208 @@ async function matchingJobsForCandidate(user_id, candidateUserId) {
   };
 }
 
+/**
+ * "Recommended candidates" — the AI-ranked list of candidates that
+ * match THIS employer's active jobs above the recommendation floor
+ * (50%). Replaces the generic candidate browse for employer viewers.
+ *
+ * Pipeline (one query per stage — no N+1):
+ *
+ *   1. Load the company's active, non-expired, approved jobs.
+ *   2. Union the skill_tags across all of them to get a search set.
+ *   3. SELECT distinct candidate_user_id from candidate_skills where
+ *      the skill name overlaps that set AND the candidate's profile
+ *      is public — this is the prefilter that keeps the scoring loop
+ *      bounded.
+ *   4. Bulk-load all candidate profiles + skills + preferences
+ *      in three queries (one each) — never per-candidate.
+ *   5. In memory: for each candidate, score against every company
+ *      job and keep the top 3 matches. Drop candidates whose best
+ *      score is at or below 50.
+ *   6. Sort by best score desc and return.
+ *
+ * The endpoint is heavy when a company has many candidates that
+ * skill-overlap their jobs — practical caps:
+ *   - candidate pool prefilter: 500 candidates max
+ *   - jobs scored against: 100 jobs max
+ *   - top-3 sub-matches per candidate kept in the response
+ */
+const RECOMMEND_FLOOR = 50;
+const CANDIDATE_PREFILTER_CAP = 500;
+
+async function recommendedCandidates(user_id, { limit = 50 } = {}) {
+  const db = require('../config/database');
+  const matchService = require('./match.service');
+
+  const company = await getCompanyForUser(user_id);
+
+  // Active company jobs, capped so a runaway dataset can't lock the
+  // event loop on scoring.
+  const { rows: jobs } = await jobRepo.listByCompany(company.id, {
+    page: 1, limit: 100, status: 'open', exclude_expired: true,
+  });
+  if (jobs.length === 0) {
+    return { company_id: company.id, floor: RECOMMEND_FLOOR, records: [] };
+  }
+
+  // Gather the union of skill tokens across all company jobs.
+  const skillSet = new Set();
+  for (const j of jobs) {
+    String(j.skills_tags || '')
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+      .forEach((s) => skillSet.add(s));
+  }
+  const skillList = [...skillSet];
+
+  // Prefilter: candidates whose listed skills overlap any of the
+  // company's job skills. `LOWER(s.name)` so case differences don't
+  // miss matches. Returns distinct candidate_user_id only.
+  let candidateIds = [];
+  if (skillList.length > 0) {
+    const placeholders = skillList.map(() => '?').join(',');
+    const rows = await db.query(
+      `SELECT DISTINCT cs.candidate_user_id
+       FROM candidate_skills cs
+       INNER JOIN skills s ON s.id = cs.skill_id
+       INNER JOIN users u ON u.id = cs.candidate_user_id
+       INNER JOIN candidate_profiles cp ON cp.user_id = u.id
+       WHERE LOWER(s.name) IN (${placeholders})
+         AND u.role = 'candidate'
+         AND u.status = 'active'
+         AND u.deleted_at IS NULL
+         AND cp.is_public = 1
+       LIMIT ?`,
+      [...skillList, CANDIDATE_PREFILTER_CAP]
+    );
+    candidateIds = rows.map((r) => Number(r.candidate_user_id));
+  }
+  if (candidateIds.length === 0) {
+    return { company_id: company.id, floor: RECOMMEND_FLOOR, records: [] };
+  }
+
+  // Bulk-load context: profiles + skills + preferences in 3 queries
+  // total, indexed in memory by user_id. Avoids the N+1 trap of
+  // calling jobRepo.loadCandidateContext() per candidate.
+  const idPlaceholders = candidateIds.map(() => '?').join(',');
+  const [profiles, skillRows, prefRows] = await Promise.all([
+    db.query(
+      `SELECT u.id, u.full_name, u.avatar_url, u.email,
+              cp.headline, cp.current_title, cp.years_experience,
+              cp.location, cp.city, cp.country, cp.open_to_remote,
+              cp.expected_salary_min, cp.expected_salary_max, cp.salary_currency,
+              cp.profile_strength
+       FROM users u
+       INNER JOIN candidate_profiles cp ON cp.user_id = u.id
+       WHERE u.id IN (${idPlaceholders})`,
+      candidateIds
+    ),
+    db.query(
+      `SELECT cs.candidate_user_id, s.name
+       FROM candidate_skills cs
+       INNER JOIN skills s ON s.id = cs.skill_id
+       WHERE cs.candidate_user_id IN (${idPlaceholders})`,
+      candidateIds
+    ),
+    db.query(
+      `SELECT user_id, preferred_categories, desired_titles, preferred_locations,
+              preferred_job_types, job_scope, remote_only
+       FROM preferences WHERE user_id IN (${idPlaceholders})`,
+      candidateIds
+    ),
+  ]);
+
+  const skillByUser = new Map();
+  for (const r of skillRows) {
+    const arr = skillByUser.get(r.candidate_user_id) || [];
+    arr.push({ name: r.name });
+    skillByUser.set(r.candidate_user_id, arr);
+  }
+  const prefByUser = new Map(prefRows.map((p) => [p.user_id, p]));
+
+  // Score loop. For each candidate, walk every company job, keep the
+  // top 3 sub-matches. ~500 × 100 = 50k score calls; each is pure
+  // JS over already-loaded data, so this completes in well under a
+  // second for realistic seeds.
+  const out = [];
+  for (const p of profiles) {
+    const skills = skillByUser.get(p.id) || [];
+    const prefs = prefByUser.get(p.id) || {};
+    const ctx = {
+      ...p,
+      skills,
+      preferred_categories: prefs.preferred_categories || '',
+      desired_titles: prefs.desired_titles || '',
+      preferred_locations: prefs.preferred_locations || '',
+      preferred_job_types: prefs.preferred_job_types || '',
+      job_scope: prefs.job_scope || 'hybrid',
+      open_to_remote: p.open_to_remote ?? (prefs.remote_only ? 1 : 1),
+    };
+
+    const subs = [];
+    for (const job of jobs) {
+      const res = matchService.scoreJob(job, ctx);
+      if (res.score <= RECOMMEND_FLOOR) continue;
+      // Compute matched skills overlap inline — match service exposes
+      // missing but not matched.
+      const required = String(job.skills_tags || '')
+        .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+      const have = new Set(skills.map((s) => String(s.name).toLowerCase()));
+      const matched = required.filter((r) =>
+        [...have].some((h) => h === r || h.includes(r) || r.includes(h))
+      );
+      subs.push({
+        job_id: job.id,
+        job_title: job.title,
+        match_score: res.score,
+        matched_skills: matched,
+        missing_skills: res.missing || [],
+        salary_min: job.salary_min,
+        salary_max: job.salary_max,
+        salary_currency: job.salary_currency,
+        salary_period: job.salary_period,
+        location: job.location || job.city || null,
+        work_mode: job.work_mode,
+        job_type: job.job_type,
+      });
+    }
+    if (subs.length === 0) continue;
+    subs.sort((a, b) => b.match_score - a.match_score);
+    const best = subs[0];
+
+    out.push({
+      candidate_id: p.id,
+      candidate_name: p.full_name,
+      profile_image: p.avatar_url,
+      title: p.current_title || p.headline || null,
+      experience: p.years_experience,
+      location: p.location || p.city || p.country || null,
+      country: p.country,
+      // Email goes in the response for employer viewers — this is an
+      // employer-only endpoint so the visibility gate is the role
+      // middleware on the route. Phone could go here too once the
+      // profile schema exposes it.
+      email: p.email,
+      profile_strength: p.profile_strength,
+      candidate_skills: skills.map((s) => s.name),
+      matched_job: best,
+      match_score: best.match_score,
+      matched_skills: best.matched_skills,
+      missing_skills: best.missing_skills,
+      top_matching_jobs: subs.slice(0, 3),
+    });
+  }
+
+  out.sort((a, b) => b.match_score - a.match_score);
+  return {
+    company_id: company.id,
+    floor: RECOMMEND_FLOOR,
+    total: out.length,
+    records: out.slice(0, limit),
+  };
+}
+
 module.exports = {
   getCompanyProfile,
   updateCompanyProfile,
@@ -255,4 +457,5 @@ module.exports = {
   scheduleInterview,
   dashboardStats,
   matchingJobsForCandidate,
+  recommendedCandidates,
 };

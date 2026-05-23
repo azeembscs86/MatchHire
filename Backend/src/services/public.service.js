@@ -137,19 +137,34 @@ async function listCandidates(filters) {
   });
 }
 
-async function getCandidate(id) {
+/**
+ * Public candidate detail. Returns the same anonymous payload for
+ * guests and candidates; **adds** the contact email when the viewer
+ * is an authenticated employer (so the "Contact" CTA on the detail
+ * hero can open mailto). The viewer-specific decoration is applied
+ * AFTER the cache lookup so the anonymous body stays cacheable.
+ */
+async function getCandidate(id, viewer = null) {
   const key = cache.Keys.candidateDetail(id);
-  const cached = await cache.getCache(key);
-  if (cached) return cached;
-  const candidate = await candidateRepo.getPublicCandidate(id);
-  if (!candidate) throw new AppError('Candidate not found', 404);
-  // Enrich with normalised work-experience rows so the public detail
-  // page can render the experience timeline without a second round-
-  // trip. Errors here are non-fatal — we'd rather show the profile
-  // without experience than 500 the whole page.
-  const experiences = await candidateExperienceRepo.listForUser(id).catch(() => []);
-  const data = { ...candidate, experiences };
-  await cache.setCache(key, data, cache.TTL.CANDIDATE_DETAIL);
+  let data = await cache.getCache(key);
+  if (!data) {
+    const candidate = await candidateRepo.getPublicCandidate(id);
+    if (!candidate) throw new AppError('Candidate not found', 404);
+    const experiences = await candidateExperienceRepo.listForUser(id).catch(() => []);
+    data = { ...candidate, experiences };
+    await cache.setCache(key, data, cache.TTL.CANDIDATE_DETAIL);
+  }
+  // Layer per-viewer fields on top of the cached anonymous payload.
+  // Email is exposed ONLY to employer viewers — the auth context is
+  // the gate, never the request body — and is fetched fresh because
+  // the cached blob deliberately doesn't carry it.
+  if (viewer?.role === 'employer') {
+    const row = await db.queryOne(
+      `SELECT email FROM users WHERE id = ? LIMIT 1`,
+      [Number(id)]
+    );
+    return { ...data, email: row?.email || null };
+  }
   return data;
 }
 
