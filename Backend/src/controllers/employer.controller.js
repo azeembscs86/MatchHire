@@ -94,6 +94,27 @@ exports.dashboardStats = async (req, res) => {
 };
 
 /**
+ * Resume download for an employer viewer. Returns a short-lived
+ * signed URL pointing at the candidate's primary (or most recent)
+ * resume file. Authorisation:
+ *
+ *   - `requireEmployer` at the route layer enforces role=employer.
+ *   - The service enforces the candidate's `is_public` gate and
+ *     404s when the candidate has no resume on file.
+ *
+ * The storage path itself is never returned — only the signed URL,
+ * which the browser hits directly to stream the file.
+ */
+exports.downloadCandidateResume = async (req, res) => {
+  const resumeService = require('../services/resume.service');
+  const data = await resumeService.signedDownloadForEmployer(
+    req.user.id,
+    Number(req.params.candidateId)
+  );
+  return response.success(res, data, 'Resume download URL returned');
+};
+
+/**
  * AI-ranked candidates that match this employer's active jobs above
  * the 50% floor. Replaces the generic candidate browse for company
  * viewers — they don't see the public candidate list anymore, just

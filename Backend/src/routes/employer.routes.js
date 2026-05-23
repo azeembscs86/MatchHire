@@ -290,4 +290,27 @@ router.post(
   asyncHandler(controller.matchingJobsForCandidate)
 );
 
+/**
+ * @swagger
+ * /employers/candidates/{candidateId}/resume/download:
+ *   post:
+ *     tags: [Employers]
+ *     summary: Short-lived signed URL to download a candidate's resume
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - name: candidateId
+ *         in: path
+ *         required: true
+ *         schema: { type: integer, minimum: 1 }
+ *     responses:
+ *       '200': { description: Signed URL returned, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ *       '403': { $ref: '#/components/responses/ForbiddenError' }
+ *       '404': { $ref: '#/components/responses/NotFoundError' }
+ */
+router.post(
+  '/candidates/:candidateId/resume/download',
+  validate(pubV.candidateIdParam, 'params'),
+  asyncHandler(controller.downloadCandidateResume)
+);
+
 module.exports = router;

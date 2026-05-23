@@ -155,15 +155,23 @@ async function getCandidate(id, viewer = null) {
     await cache.setCache(key, data, cache.TTL.CANDIDATE_DETAIL);
   }
   // Layer per-viewer fields on top of the cached anonymous payload.
-  // Email is exposed ONLY to employer viewers — the auth context is
-  // the gate, never the request body — and is fetched fresh because
-  // the cached blob deliberately doesn't carry it.
+  // Email + has_resume are exposed ONLY to employer viewers — the
+  // auth context is the gate, never the request body — and are
+  // fetched fresh because the cached blob deliberately doesn't
+  // carry them. `has_resume` lets the frontend decide whether to
+  // render the "Download resume" CTA without probing a separate
+  // endpoint and getting a 404.
   if (viewer?.role === 'employer') {
-    const row = await db.queryOne(
-      `SELECT email FROM users WHERE id = ? LIMIT 1`,
-      [Number(id)]
-    );
-    return { ...data, email: row?.email || null };
+    const [row, resume] = await Promise.all([
+      db.queryOne(`SELECT email FROM users WHERE id = ? LIMIT 1`, [Number(id)]),
+      db.queryOne(
+        `SELECT 1 AS one FROM resumes
+         WHERE candidate_user_id = ? AND deleted_at IS NULL
+         LIMIT 1`,
+        [Number(id)]
+      ),
+    ]);
+    return { ...data, email: row?.email || null, has_resume: !!resume };
   }
   return data;
 }

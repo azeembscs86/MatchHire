@@ -18,7 +18,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
-import { publicApi } from '../api/index.js';
+import { publicApi, employersApi } from '../api/index.js';
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.jsx';
 import MatchingJobsPanel from '../components/MatchingJobsPanel.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -43,6 +43,34 @@ export default function CandidateDetail() {
   const [candidate, setCandidate] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Resume-download UX state. `downloading` shows the spinner +
+  // disables the button; `downloadError` surfaces a tight inline
+  // message under the action row when the signed-URL call 404s or
+  // fails for any other reason.
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState(null);
+
+  async function handleDownloadResume() {
+    if (!candidate || downloading) return;
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      const data = await employersApi.downloadCandidateResume(candidate.id);
+      if (!data?.url) throw new Error('Resume download URL missing.');
+      // Open in a new tab so the original profile stays in place.
+      // The signed URL points at the same API host so the browser
+      // will respect the bucket's Content-Disposition: attachment.
+      window.open(data.url, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      setDownloadError(
+        err?.httpStatus === 404
+          ? 'This candidate has not uploaded a resume yet.'
+          : (err?.message || 'Could not start the resume download.')
+      );
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -133,28 +161,50 @@ export default function CandidateDetail() {
               </div>
             </div>
             {/*
-              * Contact CTA — only renders for employer viewers. Backend
-              * decorates `c.email` for the employer role; falls back to
-              * an alert when email isn't available so the button never
-              * silently misfires. A proper in-app messaging flow can
-              * swap this `mailto:` for the chat surface later.
+              * Employer-only action cluster: Contact + Download
+              * resume. Contact uses the email the backend decorated
+              * onto the response; Download asks the backend for a
+              * short-lived signed URL (the storage path itself never
+              * reaches the browser) and opens it in a new tab.
+              *
+              * Visibility:
+              *   - Contact     → employer viewer only
+              *   - Download    → employer viewer only AND candidate
+              *                   has a resume on file (server reports
+              *                   `c.has_resume` for employer viewers)
               */}
             {isEmployer && (
               <div className="jd-hero-actions">
-                <button
-                  type="button"
-                  className="btn btn-coral jd-contact-btn"
-                  onClick={() => {
-                    if (!c.email) {
-                      window.alert(`No contact email available for ${c.full_name}.`);
-                      return;
-                    }
-                    const subject = `MatchHire: A role at our company`;
-                    window.location.href = `mailto:${c.email}?subject=${encodeURIComponent(subject)}`;
-                  }}
-                >
-                  Contact
-                </button>
+                <div className="jd-action-row">
+                  <button
+                    type="button"
+                    className="btn btn-coral jd-contact-btn"
+                    onClick={() => {
+                      if (!c.email) {
+                        window.alert(`No contact email available for ${c.full_name}.`);
+                        return;
+                      }
+                      const subject = `MatchHire: A role at our company`;
+                      window.location.href = `mailto:${c.email}?subject=${encodeURIComponent(subject)}`;
+                    }}
+                  >
+                    Contact
+                  </button>
+                  {c.has_resume && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost jd-resume-btn"
+                      onClick={handleDownloadResume}
+                      disabled={downloading}
+                      aria-busy={downloading}
+                    >
+                      {downloading ? 'Preparing…' : 'Download Resume ↓'}
+                    </button>
+                  )}
+                </div>
+                {downloadError && (
+                  <div role="status" className="jd-action-error">{downloadError}</div>
+                )}
               </div>
             )}
           </div>

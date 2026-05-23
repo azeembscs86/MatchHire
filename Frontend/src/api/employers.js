@@ -51,4 +51,14 @@ export const employersApi = {
   recommendedCandidates(body = {}) {
     return call(api.post('/employers/recommended-candidates', body));
   },
+
+  /**
+   * Request a short-lived signed URL for a candidate's resume.
+   * Backend enforces role=employer + candidate-is-public + has a
+   * resume on file. Caller opens the URL directly — the storage
+   * path itself never reaches the browser.
+   */
+  downloadCandidateResume(candidateId) {
+    return call(api.post(`/employers/candidates/${candidateId}/resume/download`));
+  },
 };
