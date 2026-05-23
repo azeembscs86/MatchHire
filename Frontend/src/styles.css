@@ -273,6 +273,14 @@
    * before the heart + bookmark icons) — see `.featured-badge` below.
    */
   .job-head{display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;padding-right:84px}
+  /* Featured cards reserve extra room on the right so the bigger
+     action cluster (Featured pill + heart + bookmark) doesn't tuck
+     under the company name / location. On narrow widths the cluster
+     wraps via `flex-wrap` and we step the padding back down. */
+  .job-card.featured .job-head{padding-right:172px}
+  @media (max-width:640px){
+    .job-card.featured .job-head{padding-right:84px}
+  }
   /* Featured chip now lives in the inline trust row so we no longer
    * need to reserve extra width in the head row for it. */
   .job-head-text{min-width:0;flex:1}
@@ -486,15 +494,41 @@
    * second line on narrow widths so the badge never pushes the icons
    * off the edge.
    */
+  /*
+   * Top-right action cluster:  [ Featured? ]  [ ♥ ]  [ ⌘ ]
+   *
+   * Flex row anchored to the card's top-right corner. `flex-wrap`
+   * lets the cluster spill to a second line on narrow widths (the
+   * Featured pill drops above the icons so the icons keep their
+   * tap-target height). `max-width` reserves room on the left for
+   * the company logo + title which both have matching `padding-right`
+   * baked into the head row.
+   */
   .job-card-actions{
     position:absolute;top:12px;right:12px;z-index:3;
     display:flex;align-items:center;justify-content:flex-end;gap:6px;
+    max-width:calc(100% - 76px);
+    flex-wrap:wrap;row-gap:6px;
   }
   /*
-   * Legacy `.featured-badge` chip kept for back-compat. The current
-   * design renders Featured inside the inline `.trust-row` near the
-   * title — see `.trust-feat` above.
+   * Featured pill — lives inline with the heart + bookmark icons.
+   * Same height (~28px) as the icon buttons so the cluster reads as
+   * one balanced row. Coral tinted background with a soft border so
+   * the badge feels like a label, not a clickable control.
+   *
+   * `.featured-badge` is retained below as a back-compat alias for
+   * any cached HTML or external embeds still referencing the old
+   * class; new code should use `.featured-pill`.
    */
+  .featured-pill{
+    display:inline-flex;align-items:center;gap:4px;
+    height:28px;padding:0 10px;border-radius:100px;
+    font-size:11px;font-weight:600;letter-spacing:.02em;
+    color:var(--coral-deep,#C73E1D);
+    background:rgba(232,93,60,.12);
+    border:1px solid rgba(232,93,60,.22);
+    line-height:1;white-space:nowrap;flex-shrink:0;
+  }
   .featured-badge{
     display:inline-flex;align-items:center;height:24px;
     padding:0 9px;border-radius:6px;
@@ -530,6 +564,7 @@
     padding:14px 16px;border-radius:12px;
   }
   .job-card-row .job-head{margin-bottom:6px;padding-right:74px}
+  .job-card-row.featured .job-head{padding-right:160px}
   .job-card-row .job-logo{width:36px;height:36px;font-size:15px}
   .job-card-row .job-title{font-size:15.5px;min-height:0;margin-bottom:6px}
   .job-card-row .job-meta-row{margin-bottom:6px}

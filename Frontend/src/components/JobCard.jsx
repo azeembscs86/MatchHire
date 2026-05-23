@@ -148,13 +148,17 @@ function WhyRecommended({ reasons = [], missing = [] }) {
 }
 
 /**
- * Inline trust badges row — Featured / Remote / Global remote /
- * Closing soon. Only renders when at least one badge has data, so
- * cards with nothing to flag stay clean.
+ * Inline trust badges row — Remote / Global remote / Closing soon.
+ *
+ * The Featured badge used to live in this row but moved into the
+ * top-right action cluster (next to the heart + bookmark icons) so
+ * the most prominent flag sits at eye level with the actions a
+ * candidate is about to take. This row only renders when at least
+ * one of the remaining flags applies, keeping the card clean for
+ * unflagged roles.
  */
-function TrustBadges({ job, featured }) {
+function TrustBadges({ job }) {
   const badges = [];
-  if (featured && job.featured) badges.push({ key: 'feat', cls: 'feat', label: 'Featured' });
   if (job.isGlobalRemote) badges.push({ key: 'gr', cls: 'remote', label: 'Global remote' });
   else if (/remote/i.test(job.loc || '')) badges.push({ key: 'rm', cls: 'remote', label: 'Remote' });
   if (job.closingSoon && !job.isExpired) badges.push({ key: 'cs', cls: 'soon', label: job.deadline || 'Closing soon' });
@@ -212,12 +216,22 @@ export default function JobCard({
     <div className={`job-card-wrapper${isRow ? ' job-card-wrapper-row' : ''}`}>
       <div {...rowAttrs}>
         {/*
-          * Top-right action cluster: heart + bookmark. Trust badges
-          * (Featured / Remote / Closing soon) live in their own row
-          * inside the card body so the cluster never wraps and the
-          * icons stay flush with the top-right corner.
+          * Top-right action cluster: [ Featured? ]  [ ♥ ]  [ ⌘ ].
+          *
+          * Featured sits BEFORE the icons (not after) so the eye lands
+          * on it on the way in to tap heart / bookmark. The badge is a
+          * non-interactive `<span>` — only the heart and bookmark are
+          * keyboard-focusable, and both `stopPropagation()` so the
+          * whole-card click never fires.
+          *
+          * On narrow widths the row wraps via `flex-wrap`; the badge
+          * collapses to a second line above the icons so it never
+          * pushes the icons off the edge.
           */}
         <div className="job-card-actions" aria-label="Card actions">
+          {featured && job.featured && (
+            <span className="featured-pill" aria-label="Featured job">★ Featured</span>
+          )}
           <button
             className={`job-icon-btn${saved ? ' is-active' : ''}`}
             onClick={(e) => { e.stopPropagation(); toggleSave(job.id); }}
@@ -251,7 +265,7 @@ export default function JobCard({
         <div className="job-title text-clamp-2" title={job.title}>{job.title}</div>
 
         {/* Trust badges row — only renders when at least one badge applies. */}
-        <TrustBadges job={job} featured={featured} />
+        <TrustBadges job={job} />
 
         {/*
           * Match badge — only when a score exists (signed-in candidate
