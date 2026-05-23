@@ -17,6 +17,9 @@
     "seed:industries:rollback": "node src/database/seed.industries.js rollback",
     "seed:expand": "node src/database/seed.expand.js",
     "seed:skills": "node src/database/seed.skills.js",
+    "seed:skill-coverage": "node src/database/seed.skill-coverage.js",
+    "seed:skill-coverage:rollback": "node src/database/seed.skill-coverage.js rollback",
+    "seed:skill-coverage:verify": "node src/database/seed.skill-coverage.js verify",
     "docs": "node src/docs/swagger.js",
     "lint": "eslint src",
     "test": "jest --passWithNoTests"
