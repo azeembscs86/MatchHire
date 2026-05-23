@@ -208,8 +208,16 @@
    * still hits 100% height inside its wrapper for equal-height tiles.
    */
   .jobs-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;align-items:start}
+  /*
+   * Wide-desktop fullbleed grids (Home, Favorites, SavedJobs, JobDetail
+   * recommendations) get a third column so the card density matches
+   * the rest of the site. The Jobs page renders inside `.browse-layout`
+   * which already has a 264px sidebar eating that space, so we keep
+   * its grid at 2 columns and let the card breathe.
+   */
   @media (min-width:1280px){
     .jobs-grid{grid-template-columns:repeat(3,1fr)}
+    .browse-layout .jobs-grid{grid-template-columns:repeat(2,1fr)}
   }
 
   /*

@@ -188,26 +188,15 @@ const DEFAULT_FILTERS = {
 /* ---------- Helpers -------------------------------------------------------- */
 
 /*
- * The legacy floating `AILabel` ("✨ Excellent match" at top-left) is
- * retired in the Nov 2026 redesign — JobCard's new tiered MatchBadge
- * carries the same signal ("Strong fit" / "Good fit") in a place that
- * doesn't collide with the company logo on the compact card layout.
- *
- * Missing skills also moved INSIDE the card via JobCard's
- * `WhyRecommended` ✓/✖ checklist, so this wrapper just forwards
- * straight through.
+ * The legacy floating `AILabel` ("✨ Excellent match" at top-left) and
+ * the bespoke `MatchCard` wrapper are retired — JobCard's tiered
+ * MatchBadge carries the same signal in a place that doesn't collide
+ * with the company logo, and missing skills now render inside the
+ * card via its `WhyRecommended` ✓/✖ checklist. The Jobs feed now
+ * renders `<JobCard featured />` straight into the same `.jobs-grid`
+ * container the Home page uses, so the card looks identical on both
+ * surfaces.
  */
-function MatchCard({ job, onApply, applyingId, applied }) {
-  return (
-    <JobCard
-      job={job}
-      featured
-      onApply={onApply}
-      applyingId={applyingId}
-      applied={applied}
-    />
-  );
-}
 
 /* ---------- Page ----------------------------------------------------------- */
 
@@ -560,7 +549,7 @@ export default function Jobs() {
 
           {loading
             ? (
-              <div className="jobs-list" aria-busy="true">
+              <div className="jobs-grid" aria-busy="true">
                 {Array.from({ length: 6 }).map((_, i) => <JobSkeleton key={i} />)}
               </div>
             )
@@ -587,11 +576,12 @@ export default function Jobs() {
                   />
                 )
                 : (
-                  <div className="jobs-list">
+                  <div className="jobs-grid">
                     {data.records.map((j) => (
-                      <MatchCard
+                      <JobCard
                         key={j.id}
                         job={j}
+                        featured
                         onApply={isCandidate ? handleApply : undefined}
                         applyingId={applyingId}
                       />
