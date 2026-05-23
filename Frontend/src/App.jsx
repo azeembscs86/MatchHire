@@ -28,7 +28,9 @@ import Home from './pages/Home.jsx';
 import Jobs from './pages/Jobs.jsx';
 import JobDetail from './pages/JobDetail.jsx';
 import Companies from './pages/Companies.jsx';
+import CompanyDetail from './pages/CompanyDetail.jsx';
 import Candidates from './pages/Candidates.jsx';
+import CandidateDetail from './pages/CandidateDetail.jsx';
 import Profile from './pages/Profile.jsx';
 import ReviewProfile from './pages/ReviewProfile.jsx';
 import Onboarding from './pages/Onboarding.jsx';
@@ -55,7 +57,13 @@ export default function App() {
             (Apply / Save / Favourite) but anyone can view the posting. */}
         <Route path="/jobs/:id" element={<JobDetail />} />
         <Route path="/companies" element={<Companies />} />
+        {/* Public company / candidate detail pages — destination for
+            the whole-card click on the discovery grids. Anyone can
+            view; the candidate profile is server-side gated to rows
+            with `is_public=1`. */}
+        <Route path="/companies/:id" element={<CompanyDetail />} />
         <Route path="/candidates" element={<Candidates />} />
+        <Route path="/candidates/:id" element={<CandidateDetail />} />
         <Route path="/employer-onboarding" element={<EmployerOnboarding />} />
 
         {/* Email verification (public — no token required to view the screens) */}

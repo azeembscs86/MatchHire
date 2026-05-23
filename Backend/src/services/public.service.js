@@ -17,6 +17,7 @@
 const jobRepo = require('../repositories/job.repository');
 const companyRepo = require('../repositories/company.repository');
 const candidateRepo = require('../repositories/candidate.repository');
+const candidateExperienceRepo = require('../repositories/candidateExperience.repository');
 const metaRepo = require('../repositories/meta.repository');
 const matchService = require('./match.service');
 const cache = require('../cache/cache.helper');
@@ -142,8 +143,14 @@ async function getCandidate(id) {
   if (cached) return cached;
   const candidate = await candidateRepo.getPublicCandidate(id);
   if (!candidate) throw new AppError('Candidate not found', 404);
-  await cache.setCache(key, candidate, cache.TTL.CANDIDATE_DETAIL);
-  return candidate;
+  // Enrich with normalised work-experience rows so the public detail
+  // page can render the experience timeline without a second round-
+  // trip. Errors here are non-fatal — we'd rather show the profile
+  // without experience than 500 the whole page.
+  const experiences = await candidateExperienceRepo.listForUser(id).catch(() => []);
+  const data = { ...candidate, experiences };
+  await cache.setCache(key, data, cache.TTL.CANDIDATE_DETAIL);
+  return data;
 }
 
 async function categories() {
