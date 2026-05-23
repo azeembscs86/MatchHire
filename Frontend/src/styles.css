@@ -660,23 +660,30 @@
   }
   .cand-card-actions .btn{flex:1;justify-content:center}
 
-  /* Hero "Contact" + "Download resume" buttons on CandidateDetail
-     (employer only). Sits on the far right of the hero; on mobile
-     the cluster drops below the meta-chip row and both buttons go
-     full-width. */
+  /*
+   * Hero "Contact" + "Download Resume" buttons on CandidateDetail
+   * (employer only). Both share `.btn-coral` so they read as one
+   * paired primary cluster — same background, same hover lift,
+   * same height, same border-radius. The shared `.jd-action-btn`
+   * rule below pins height + min-width so the pair stays balanced
+   * even when one label is much longer than the other.
+   */
   .jd-hero-actions{margin-left:auto;flex-shrink:0;min-width:0}
-  .jd-action-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .jd-contact-btn{min-width:120px;justify-content:center}
-  .jd-resume-btn{min-width:160px;justify-content:center}
+  .jd-action-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .jd-contact-btn,
+  .jd-resume-btn{
+    min-width:170px;height:44px;justify-content:center;
+    font-weight:500;border-radius:10px;
+  }
   .jd-action-error{
     margin-top:8px;font-size:12px;color:var(--coral-deep,#C73E1D);
     background:rgba(232,93,60,.08);border:1px solid rgba(232,93,60,.22);
-    padding:6px 10px;border-radius:8px;max-width:320px;
+    padding:6px 10px;border-radius:8px;max-width:340px;
   }
   @media (max-width:640px){
     .jd-hero-actions{margin-left:0;width:100%}
     .jd-action-row{width:100%}
-    .jd-contact-btn,.jd-resume-btn{width:100%}
+    .jd-contact-btn,.jd-resume-btn{width:100%;min-width:0}
     .jd-action-error{max-width:none}
   }
   .cand-avatar{width:72px;height:72px;border-radius:50%;display:grid;place-items:center;font-family:'Fraunces',serif;font-size:28px;font-weight:500;margin-bottom:18px;border:2px solid var(--line)}

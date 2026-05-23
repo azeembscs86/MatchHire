@@ -164,9 +164,15 @@ async function getCandidate(id, viewer = null) {
   if (viewer?.role === 'employer') {
     const [row, resume] = await Promise.all([
       db.queryOne(`SELECT email FROM users WHERE id = ? LIMIT 1`, [Number(id)]),
+      // `has_resume` is true ONLY when the candidate has promoted
+      // an upload to primary — secondary uploads stay private and
+      // the employer download endpoint refuses to serve them.
+      // Aligning this flag with the download contract means the
+      // button never appears for a candidate whose download would
+      // fail with "Primary resume is not available."
       db.queryOne(
         `SELECT 1 AS one FROM resumes
-         WHERE candidate_user_id = ? AND deleted_at IS NULL
+         WHERE candidate_user_id = ? AND is_primary = 1 AND deleted_at IS NULL
          LIMIT 1`,
         [Number(id)]
       ),

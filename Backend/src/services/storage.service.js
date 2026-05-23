@@ -84,25 +84,37 @@ async function remove(storagePath) {
  * prepending an absolute origin doesn't invalidate the signature
  * verification in `verifySignedUrl()`.
  */
-function signUrl(storagePath, ttlSeconds = 600) {
+/**
+ * @param {string} storagePath
+ * @param {number} [ttlSeconds=600]
+ * @param {object} [opts]
+ * @param {string} [opts.attachmentName]   When set, the signed URL
+ *   carries a `dl=<name>` query param the file route honours by
+ *   serving the response with `Content-Disposition: attachment;
+ *   filename="<name>"`. The name is part of the HMAC payload so a
+ *   tampered `dl=` invalidates the signature.
+ */
+function signUrl(storagePath, ttlSeconds = 600, opts = {}) {
   const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
-  const sig = crypto
-    .createHmac('sha256', SIGNING_KEY)
-    .update(`${storagePath}:${exp}`)
-    .digest('hex');
-  // storagePath uses POSIX separators in the URL; mount path is added by the route.
+  const attachmentName = opts?.attachmentName || null;
+  // Old payload format (no dl) stays the canonical form so previously
+  // issued URLs still verify after this change. When an attachment
+  // name is supplied we extend the payload with `:dl=<name>`.
+  const payload = attachmentName
+    ? `${storagePath}:${exp}:dl=${attachmentName}`
+    : `${storagePath}:${exp}`;
+  const sig = crypto.createHmac('sha256', SIGNING_KEY).update(payload).digest('hex');
   const posix = storagePath.split(path.sep).join('/');
-  return `${config.apiPublicUrl}${config.apiPrefix}/files/${posix}?exp=${exp}&sig=${sig}`;
+  const base = `${config.apiPublicUrl}${config.apiPrefix}/files/${posix}?exp=${exp}&sig=${sig}`;
+  return attachmentName ? `${base}&dl=${encodeURIComponent(attachmentName)}` : base;
 }
 
 /** Reject expired, missing, or tampered signatures. */
-function verifySignedUrl(storagePath, exp, sig) {
+function verifySignedUrl(storagePath, exp, sig, dl = null) {
   if (!exp || !sig) return false;
   if (Number(exp) * 1000 < Date.now()) return false;
-  const expected = crypto
-    .createHmac('sha256', SIGNING_KEY)
-    .update(`${storagePath}:${exp}`)
-    .digest('hex');
+  const payload = dl ? `${storagePath}:${exp}:dl=${dl}` : `${storagePath}:${exp}`;
+  const expected = crypto.createHmac('sha256', SIGNING_KEY).update(payload).digest('hex');
   try { return crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex')); }
   catch { return false; }
 }

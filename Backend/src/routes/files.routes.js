@@ -23,15 +23,24 @@ const router = express.Router();
 
 router.get('/:bucket/:filename', (req, res) => {
   const { bucket, filename } = req.params;
-  const { exp, sig } = req.query;
+  const { exp, sig, dl } = req.query;
 
   const storagePath = path.join(bucket, filename);
-  const ok = storage.verifySignedUrl(storagePath, exp, sig);
+  // `dl` (when present) is part of the HMAC payload, so a tampered
+  // attachment-name string fails verification.
+  const ok = storage.verifySignedUrl(storagePath, exp, sig, dl || null);
   if (!ok) return response.forbidden(res, 'Signed URL invalid or expired');
   if (!storage.exists(storagePath)) return response.notFound(res, 'File not found');
 
+  // When the caller signed the URL with an attachment name, force the
+  // browser to download instead of inline-render and surface a
+  // human-readable filename. Otherwise we keep the legacy inline
+  // behaviour so existing callers (resume preview, etc.) still work.
+  const disposition = dl
+    ? `attachment; filename="${String(dl).replace(/"/g, '')}"`
+    : 'inline';
   return res.sendFile(storage.absolutePath(storagePath), {
-    headers: { 'Content-Disposition': 'inline' },
+    headers: { 'Content-Disposition': disposition },
   });
 });
 

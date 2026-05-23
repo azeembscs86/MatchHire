@@ -62,9 +62,12 @@ export default function CandidateDetail() {
       // will respect the bucket's Content-Disposition: attachment.
       window.open(data.url, '_blank', 'noopener,noreferrer');
     } catch (err) {
+      // Surface the server's wording verbatim on 404 (covers both
+      // "candidate not found" and the spec-mandated "Primary resume
+      // is not available."). Generic fallback for everything else.
       setDownloadError(
         err?.httpStatus === 404
-          ? 'This candidate has not uploaded a resume yet.'
+          ? (err.message || 'Primary resume is not available.')
           : (err?.message || 'Could not start the resume download.')
       );
     } finally {
@@ -193,7 +196,7 @@ export default function CandidateDetail() {
                   {c.has_resume && (
                     <button
                       type="button"
-                      className="btn btn-ghost jd-resume-btn"
+                      className="btn btn-coral jd-resume-btn"
                       onClick={handleDownloadResume}
                       disabled={downloading}
                       aria-busy={downloading}
