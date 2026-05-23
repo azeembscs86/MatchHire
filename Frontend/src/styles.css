@@ -207,17 +207,22 @@
    * shorter card isn't stretched by a tall neighbour; the card itself
    * still hits 100% height inside its wrapper for equal-height tiles.
    */
-  .jobs-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;align-items:start}
   /*
-   * Wide-desktop fullbleed grids (Home, Favorites, SavedJobs, JobDetail
-   * recommendations) get a third column so the card density matches
-   * the rest of the site. The Jobs page renders inside `.browse-layout`
-   * which already has a 264px sidebar eating that space, so we keep
-   * its grid at 2 columns and let the card breathe.
+   * Auto-fit grid — cards land at the same width regardless of which
+   * page they're on. Home (fullbleed container) and Jobs (which has a
+   * 264px filter sidebar) used to render visibly different card
+   * widths from the same component; auto-fit + minmax lets the
+   * browser compute the same column count anywhere the container is
+   * wide enough, so the card looks identical side-by-side.
+   *
+   * 340px floor → 2 columns at ~720px container width, 3 at ~1080+.
+   * `min(100%, 340px)` keeps the floor honest on very narrow surfaces
+   * (mobile sidebars, embedded rails) without forcing a horizontal
+   * scrollbar.
    */
-  @media (min-width:1280px){
-    .jobs-grid{grid-template-columns:repeat(3,1fr)}
-    .browse-layout .jobs-grid{grid-template-columns:repeat(2,1fr)}
+  .jobs-grid{
+    display:grid;gap:18px;align-items:start;
+    grid-template-columns:repeat(auto-fit, minmax(min(100%, 340px), 1fr));
   }
 
   /*
