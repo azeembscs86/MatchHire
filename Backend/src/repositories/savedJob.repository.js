@@ -65,9 +65,17 @@ async function exists(user_id, job_id) {
  */
 async function list(user_id, { page = 1, limit = 10, include_expired = false } = {}) {
   const offset = (page - 1) * limit;
+  // Two-layer expiry check:
+  //   - `sj.expires_at` is the deadline-at-save-time snapshot.
+  //   - `j.application_deadline` is the live deadline (employer may
+  //     have edited it after the save). Filtering on both means a
+  //     candidate can't see a saved row that points to a now-expired
+  //     job even if the snapshot was extended.
   const expiryClause = include_expired
     ? ''
-    : 'AND (sj.expires_at IS NULL OR sj.expires_at > NOW())';
+    : `AND (sj.expires_at IS NULL OR sj.expires_at > NOW())
+       AND (j.application_deadline IS NULL OR j.application_deadline > NOW())
+       AND j.status = 'open' AND c.status = 'active'`;
 
   const rows = await db.query(
     `SELECT sj.id AS saved_id, sj.saved_at, sj.expires_at, sj.status AS saved_status,
@@ -87,6 +95,7 @@ async function list(user_id, { page = 1, limit = 10, include_expired = false } =
   const countRow = await db.queryOne(
     `SELECT COUNT(*) AS total FROM saved_jobs sj
      INNER JOIN jobs j ON j.id = sj.job_id AND j.deleted_at IS NULL
+     INNER JOIN companies c ON c.id = j.company_id
      WHERE sj.candidate_user_id = ? AND sj.status = 'active' ${expiryClause}`,
     [user_id]
   );

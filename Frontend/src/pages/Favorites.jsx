@@ -20,7 +20,7 @@ import { useFavorites } from '../context/FavoritesContext.jsx';
 import JobCard from '../components/JobCard.jsx';
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.jsx';
 import { candidatesApi, publicApi } from '../api/index.js';
-import { toJobCardShape } from '../api/adapters.js';
+import { filterActiveJobs } from '../api/adapters.js';
 
 export default function Favorites() {
   const { savedJobs: favoriteIds } = useFavorites();
@@ -47,10 +47,10 @@ export default function Favorites() {
           publicApi.featuredJobs(6).catch(() => ({ records: [] })),
         ]);
         if (cancelled) return;
-        setFavs((favData?.records || []).map(toJobCardShape).filter(Boolean));
+        setFavs(filterActiveJobs(favData?.records));
         const favIds = new Set((favData?.records || []).map((r) => Number(r.id)));
         const similarRaw = (simData?.records || []).filter((r) => !favIds.has(Number(r.id)));
-        setSimilar(similarRaw.map(toJobCardShape).filter(Boolean).slice(0, 3));
+        setSimilar(filterActiveJobs(similarRaw).slice(0, 3));
       } catch (err) {
         if (!cancelled) setError(err);
       } finally {

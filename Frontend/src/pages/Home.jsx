@@ -21,7 +21,7 @@ import JobCard from '../components/JobCard.jsx';
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.jsx';
 import { homeApi } from '../api/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
-import { toJobCardShape } from '../api/adapters.js';
+import { filterActiveJobs } from '../api/adapters.js';
 import { useApplyToJob } from '../hooks/useApplyToJob.js';
 
 function fmt(n) {
@@ -252,9 +252,13 @@ export default function Home() {
   const hero = payload?.hero || { openJobs: null, companies: null, candidates: null };
   const categories = payload?.categories || [];
   const topCompanies = payload?.topCompanies || [];
-  const latestJobs = (payload?.latestJobs || []).map(toJobCardShape).filter(Boolean);
-  const recommended = (payload?.recommendedJobs || []).map(toJobCardShape).filter(Boolean);
-  const latestMatched = (payload?.latestMatchedJobs || []).map(toJobCardShape).filter(Boolean);
+  // Defence-in-depth: backend already excludes expired jobs from these
+  // candidate-facing rails, but `filterActiveJobs` doubles as a safety
+  // net so a stale cache or misbehaving endpoint can never put an
+  // expired card in front of a candidate.
+  const latestJobs = filterActiveJobs(payload?.latestJobs);
+  const recommended = filterActiveJobs(payload?.recommendedJobs);
+  const latestMatched = filterActiveJobs(payload?.latestMatchedJobs);
   const aiSuggestions = payload?.aiSuggestions || null;
   const cta = payload?.cta || null;
   const profileCompletion = payload?.viewer?.profileCompletion ?? null;

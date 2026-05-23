@@ -120,30 +120,43 @@ async function rememberCache(key, ttlSeconds, loader) {
   return value;
 }
 
+/*
+ * Cache namespace version. Bump this whenever a backend query is
+ * changed in a way that would make previously-cached payloads
+ * incorrect (e.g. adding a new WHERE clause to a list query). The
+ * old entries TTL out on their own; the version bump just guarantees
+ * the next read fetches the corrected data immediately.
+ *
+ * v2 — Nov 2026: candidate-facing job lists now exclude expired
+ *               postings server-side. Bumping the key prefix forces
+ *               the new filter to apply on the very next request.
+ */
+const CACHE_VERSION = 'v2';
+
 const Keys = {
-  jobsList: (qs = '') => `jobs:list:${qs}`,
-  jobDetail: (id) => `jobs:detail:${id}`,
-  companiesList: (qs = '') => `companies:list:${qs}`,
-  companyDetail: (id) => `companies:detail:${id}`,
-  candidatesList: (qs = '') => `candidates:list:${qs}`,
-  candidateDetail: (id) => `candidates:detail:${id}`,
-  topCandidates: () => `candidates:top`,
-  categories: () => `meta:categories`,
-  skills: () => `meta:skills`,
-  dashboardStats: (scope, id = 'all') => `dashboard:${scope}:${id}`,
+  jobsList: (qs = '') => `${CACHE_VERSION}:jobs:list:${qs}`,
+  jobDetail: (id) => `${CACHE_VERSION}:jobs:detail:${id}`,
+  companiesList: (qs = '') => `${CACHE_VERSION}:companies:list:${qs}`,
+  companyDetail: (id) => `${CACHE_VERSION}:companies:detail:${id}`,
+  candidatesList: (qs = '') => `${CACHE_VERSION}:candidates:list:${qs}`,
+  candidateDetail: (id) => `${CACHE_VERSION}:candidates:detail:${id}`,
+  topCandidates: () => `${CACHE_VERSION}:candidates:top`,
+  categories: () => `${CACHE_VERSION}:meta:categories`,
+  skills: () => `${CACHE_VERSION}:meta:skills`,
+  dashboardStats: (scope, id = 'all') => `${CACHE_VERSION}:dashboard:${scope}:${id}`,
 };
 
 const Patterns = {
-  allJobs: 'jobs:*',
-  jobDetail: (id) => `jobs:detail:${id}`,
-  jobsList: 'jobs:list:*',
-  allCompanies: 'companies:*',
-  companyDetail: (id) => `companies:detail:${id}`,
-  companiesList: 'companies:list:*',
-  allCandidates: 'candidates:*',
-  candidateDetail: (id) => `candidates:detail:${id}`,
-  candidatesList: 'candidates:list:*',
-  dashboardStats: (scope) => `dashboard:${scope}:*`,
+  allJobs: `${CACHE_VERSION}:jobs:*`,
+  jobDetail: (id) => `${CACHE_VERSION}:jobs:detail:${id}`,
+  jobsList: `${CACHE_VERSION}:jobs:list:*`,
+  allCompanies: `${CACHE_VERSION}:companies:*`,
+  companyDetail: (id) => `${CACHE_VERSION}:companies:detail:${id}`,
+  companiesList: `${CACHE_VERSION}:companies:list:*`,
+  allCandidates: `${CACHE_VERSION}:candidates:*`,
+  candidateDetail: (id) => `${CACHE_VERSION}:candidates:detail:${id}`,
+  candidatesList: `${CACHE_VERSION}:candidates:list:*`,
+  dashboardStats: (scope) => `${CACHE_VERSION}:dashboard:${scope}:*`,
 };
 
 module.exports = {

@@ -85,7 +85,9 @@ async function listPublic({ keyword, industry, location, is_featured, page = 1, 
   const rows = await db.query(
     `SELECT c.id, c.name, c.slug, c.tagline, c.description, c.industry, c.size,
             c.website, c.logo_url, c.location, c.country, c.is_featured, c.verification_status,
-            (SELECT COUNT(*) FROM jobs j WHERE j.company_id = c.id AND j.status = 'open' AND j.deleted_at IS NULL) AS open_jobs
+            (SELECT COUNT(*) FROM jobs j WHERE j.company_id = c.id
+              AND j.status = 'open' AND j.deleted_at IS NULL AND j.admin_status = 'approved'
+              AND (j.application_deadline IS NULL OR j.application_deadline > NOW())) AS open_jobs
      FROM companies c
      WHERE ${where.join(' AND ')}
      ORDER BY c.is_featured DESC, c.created_at DESC
@@ -104,7 +106,9 @@ async function publicDetail(id) {
     `SELECT c.id, c.name, c.slug, c.tagline, c.description, c.industry, c.size,
             c.website, c.logo_url, c.cover_url, c.location, c.country, c.founded_year,
             c.is_featured, c.verification_status,
-            (SELECT COUNT(*) FROM jobs j WHERE j.company_id = c.id AND j.status = 'open' AND j.deleted_at IS NULL) AS open_jobs
+            (SELECT COUNT(*) FROM jobs j WHERE j.company_id = c.id
+              AND j.status = 'open' AND j.deleted_at IS NULL AND j.admin_status = 'approved'
+              AND (j.application_deadline IS NULL OR j.application_deadline > NOW())) AS open_jobs
      FROM companies c
      WHERE c.id = ? AND c.status = 'active' AND c.deleted_at IS NULL LIMIT 1`,
     [id]

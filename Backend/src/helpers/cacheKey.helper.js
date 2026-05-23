@@ -33,7 +33,14 @@
 
 const crypto = require('node:crypto');
 
-const PREFIX = 'mh';
+/*
+ * `mh-v2` — bumped Nov 2026 when candidate-facing job lists started
+ * filtering expired postings server-side. The version is part of every
+ * cache key so previously-cached payloads (which still contained
+ * expired roles) miss and rebuild against the new filters. Bump again
+ * the next time a query change would make old cache entries wrong.
+ */
+const PREFIX = 'mh-v2';
 
 function normalise(obj) {
   if (obj == null) return '';

@@ -115,7 +115,14 @@ async function getCompany(id) {
   if (cached) return cached;
   const company = await companyRepo.publicDetail(id);
   if (!company) throw new AppError('Company not found', 404);
-  const jobs = await jobRepo.listByCompany(id, { page: 1, limit: 10, status: 'open' });
+  // Public company detail — candidates should only see jobs they can
+  // still apply to. `exclude_expired:true` makes `listByCompany` filter
+  // out closed-deadline / paused-company postings without affecting the
+  // employer-management surface (which calls the same function without
+  // the flag and still sees everything).
+  const jobs = await jobRepo.listByCompany(id, {
+    page: 1, limit: 10, status: 'open', exclude_expired: true,
+  });
   const data = { ...company, jobs: jobs.rows };
   await cache.setCache(key, data, cache.TTL.COMPANY_DETAIL);
   return data;

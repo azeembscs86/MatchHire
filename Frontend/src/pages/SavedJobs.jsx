@@ -25,6 +25,11 @@ import { toJobCardShape } from '../api/adapters.js';
 import { useSavedJobs } from '../context/SavedJobsContext.jsx';
 import JobCard from '../components/JobCard.jsx';
 
+// SavedJobs joins the `saved_jobs` row's metadata (`expires_at`,
+// `saved_at`) onto each card shape, so we can't use the generic
+// `filterActiveJobs` helper — it would lose those fields. We
+// reproduce the same active-only filter inline below.
+
 export default function SavedJobs() {
   const { savedIds } = useSavedJobs();
   const [saved, setSaved] = useState([]);
@@ -47,11 +52,18 @@ export default function SavedJobs() {
       try {
         const data = await candidatesApi.savedJobs.list({ page: 1, limit: 100 });
         if (cancelled) return;
-        const rows = (data?.records || []).map((r) => ({
-          ...toJobCardShape(r),
-          expires_at: r.expires_at || null,
-          saved_at: r.saved_at,
-        })).filter(Boolean);
+        // Map to JobCard shape and merge the saved_jobs row's own
+        // metadata. The `.filter()` drops anything the adapter
+        // couldn't shape AND any row whose underlying job is expired,
+        // closed, or whose company went inactive — a backstop in case
+        // a stale cache leaks one through.
+        const rows = (data?.records || [])
+          .map((r) => {
+            const shape = toJobCardShape(r);
+            if (!shape) return null;
+            return { ...shape, expires_at: r.expires_at || null, saved_at: r.saved_at };
+          })
+          .filter((r) => r && !r.isExpired);
         setSaved(rows);
       } catch (err) {
         if (!cancelled) setError(err);

@@ -27,6 +27,34 @@ function slugify(s) {
     .replace(/-+/g, '-');
 }
 
+/**
+ * Reusable predicate for "a job a candidate can still see and act on".
+ *
+ *   - status='open'         posting is live (not draft / closed / archived)
+ *   - admin_status='approved'    moderation cleared
+ *   - deleted_at IS NULL    not soft-deleted
+ *   - company c.status='active'  the employer is still active
+ *   - application_deadline IS NULL OR > NOW()  not past its deadline
+ *
+ * Every public / candidate-facing listing query (`listPublic`,
+ * `recommendedForUser`, `listLocationBased`, `findSimilar`, and the
+ * favorites + saved-jobs join queries) composes this fragment instead
+ * of hand-rolling its own copy. The admin and employer-management
+ * paths intentionally do NOT use this — they need to see expired
+ * postings to manage them.
+ *
+ * Returns an array of WHERE-clause strings that callers join with ' AND '.
+ */
+function activeJobWhere() {
+  return [
+    "j.status = 'open'",
+    "j.admin_status = 'approved'",
+    "j.deleted_at IS NULL",
+    "c.status = 'active'",
+    "(j.application_deadline IS NULL OR j.application_deadline > NOW())",
+  ];
+}
+
 function jobsListSelect() {
   return `j.id, j.company_id, j.category_id, j.title, j.slug, j.description,
           j.job_type, j.experience_level, j.location, j.city, j.country, j.country_id, j.timezone, j.is_remote,
@@ -135,15 +163,10 @@ async function findSimilar(anchorJobId, { candidate_user_id, limit = 6 } = {}) {
     }
   }
 
-  // WHERE clause.
-  const where = [
-    "j.status = 'open'",
-    "j.admin_status = 'approved'",
-    "j.deleted_at IS NULL",
-    "c.status = 'active'",
-    "j.id <> ?",
-    "(j.application_deadline IS NULL OR j.application_deadline > NOW())",
-  ];
+  // WHERE clause — `activeJobWhere()` covers status / moderation /
+  // soft-delete / company-active / expiry. We only have to add the
+  // "don't return the anchor row itself" constraint here.
+  const where = [...activeJobWhere(), "j.id <> ?"];
   const whereParams = [anchorJobId];
 
   if (candidate_user_id) {
@@ -222,7 +245,7 @@ async function listPublic(filters) {
     exclude_applied_for_user_id,
   } = filters;
 
-  const where = ["j.status = 'open'", "j.admin_status = 'approved'", "j.deleted_at IS NULL", "c.status = 'active'"];
+  const where = [...activeJobWhere()];
   const params = [];
 
   if (exclude_applied_for_user_id) {
@@ -277,10 +300,20 @@ async function listPublic(filters) {
   return { rows, total: Number(countRow?.total || 0) };
 }
 
-async function listByCompany(company_id, { page = 1, limit = 10, status }) {
+async function listByCompany(company_id, { page = 1, limit = 10, status, exclude_expired = false } = {}) {
   const where = ['j.company_id = ?', 'j.deleted_at IS NULL'];
   const params = [company_id];
   if (status) { where.push('j.status = ?'); params.push(status); }
+  // Public-facing callers (company detail page) pass `exclude_expired:
+  // true` so candidates never see a closed-deadline role on a company
+  // profile. Employer-management callers leave it false so the
+  // dashboard still surfaces expired postings for editing.
+  if (exclude_expired) {
+    where.push('c.status = \'active\'');
+    where.push('(j.application_deadline IS NULL OR j.application_deadline > NOW())');
+    where.push("j.status = 'open'");
+    where.push("j.admin_status = 'approved'");
+  }
   const offset = (page - 1) * limit;
   const rows = await db.query(
     `SELECT ${jobsListSelect()}
@@ -291,8 +324,13 @@ async function listByCompany(company_id, { page = 1, limit = 10, status }) {
      ORDER BY j.created_at DESC LIMIT ? OFFSET ?`,
     [...params, Number(limit), Number(offset)]
   );
+  // Count needs the companies join too so `c.status` resolves when
+  // `exclude_expired` is true. Cheap because the company FK is a
+  // primary key lookup.
   const countRow = await db.queryOne(
-    `SELECT COUNT(*) AS total FROM jobs j WHERE ${where.join(' AND ')}`,
+    `SELECT COUNT(*) AS total FROM jobs j
+     INNER JOIN companies c ON c.id = j.company_id
+     WHERE ${where.join(' AND ')}`,
     params
   );
   return { rows, total: Number(countRow?.total || 0) };
@@ -339,10 +377,11 @@ async function recommendedForUser(user_id, limit = 10) {
   // want to feed NOT EXISTS lands in a SELECT LIKE and the filter
   // silently no-ops.
   const scoreParams = [];
+  // Active-jobs predicate + exclude already-applied roles. The
+  // recommendations endpoint is candidate-facing so expired postings
+  // must never surface here.
   const where = [
-    "j.status = 'open'",
-    "j.admin_status = 'approved'",
-    "j.deleted_at IS NULL",
+    ...activeJobWhere(),
     `NOT EXISTS (SELECT 1 FROM applications a WHERE a.job_id = j.id AND a.candidate_user_id = ?)`,
   ];
   let scoreParts = ['0'];
@@ -407,7 +446,7 @@ async function listLocationBased({
   // hide jobs they've already applied to.
   exclude_applied_for_user_id,
 }) {
-  const where = ["j.status = 'open'", "j.admin_status = 'approved'", "j.deleted_at IS NULL", "c.status = 'active'"];
+  const where = [...activeJobWhere()];
   const params = [];
   if (exclude_applied_for_user_id) {
     where.push(`NOT EXISTS (
@@ -535,4 +574,5 @@ module.exports = {
   findSimilar,
   loadCandidateContext,
   totalCount,
+  activeJobWhere,
 };

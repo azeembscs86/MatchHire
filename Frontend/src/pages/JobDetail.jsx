@@ -39,7 +39,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { publicApi, candidatesApi } from '../api/index.js';
-import { toJobCardShape } from '../api/adapters.js';
+import { toJobCardShape, filterActiveJobs } from '../api/adapters.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useAuthModal } from '../context/AuthModalContext.jsx';
 import { useFavorites } from '../context/FavoritesContext.jsx';
@@ -148,7 +148,11 @@ export default function JobDetail() {
         setJob(detail);
         setHasApplied(!!detail?.is_applied);
         setApplicationStatus(detail?.application_status || null);
-        setSimilar((simResp?.records || []).map(toJobCardShape).filter(Boolean));
+        // Similar-jobs rail is candidate-facing — drop any expired
+        // postings client-side as a backstop. The hero/detail above
+        // can still render an expired anchor job (with the "no longer
+        // available" message) because it uses `toJobCardShape` directly.
+        setSimilar(filterActiveJobs(simResp?.records));
       } catch (err) {
         if (!cancelled) setError(err);
       } finally {
@@ -247,6 +251,30 @@ export default function JobDetail() {
         <div className="jd-breadcrumb">
           <Link to="/jobs">← All jobs</Link>
         </div>
+
+        {/*
+          * Expired hero banner. When a candidate lands on a direct URL
+          * for a job whose application deadline has passed, we surface
+          * a clean "no longer available" message at the top of the
+          * page and route them straight back to the active listings.
+          * The hero/details below still render (so the candidate
+          * understands what the role was), but every action button is
+          * already disabled by the `isExpired` check downstream.
+          */}
+        {isExpired && (
+          <div className="jd-unavailable" role="status" aria-live="polite">
+            <div className="jd-unavailable-icon" aria-hidden="true">⌛</div>
+            <div className="jd-unavailable-text">
+              <strong>This job is no longer available.</strong>
+              <p>
+                The application deadline has passed. Browse currently open roles
+                — your profile is already set up to match new postings as they
+                go live.
+              </p>
+            </div>
+            <Link to="/jobs" className="btn btn-coral">Browse active jobs →</Link>
+          </div>
+        )}
 
         {/* HERO */}
         <header className={`jd-hero${isExpired ? ' jd-hero-expired' : ''}`}>

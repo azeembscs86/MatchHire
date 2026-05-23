@@ -17,7 +17,7 @@ import { candidatesApi } from '../api/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { LoadingState, ErrorState } from '../components/AsyncState.jsx';
 import ProfileCompletionCard from '../components/ProfileCompletionCard.jsx';
-import { toJobCardShape } from '../api/adapters.js';
+import { filterActiveJobs } from '../api/adapters.js';
 import { useApplyToJob } from '../hooks/useApplyToJob.js';
 import JobCard from '../components/JobCard.jsx';
 
@@ -139,7 +139,9 @@ export default function DashboardCandidate() {
         if (cancelled) return;
         setStats(statsData || null);
         setApps(appsData?.records || []);
-        setMatches((matchesData?.records || []).map(toJobCardShape).filter(Boolean));
+        // Dashboard "New matches" rail — drop expired postings so the
+        // candidate never sees a match they can't act on.
+        setMatches(filterActiveJobs(matchesData?.records));
         setCompletion(completionData || null);
         // Non-blocking — banner just hides if this fails.
         candidatesApi.onboarding.state()

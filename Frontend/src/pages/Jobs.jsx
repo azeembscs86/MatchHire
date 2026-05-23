@@ -256,7 +256,11 @@ export default function Jobs() {
             v.publishedAt = r.published_at || r.created_at || null;
             return v;
           })
-          .filter(Boolean);
+          // Defence-in-depth: backend already filters expired postings
+          // out of the smart-jobs endpoint, but we double-check on the
+          // client so a stale cache hit can never paint an expired
+          // card in front of a candidate.
+          .filter((j) => j && !j.isExpired);
 
         // Client-side "Posted within" filter — backend doesn't expose
         // this knob, so we trim the list locally once it lands.

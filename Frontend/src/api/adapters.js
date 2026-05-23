@@ -139,6 +139,28 @@ export function toJobCardShape(j) {
   };
 }
 
+/**
+ * Map an array of backend job records to JobCard view-models while
+ * filtering out anything that's expired, missing, or otherwise not
+ * displayable on a candidate-facing list.
+ *
+ * Use this everywhere a list of jobs gets rendered (Home rails, Jobs
+ * feed, Favorites, Saved-for-later, Dashboard matches, JobDetail
+ * similar rail). The backend already excludes expired jobs from the
+ * candidate-facing endpoints; this is a defence-in-depth safety net
+ * so a stale cache or a misbehaving endpoint can never paint an
+ * "Expired" card in front of a candidate.
+ *
+ * Callers that need to render an expired job intentionally — the
+ * JobDetail hero, an admin view — should keep using `toJobCardShape`
+ * directly so the `isExpired` flag survives.
+ */
+export function filterActiveJobs(records) {
+  return (records || [])
+    .map(toJobCardShape)
+    .filter((j) => j && !j.isExpired);
+}
+
 /** Map a backend company into the CompanyCard's `company` prop shape. */
 export function toCompanyCardShape(c) {
   if (!c) return null;
