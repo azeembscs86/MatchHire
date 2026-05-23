@@ -235,10 +235,48 @@ async function incrementViews(id) {
   await db.getPool().execute(`UPDATE jobs SET views_count = views_count + 1 WHERE id = ?`, [id]);
 }
 
+/**
+ * Parse a "true-ish" boolean from the query string. Express query
+ * params arrive as strings (`'true'` / `'false'` / `'1'` / `'0'`) so a
+ * naive `=== true` comparison silently no-ops. Returns `null` when the
+ * caller didn't ask for the filter at all so the WHERE-clause builder
+ * can distinguish "no filter" from "filter=false".
+ */
+function parseBoolish(v) {
+  if (v === true || v === 1 || v === '1' || v === 'true') return true;
+  if (v === false || v === 0 || v === '0' || v === 'false') return false;
+  return null;
+}
+
+/**
+ * Skills filter — match jobs whose `skills_tags` column contains ANY
+ * of the supplied skill tokens (OR), case-insensitively. Accepts:
+ *   - "react,node.js, mysql"   (CSV, frontend default)
+ *   - ["react", "node.js"]     (array)
+ *   - "react"                  (single string)
+ * Returns `{ clause, params }`, or `null` when there are no tokens.
+ */
+function buildSkillsFilter(skills) {
+  const list = Array.isArray(skills)
+    ? skills
+    : (typeof skills === 'string'
+      ? skills.split(',').map((s) => s.trim()).filter(Boolean)
+      : []);
+  if (!list.length) return null;
+  // Cap at 10 to keep the OR list bounded — most candidates filter on
+  // ≤4 skills in practice.
+  const tokens = list.slice(0, 10);
+  return {
+    clause: `(${tokens.map(() => 'LOWER(j.skills_tags) LIKE ?').join(' OR ')})`,
+    params: tokens.map((s) => `%${String(s).toLowerCase()}%`),
+  };
+}
+
 async function listPublic(filters) {
   const {
     keyword, category, location, job_type, experience_level, salary_min, salary_max,
-    remote, company_id, is_featured, page = 1, limit = 10, sort = 'latest',
+    remote, work_mode, skills, posted_within_days,
+    company_id, is_featured, page = 1, limit = 10, sort = 'latest',
     // When a candidate is signed in, the route layer threads their user id
     // here so we can hide jobs they've already applied to. Guests pass
     // `undefined` and see the unfiltered list.
@@ -257,22 +295,56 @@ async function listPublic(filters) {
   }
 
   if (keyword) {
-    where.push('(j.title LIKE ? OR j.description LIKE ? OR j.skills_tags LIKE ? OR c.name LIKE ?)');
-    params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
+    where.push('(LOWER(j.title) LIKE ? OR LOWER(j.description) LIKE ? OR LOWER(j.skills_tags) LIKE ? OR LOWER(c.name) LIKE ?)');
+    const k = `%${String(keyword).toLowerCase()}%`;
+    params.push(k, k, k, k);
   }
   if (category) {
     if (Number.isInteger(Number(category))) { where.push('j.category_id = ?'); params.push(Number(category)); }
     else { where.push('cat.slug = ?'); params.push(String(category).toLowerCase()); }
   }
-  if (location) { where.push('(j.location LIKE ? OR j.country LIKE ?)'); params.push(`%${location}%`, `%${location}%`); }
+  if (location) {
+    where.push('(LOWER(j.location) LIKE ? OR LOWER(j.country) LIKE ? OR LOWER(j.city) LIKE ?)');
+    const l = `%${String(location).toLowerCase()}%`;
+    params.push(l, l, l);
+  }
+  const skillsFilter = buildSkillsFilter(skills);
+  if (skillsFilter) {
+    where.push(skillsFilter.clause);
+    params.push(...skillsFilter.params);
+  }
   if (job_type) { where.push('j.job_type = ?'); params.push(job_type); }
   if (experience_level) { where.push('j.experience_level = ?'); params.push(experience_level); }
-  if (salary_min != null) { where.push('(j.salary_max IS NULL OR j.salary_max >= ?)'); params.push(salary_min); }
-  if (salary_max != null) { where.push('(j.salary_min IS NULL OR j.salary_min <= ?)'); params.push(salary_max); }
-  if (remote === true) where.push('j.is_remote = 1');
-  if (remote === false) where.push('j.is_remote = 0');
+  if (salary_min != null && salary_min !== '') {
+    where.push('(j.salary_max IS NULL OR j.salary_max >= ?)');
+    params.push(Number(salary_min));
+  }
+  if (salary_max != null && salary_max !== '') {
+    where.push('(j.salary_min IS NULL OR j.salary_min <= ?)');
+    params.push(Number(salary_max));
+  }
+  // `work_mode` is the preferred 3-state filter (onsite/hybrid/remote).
+  // We keep `remote` (boolean) as a back-compat alias so older clients
+  // and the location-based query still work; new UIs should send
+  // `work_mode`. Both are normalised here.
+  if (work_mode && ['onsite', 'hybrid', 'remote'].includes(String(work_mode))) {
+    where.push('j.work_mode = ?');
+    params.push(String(work_mode));
+  } else {
+    const remoteBool = parseBoolish(remote);
+    if (remoteBool === true) where.push('j.is_remote = 1');
+    if (remoteBool === false) where.push('j.is_remote = 0');
+  }
+  // Posted-within filter — `posted_within_days` is the canonical name;
+  // we honour `posted_within` as a back-compat alias. NULL/0/"" means
+  // "any time".
+  const postedDays = Number(posted_within_days ?? filters.posted_within);
+  if (Number.isFinite(postedDays) && postedDays > 0) {
+    where.push('j.published_at >= (NOW() - INTERVAL ? DAY)');
+    params.push(postedDays);
+  }
   if (company_id) { where.push('j.company_id = ?'); params.push(company_id); }
-  if (is_featured === true) where.push('j.is_featured = 1');
+  if (parseBoolish(is_featured) === true) where.push('j.is_featured = 1');
 
   let orderBy = 'j.is_featured DESC, j.published_at DESC, j.id DESC';
   if (sort === 'salary_high') orderBy = 'j.salary_max DESC, j.salary_min DESC';
@@ -445,6 +517,11 @@ async function listLocationBased({
   // Same convention as listPublic — when a candidate id is supplied,
   // hide jobs they've already applied to.
   exclude_applied_for_user_id,
+  // Candidate-feed filters mirrored from listPublic so the Jobs page
+  // sidebar drives the same shape of query regardless of whether the
+  // viewer is a guest (listPublic) or signed in (listLocationBased +
+  // ranking).
+  job_type, work_mode, remote, salary_min, salary_max, posted_within_days,
 }) {
   const where = [...activeJobWhere()];
   const params = [];
@@ -455,15 +532,35 @@ async function listLocationBased({
     )`);
     params.push(Number(exclude_applied_for_user_id));
   }
-  if (role) { where.push('j.title LIKE ?'); params.push(`%${role}%`); }
+  if (role) { where.push('LOWER(j.title) LIKE ?'); params.push(`%${String(role).toLowerCase()}%`); }
   if (experience_level) { where.push('j.experience_level = ?'); params.push(experience_level); }
+  if (job_type) { where.push('j.job_type = ?'); params.push(job_type); }
+  if (salary_min != null && salary_min !== '') {
+    where.push('(j.salary_max IS NULL OR j.salary_max >= ?)');
+    params.push(Number(salary_min));
+  }
+  if (salary_max != null && salary_max !== '') {
+    where.push('(j.salary_min IS NULL OR j.salary_min <= ?)');
+    params.push(Number(salary_max));
+  }
+  if (work_mode && ['onsite', 'hybrid', 'remote'].includes(String(work_mode))) {
+    where.push('j.work_mode = ?');
+    params.push(String(work_mode));
+  } else {
+    const remoteBool = parseBoolish(remote);
+    if (remoteBool === true) where.push('j.is_remote = 1');
+    if (remoteBool === false) where.push('j.is_remote = 0');
+  }
+  const postedDays = Number(posted_within_days);
+  if (Number.isFinite(postedDays) && postedDays > 0) {
+    where.push('j.published_at >= (NOW() - INTERVAL ? DAY)');
+    params.push(postedDays);
+  }
 
-  const skillsList = Array.isArray(skills)
-    ? skills
-    : (typeof skills === 'string' ? skills.split(',').map((s) => s.trim()).filter(Boolean) : []);
-  if (skillsList.length > 0) {
-    where.push(`(${skillsList.map(() => 'j.skills_tags LIKE ?').join(' OR ')})`);
-    skillsList.forEach((s) => params.push(`%${s}%`));
+  const skillsFilter = buildSkillsFilter(skills);
+  if (skillsFilter) {
+    where.push(skillsFilter.clause);
+    params.push(...skillsFilter.params);
   }
 
   // Scope filter (local/country/global_remote/hybrid).

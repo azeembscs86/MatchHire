@@ -69,6 +69,9 @@ exports.listJobs = async (req, res) => {
   }
 
   // Pull a candidate-shaped pool (location-aware) and overlay user filters.
+  // Every sidebar filter the Jobs page exposes is forwarded here so the
+  // candidate path produces the same shape of results as the guest path
+  // (listPublic) for the same query string.
   const oversample = Math.min(Math.max(limit * 4, 60), 200);
   const { rows } = await jobRepo.listLocationBased({
     country: req.query.location || candidate.country,
@@ -76,6 +79,12 @@ exports.listJobs = async (req, res) => {
     role: req.query.keyword || undefined,
     experience_level: req.query.experience_level || undefined,
     skills: req.query.skills || undefined,
+    job_type: req.query.job_type || undefined,
+    work_mode: req.query.work_mode || undefined,
+    remote: req.query.remote, // legacy alias; parseBoolish in the repo
+    salary_min: req.query.salary_min,
+    salary_max: req.query.salary_max,
+    posted_within_days: req.query.posted_within_days ?? req.query.posted_within,
     job_scope: candidate.job_scope || 'hybrid',
     page: 1,
     limit: oversample,

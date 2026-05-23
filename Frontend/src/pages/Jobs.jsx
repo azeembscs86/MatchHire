@@ -116,28 +116,28 @@ const JOB_TYPES = [
 ];
 
 /**
- * Work-mode segmented control. The backend's `remote` query param is
- * a boolean (true/false/undefined), so we map UI labels onto that:
- *   - Any     → undefined (don't filter)
- *   - Remote  → true
- *   - Onsite  → false
- * The "Hybrid" pill is a visual third option but maps to `remote=false`
- * with no extra backend support — the spec calls for the pill UI, not
- * a separate column.
+ * Work-mode segmented control. Maps directly to the backend's
+ * `work_mode` column (ENUM('onsite','hybrid','remote')) so each pill
+ * is a real, distinct filter. Sending `work_mode=''` (Any) means
+ * "don't filter".
  */
 const WORK_MODES = [
-  { label: 'Any', value: null },
-  { label: 'Remote', value: true },
-  { label: 'Hybrid', value: false },
-  { label: 'Onsite', value: false },
+  { label: 'Any',    value: '' },
+  { label: 'Remote', value: 'remote' },
+  { label: 'Hybrid', value: 'hybrid' },
+  { label: 'Onsite', value: 'onsite' },
 ];
 
-/** "Posted within" filter — client-side using `published_at`. */
+/**
+ * "Posted within" filter. `days=0` (Any time) sends nothing to the
+ * backend; positive values filter `j.published_at >= NOW() - INTERVAL ? DAY`
+ * server-side so the response total and pagination stay accurate.
+ */
 const POSTED_WITHIN = [
-  { label: 'Any time', days: null },
-  { label: '24h', days: 1 },
-  { label: '7 days', days: 7 },
-  { label: '30 days', days: 30 },
+  { label: 'Any time', days: 0 },
+  { label: '24h',      days: 1 },
+  { label: '7 days',   days: 7 },
+  { label: '30 days',  days: 30 },
 ];
 
 const LEVELS = [
@@ -181,9 +181,38 @@ const SORTS_GUEST = [
 
 const DEFAULT_FILTERS = {
   keyword: '', location: '', skills: '', job_type: '', experience_level: '',
-  remote: null, salary_min: undefined, salary_max: undefined,
-  posted_within: null, match_threshold: 40, sort: 'best_match',
+  work_mode: '', salary_min: undefined, salary_max: undefined,
+  posted_within: 0, match_threshold: 40, sort: 'best_match',
 };
+
+/**
+ * Build the filter object from URL search params so a refresh (or a
+ * shared link) restores the exact view. Anything not present falls
+ * back to `DEFAULT_FILTERS`. The inverse — pushing filters TO the
+ * URL — lives in the useEffect below.
+ */
+function filtersFromSearchParams(params, isCandidate) {
+  const num = (key, fallback) => {
+    const raw = params.get(key);
+    if (raw == null || raw === '') return fallback;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : fallback;
+  };
+  return {
+    ...DEFAULT_FILTERS,
+    keyword: params.get('keyword') || '',
+    skills: params.get('skills') || '',
+    location: params.get('location') || '',
+    work_mode: params.get('work_mode') || '',
+    job_type: params.get('job_type') || '',
+    experience_level: params.get('experience_level') || '',
+    posted_within: num('posted_within', 0),
+    match_threshold: num('match_threshold', 40),
+    salary_min: num('salary_min', undefined),
+    salary_max: num('salary_max', undefined),
+    sort: params.get('sort') || (isCandidate ? 'best_match' : 'latest'),
+  };
+}
 
 /* ---------- Helpers -------------------------------------------------------- */
 
@@ -203,14 +232,18 @@ const DEFAULT_FILTERS = {
 export default function Jobs() {
   const { role, user } = useAuth();
   const isCandidate = role === 'candidate';
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [filters, setFilters] = useState(() => ({
-    ...DEFAULT_FILTERS,
-    keyword: searchParams.get('keyword') || '',
-    location: searchParams.get('location') || '',
-    sort: searchParams.get('sort') || (isCandidate ? 'best_match' : 'latest'),
-  }));
+  // Filters are the single source of truth for the request. They
+  // hydrate from URL search params on first paint (so refresh + share
+  // restore the view), and the effect below pushes any subsequent
+  // change back into the URL. Text inputs (keyword/skills/location)
+  // are debounced through local `*Input` state so we don't fire a
+  // request on every keystroke.
+  const [filters, setFilters] = useState(() => filtersFromSearchParams(searchParams, isCandidate));
+  const [keywordInput, setKeywordInput] = useState(filters.keyword);
+  const [skillsInput, setSkillsInput] = useState(filters.skills);
+  const [locationInput, setLocationInput] = useState(filters.location);
 
   const [data, setData] = useState({ records: [], total: 0, profileIncomplete: false, message: null });
   const [loading, setLoading] = useState(true);
@@ -220,12 +253,70 @@ export default function Jobs() {
   const [applyMessage, setApplyMessage] = useState(null);
   const [rejection, setRejection] = useState(null);
 
+  /*
+   * Debounce: when the user types in keyword / skills / location,
+   * push the new text into the real filter state 350ms after the
+   * last keystroke. This collapses a rapid burst of edits into a
+   * single API call instead of one per character.
+   */
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      // Only commit + reset pagination when at least one text field
+      // actually drifted from the canonical filter state. Comparing
+      // here avoids a redundant re-render after the URL hydration
+      // path seeds `*Input` from `filters` on first paint.
+      if (
+        filters.keyword === keywordInput
+        && filters.skills === skillsInput
+        && filters.location === locationInput
+      ) return;
+      setPage(1);
+      setFilters((prev) => ({
+        ...prev,
+        keyword: keywordInput,
+        skills: skillsInput,
+        location: locationInput,
+      }));
+    }, 350);
+    return () => clearTimeout(handle);
+  }, [keywordInput, skillsInput, locationInput, filters.keyword, filters.skills, filters.location]);
+
+  /*
+   * URL sync. Every change to `filters` writes a fresh search-params
+   * snapshot so the URL is shareable / refresh-safe. Empty / default
+   * values are stripped from the URL to keep it readable. `replace:
+   * true` keeps these mid-page filter tweaks out of the back-button
+   * history.
+   */
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (filters.keyword) next.set('keyword', filters.keyword);
+    if (filters.skills) next.set('skills', filters.skills);
+    if (filters.location) next.set('location', filters.location);
+    if (filters.work_mode) next.set('work_mode', filters.work_mode);
+    if (filters.job_type) next.set('job_type', filters.job_type);
+    if (filters.experience_level) next.set('experience_level', filters.experience_level);
+    if (filters.posted_within) next.set('posted_within', String(filters.posted_within));
+    if (filters.salary_min != null && filters.salary_min !== '') next.set('salary_min', String(filters.salary_min));
+    if (filters.salary_max != null && filters.salary_max !== '') next.set('salary_max', String(filters.salary_max));
+    if (isCandidate && filters.match_threshold != null && filters.match_threshold !== 40) {
+      next.set('match_threshold', String(filters.match_threshold));
+    }
+    const defaultSort = isCandidate ? 'best_match' : 'latest';
+    if (filters.sort && filters.sort !== defaultSort) next.set('sort', filters.sort);
+    setSearchParams(next, { replace: true });
+  }, [filters, isCandidate, setSearchParams]);
+
   useEffect(() => {
     let cancelled = false;
     async function load() {
       setLoading(true);
       setError(null);
       try {
+        // Build the API params. Backend accepts every filter directly
+        // now (skills, work_mode, posted_within_days, threshold, ...)
+        // so the client doesn't have to filter or sort post-hoc except
+        // for the two client-only sort hints (closing_soon, remote_first).
         const params = {
           page, limit: 24,
           keyword: filters.keyword || undefined,
@@ -233,12 +324,12 @@ export default function Jobs() {
           skills: filters.skills || undefined,
           job_type: filters.job_type || undefined,
           experience_level: filters.experience_level || undefined,
-          remote: filters.remote ?? undefined,
+          work_mode: filters.work_mode || undefined,
           salary_min: filters.salary_min,
           salary_max: filters.salary_max,
-          // Only forward the AI match threshold for signed-in candidates
-          // — the param is meaningful on the personalised feed but a
-          // no-op for the guest listing, so we skip the round-trip noise.
+          posted_within_days: filters.posted_within > 0 ? filters.posted_within : undefined,
+          // AI match minimum — meaningful only for signed-in candidates.
+          // Sent as `threshold` to align with the existing backend param.
           threshold: isCandidate && Number.isFinite(filters.match_threshold)
             ? filters.match_threshold
             : undefined,
@@ -250,32 +341,20 @@ export default function Jobs() {
           .map((r) => {
             const v = toJobCardShape(r);
             if (!v) return null;
-            // Surface backend AI label on the card shape.
             v.aiLabel = r.aiRecommendationLabel || null;
             v.aiSummary = r.aiSummary || null;
             v.publishedAt = r.published_at || r.created_at || null;
+            v.payMin = r.salary_min ?? null;
+            v.payMax = r.salary_max ?? null;
             return v;
           })
-          // Defence-in-depth: backend already filters expired postings
-          // out of the smart-jobs endpoint, but we double-check on the
-          // client so a stale cache hit can never paint an expired
-          // card in front of a candidate.
+          // Defence-in-depth: backend filters expired postings; this
+          // catches any that slip through a stale cache.
           .filter((j) => j && !j.isExpired);
 
-        // Client-side "Posted within" filter — backend doesn't expose
-        // this knob, so we trim the list locally once it lands.
-        if (filters.posted_within) {
-          const cutoff = Date.now() - filters.posted_within * 86400000;
-          records = records.filter((r) => {
-            if (!r.publishedAt) return true;
-            const ts = new Date(r.publishedAt).getTime();
-            return Number.isFinite(ts) ? ts >= cutoff : true;
-          });
-        }
-
-        // Client-side sort overrides. The backend handles `best_match`,
-        // `latest`, `featured`, and `experience`; we layer the rest on
-        // top of whatever it returned.
+        // Client-only sort hints — applied on top of whatever the
+        // backend returned, since the underlying API contract doesn't
+        // need to know about these visual orderings.
         if (filters.sort === 'salary_high') {
           records.sort((a, b) => (b.payMax || 0) - (a.payMax || 0));
         } else if (filters.sort === 'closing_soon') {
@@ -308,7 +387,15 @@ export default function Jobs() {
   }, [filters, page, isCandidate]);
 
   function update(patch) { setPage(1); setFilters((f) => ({ ...f, ...patch })); }
-  function resetFilters() { setPage(1); setFilters({ ...DEFAULT_FILTERS, sort: isCandidate ? 'best_match' : 'latest' }); }
+  function resetFilters() {
+    setPage(1);
+    // Reset both the canonical filter state AND the debounced text
+    // mirrors so the inputs visibly clear at the same time.
+    setKeywordInput('');
+    setSkillsInput('');
+    setLocationInput('');
+    setFilters({ ...DEFAULT_FILTERS, sort: isCandidate ? 'best_match' : 'latest' });
+  }
 
   async function handleApply(job) {
     if (!isCandidate) return;
@@ -378,8 +465,8 @@ export default function Jobs() {
             <input
               className="filter-input"
               placeholder="Title, skill, or company"
-              value={filters.keyword}
-              onChange={(e) => update({ keyword: e.target.value })}
+              value={keywordInput}
+              onChange={(e) => setKeywordInput(e.target.value)}
             />
           </div>
           <div className="filter-group">
@@ -387,8 +474,8 @@ export default function Jobs() {
             <input
               className="filter-input"
               placeholder="e.g. react, node.js"
-              value={filters.skills}
-              onChange={(e) => update({ skills: e.target.value })}
+              value={skillsInput}
+              onChange={(e) => setSkillsInput(e.target.value)}
             />
             <small className="filter-help">Match any of the skills you list.</small>
           </div>
@@ -397,24 +484,24 @@ export default function Jobs() {
             <input
               className="filter-input"
               placeholder="City or country"
-              value={filters.location}
-              onChange={(e) => update({ location: e.target.value })}
+              value={locationInput}
+              onChange={(e) => setLocationInput(e.target.value)}
             />
             {/*
-              * Work-mode segmented pill — replaces the old radio list.
-              * Two pills map to `remote=false` (Hybrid + Onsite) since
-              * the backend only stores a boolean; the UI nuance is
-              * still useful for candidates picking between them.
+              * Work-mode segmented pill — each pill is a distinct
+              * filter mapped onto the backend's `work_mode` ENUM
+              * (onsite/hybrid/remote). The "Any" pill clears the
+              * filter.
               */}
             <div className="seg-row" role="group" aria-label="Work mode" style={{ marginTop: 10 }}>
               {WORK_MODES.map((m) => {
-                const active = (filters.remote === m.value) || (filters.remote == null && m.value === null);
+                const active = (filters.work_mode || '') === m.value;
                 return (
                   <button
                     key={m.label}
                     type="button"
                     className={`seg-btn${active ? ' active' : ''}`}
-                    onClick={() => update({ remote: m.value })}
+                    onClick={() => update({ work_mode: m.value })}
                   >
                     {m.label}
                   </button>
