@@ -254,4 +254,27 @@ router.post('/interviews', validate(v.interviewCreate), asyncHandler(controller.
  */
 router.post('/dashboard/stats', asyncHandler(controller.dashboardStats));
 
+/**
+ * @swagger
+ * /employers/candidates/{candidateId}/matching-jobs:
+ *   post:
+ *     tags: [Employers]
+ *     summary: Active jobs at the viewer's company matching this candidate (score > 60)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - name: candidateId
+ *         in: path
+ *         required: true
+ *         schema: { type: integer, minimum: 1 }
+ *     responses:
+ *       '200': { description: Matches returned, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ *       '403': { $ref: '#/components/responses/ForbiddenError' }
+ *       '404': { $ref: '#/components/responses/NotFoundError' }
+ */
+router.post(
+  '/candidates/:candidateId/matching-jobs',
+  validate(pubV.candidateIdParam, 'params'),
+  asyncHandler(controller.matchingJobsForCandidate)
+);
+
 module.exports = router;

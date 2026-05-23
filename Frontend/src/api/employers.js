@@ -32,4 +32,13 @@ export const employersApi = {
   scheduleInterview(payload) { return call(api.post('/employers/interviews', payload)); },
 
   dashboardStats() { return call(api.post('/employers/dashboard/stats')); },
+
+  /**
+   * Matching jobs at the logged-in employer's company for the given
+   * candidate. Server filters to active, non-expired postings with
+   * match score > 60 and sorts highest match first.
+   */
+  matchingJobsForCandidate(candidateId) {
+    return call(api.post(`/employers/candidates/${candidateId}/matching-jobs`));
+  },
 };

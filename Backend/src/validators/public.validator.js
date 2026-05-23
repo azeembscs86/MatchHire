@@ -22,6 +22,10 @@ const applicationIdParam = Joi.object({
   applicationId: Joi.number().integer().positive().required(),
 });
 
+const candidateIdParam = Joi.object({
+  candidateId: Joi.number().integer().positive().required(),
+});
+
 const jobsQuery = Joi.object({
   keyword: Joi.string().max(200).allow('', null),
   category: Joi.alternatives(Joi.string().max(150), Joi.number().integer().positive()).allow('', null),
@@ -61,6 +65,7 @@ module.exports = {
   idParam,
   jobIdParam,
   applicationIdParam,
+  candidateIdParam,
   jobsQuery,
   companiesQuery,
   candidatesQuery,

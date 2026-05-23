@@ -20,6 +20,8 @@ import { useEffect, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { publicApi } from '../api/index.js';
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.jsx';
+import MatchingJobsPanel from '../components/MatchingJobsPanel.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
 
 function initials(name = '') {
   return name.trim().split(/\s+/).filter(Boolean).slice(0, 2)
@@ -36,6 +38,8 @@ function formatRange(start, end, isCurrent) {
 export default function CandidateDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { role } = useAuth();
+  const isEmployer = role === 'employer';
   const [candidate, setCandidate] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -188,6 +192,17 @@ export default function CandidateDetail() {
           </div>
 
           <aside className="jd-side">
+            {/*
+              * "Matching jobs from your company" — visible only when
+              * the viewer is the logged-in employer. The panel hides
+              * itself when there are no matches above 60%, so we
+              * always render it for employers and let it decide
+              * what to show.
+              */}
+            {isEmployer && c.id && (
+              <MatchingJobsPanel candidateId={c.id} />
+            )}
+
             <div className="jd-card">
               <h3>Quick facts</h3>
               <dl className="jd-facts">

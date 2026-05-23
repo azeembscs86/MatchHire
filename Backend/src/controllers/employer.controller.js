@@ -92,3 +92,16 @@ exports.dashboardStats = async (req, res) => {
   const data = await service.dashboardStats(req.user.id);
   return response.success(res, data, 'Dashboard stats returned');
 };
+
+/**
+ * Matching jobs for a candidate, scoped to the logged-in employer's
+ * company. Powers the "Matching jobs from your company" panel on the
+ * candidate detail page. Returns only jobs with match score > 60.
+ */
+exports.matchingJobsForCandidate = async (req, res) => {
+  const data = await service.matchingJobsForCandidate(
+    req.user.id,
+    Number(req.params.candidateId)
+  );
+  return response.success(res, data, 'Matching jobs returned');
+};
