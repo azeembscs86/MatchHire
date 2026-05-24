@@ -15,9 +15,26 @@
     "migrate": "npm run migrate --prefix Backend",
     "seed": "npm run seed --prefix Backend",
     "install:all": "npm install && npm install --prefix Backend && npm install --prefix Frontend",
-    "lint": "npm run lint --prefix Backend"
+    "lint": "npm run lint --prefix Backend",
+    "qa:seed": "node qa/test-data/seed-test-users.js",
+    "qa:api": "jest --config qa/jest.config.js",
+    "qa:e2e": "playwright test --config qa/playwright.config.js",
+    "qa:accessibility": "playwright test --config qa/playwright.config.js --grep @a11y",
+    "qa:lighthouse": "node qa/scripts/lighthouse.js",
+    "qa:report": "node qa/scripts/report.js",
+    "qa:full": "node qa/scripts/run-full.js"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "concurrently": "^9.2.1",
+    "@playwright/test": "^1.48.0",
+    "@axe-core/playwright": "^4.10.0",
+    "jest": "^29.7.0",
+    "supertest": "^7.0.0",
+    "axios": "^1.7.7",
+    "dotenv": "^16.4.7",
+    "bcryptjs": "^2.4.3",
+    "mysql2": "^3.11.4",
+    "lighthouse": "^12.2.1",
+    "chrome-launcher": "^1.1.2"
   }
 }

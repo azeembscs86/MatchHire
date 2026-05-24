@@ -1,0 +1,5 @@
+# Generated artefacts — keep the folders, drop the contents.
+reports/*
+screenshots/*
+!reports/.gitkeep
+!screenshots/.gitkeep
