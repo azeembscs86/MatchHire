@@ -39,9 +39,22 @@ function unwrap(res) {
  * POST /auth/login → returns access_token. `which` is 'CANDIDATE'
  * | 'COMPANY' | 'ADMIN' (test-user keys). The matching seeded
  * row must exist; run `npm run qa:seed` first.
+ *
+ * Tokens are cached per-process per-role: a test suite that calls
+ * `login('CANDIDATE')` 20 times hits /auth/login exactly once.
+ * That keeps the API tests under the auth rate limiter and also
+ * makes the suite an order of magnitude faster on busy roles.
+ *
+ * Pass `{ fresh: true }` to bypass the cache when a test
+ * specifically wants to exercise the login flow itself.
  */
-async function login(which) {
-  const user = ({ CANDIDATE, COMPANY, ADMIN })[String(which).toUpperCase()];
+const _tokenCache = new Map();
+
+async function login(which, { fresh = false } = {}) {
+  const key = String(which).toUpperCase();
+  if (!fresh && _tokenCache.has(key)) return _tokenCache.get(key);
+
+  const user = ({ CANDIDATE, COMPANY, ADMIN })[key];
   if (!user) throw new Error(`Unknown QA user: ${which}`);
   const client = newClient();
   const res = await client.post('/auth/login', {
@@ -51,7 +64,9 @@ async function login(which) {
   });
   const data = unwrap(res);
   if (!data?.access_token) throw new Error('Login succeeded but no token');
-  return { token: data.access_token, user: data.user };
+  const entry = { token: data.access_token, user: data.user };
+  _tokenCache.set(key, entry);
+  return entry;
 }
 
 module.exports = {

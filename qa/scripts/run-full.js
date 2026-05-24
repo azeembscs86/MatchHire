@@ -58,6 +58,11 @@ async function main() {
   let exit = 0;
   try {
     // ----- 1. Backend -----
+    // We probe a real endpoint, not the root /, so we know the
+    // route table is loaded — `/auth/login` would also work but
+    // it's POST-only. Adding a short stabilisation pause after
+    // the first OK response so middlewares (rate-limit store,
+    // Redis connect) finish initialising before we hit them.
     const backendHealth = `${API_URL}/public/categories`;
     if (await isUp(backendHealth)) {
       console.log(`[qa:full] backend already running at ${API_URL}`);
@@ -66,6 +71,10 @@ async function main() {
       const child = spawnDetached('npm', ['run', 'dev'], path.join(ROOT, 'Backend'));
       startedByUs.push(child);
       await waitForReady(backendHealth, { timeoutMs: 90_000, label: 'backend' });
+      // Settle pause — gives the rate-limit middleware + connection
+      // pools a beat to stop bouncing requests during the first
+      // few milliseconds after the bind.
+      await new Promise((r) => setTimeout(r, 2000));
     }
 
     // ----- 2. Frontend -----

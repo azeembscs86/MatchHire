@@ -618,7 +618,12 @@ export default function Jobs() {
               {isCandidate ? 'matched jobs' : 'open jobs'}
             </div>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <select className="sort-select" value={filters.sort} onChange={(e) => update({ sort: e.target.value })}>
+              <select
+                className="sort-select"
+                aria-label="Sort jobs"
+                value={filters.sort}
+                onChange={(e) => update({ sort: e.target.value })}
+              >
                 {sortOptions.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
             </div>
