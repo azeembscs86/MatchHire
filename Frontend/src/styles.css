@@ -1631,10 +1631,90 @@
 .exp-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:18px}
 
 /*
- * "Matching jobs from your company" panel on the CandidateDetail
- * side rail (employer view only). Same visual weight as a
- * `.jd-card`, but with a list of compact match rows inside instead
- * of a single fact block.
+ * "Matching Jobs From Your Company" — full-width horizontal
+ * carousel anchored at the end of the candidate detail page
+ * (employer viewers only). Uses the shared `<JobCard>` inside a
+ * scroll-snap row so the cards keep the brand styling and the
+ * row scrolls smoothly by trackpad, mouse-wheel, or touch.
+ *
+ * Layout
+ *   - The scroll container is the only horizontally-scrolling
+ *     surface on the page; the `mandatory` scroll-snap-type
+ *     parks the row on each card edge so users land on a clean
+ *     stop after a swipe.
+ *   - Each `.match-carousel-item` is given a fixed width so the
+ *     row doesn't shrink-fit when only one or two cards are
+ *     present.
+ *   - Arrow buttons appear only when the row is actually
+ *     scrollable in that direction (React tracks scroll state).
+ *   - On mobile the arrows hide and the row becomes touch-swipe
+ *     only.
+ */
+.match-carousel{
+  margin-top:48px;padding-top:32px;
+  border-top:1px solid var(--line);
+}
+.match-carousel-head{
+  display:flex;justify-content:space-between;align-items:flex-end;
+  margin-bottom:18px;gap:16px;flex-wrap:wrap;
+}
+.match-carousel-title{
+  font-family:'Fraunces',serif;font-size:24px;font-weight:500;
+  letter-spacing:-.01em;line-height:1.2;margin:0 0 4px;color:var(--ink);
+}
+.match-carousel-sub{
+  font-size:13.5px;color:var(--muted);margin:0;line-height:1.45;
+}
+.match-carousel-arrows{display:flex;gap:8px;flex-shrink:0}
+.match-carousel-arrow{
+  width:36px;height:36px;border-radius:50%;
+  background:var(--paper);border:1px solid var(--line);
+  display:grid;place-items:center;cursor:pointer;
+  font-size:22px;line-height:1;color:var(--ink-soft);
+  transition:background .15s ease,color .15s ease,border-color .15s ease;
+}
+.match-carousel-arrow:hover:not(:disabled){
+  background:var(--ink);color:var(--bone);border-color:var(--ink);
+}
+.match-carousel-arrow:disabled{
+  opacity:.4;cursor:not-allowed;
+}
+.match-carousel-scroll{
+  display:flex;gap:16px;
+  overflow-x:auto;overflow-y:hidden;
+  scroll-snap-type:x mandatory;
+  scroll-behavior:smooth;
+  padding:4px 4px 18px;     /* small pad so card shadows don't clip */
+  margin:0 -4px;             /* pull the pad back so the row sits flush with the page */
+  /* Slim scrollbar across platforms */
+  scrollbar-width:thin;
+}
+.match-carousel-scroll::-webkit-scrollbar{height:8px}
+.match-carousel-scroll::-webkit-scrollbar-track{background:transparent}
+.match-carousel-scroll::-webkit-scrollbar-thumb{
+  background:var(--line);border-radius:100px;
+}
+.match-carousel-item{
+  flex:0 0 340px;            /* fixed card width — three-up on a 1280px container */
+  scroll-snap-align:start;
+  display:flex;              /* let the inner JobCard wrapper fill */
+}
+.match-carousel-item > .job-card-wrapper{width:100%}
+.match-carousel-empty{
+  flex:1;padding:24px;background:var(--paper);
+  border:1px dashed var(--line);border-radius:14px;
+  text-align:center;font-size:13.5px;
+}
+@media (max-width:640px){
+  .match-carousel-item{flex-basis:280px}
+  .match-carousel-arrows{display:none}     /* touch-swipe only on mobile */
+}
+
+/*
+ * Legacy side-rail panel CSS (kept for back-compat with anything
+ * still importing `MatchingJobsPanel` directly). The candidate
+ * detail page itself no longer uses this surface — the carousel
+ * above replaces it.
  */
 .match-panel{
   background:var(--paper);border:1px solid var(--line);border-radius:14px;

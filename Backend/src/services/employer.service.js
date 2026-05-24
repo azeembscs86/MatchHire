@@ -22,10 +22,11 @@ const matchService = require('./match.service');
 const cache = require('../cache/cache.helper');
 const AppError = require('../utils/AppError');
 
-// Match floor for the "Matching jobs from your company" panel on the
-// candidate detail page. Anything below this is hidden so the
-// employer only sees postings worth reaching out about.
-const MATCH_FLOOR = 60;
+// Match floor for the "Matching Jobs From Your Company" carousel on
+// the candidate detail page. Lowered to 50 (was 60) to align with
+// the unified 50% recommendation floor used by /recommended-
+// candidates — both surfaces now show the same set when sorted.
+const MATCH_FLOOR = 50;
 
 async function getCompanyForUser(user_id) {
   const company = await companyRepo.findByOwner(user_id);
@@ -228,6 +229,13 @@ async function matchingJobsForCandidate(user_id, candidateUserId) {
       experience_level: job.experience_level,
       category_name: job.category_name,
       application_deadline: job.application_deadline,
+      // Carry the carousel-side rendering fields too so the
+      // frontend can reuse the shared `<JobCard>` without a
+      // second round-trip for full job details.
+      is_featured: !!job.is_featured,
+      is_global_remote: !!job.is_global_remote,
+      published_at: job.published_at || job.created_at || null,
+      skills_tags: job.skills_tags,
     };
   })
     .filter((r) => r.match_score > MATCH_FLOOR)

@@ -20,7 +20,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { publicApi, employersApi } from '../api/index.js';
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.jsx';
-import MatchingJobsPanel from '../components/MatchingJobsPanel.jsx';
+import MatchingJobsCarousel from '../components/MatchingJobsCarousel.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
 function initials(name = '') {
@@ -308,17 +308,6 @@ export default function CandidateDetail() {
           </div>
 
           <aside className="jd-side">
-            {/*
-              * "Matching jobs from your company" — visible only when
-              * the viewer is the logged-in employer. The panel hides
-              * itself when there are no matches above 60%, so we
-              * always render it for employers and let it decide
-              * what to show.
-              */}
-            {isEmployer && c.id && (
-              <MatchingJobsPanel candidateId={c.id} />
-            )}
-
             <div className="jd-card">
               <h3>Quick facts</h3>
               <dl className="jd-facts">
@@ -357,6 +346,15 @@ export default function CandidateDetail() {
             )}
           </aside>
         </div>
+
+        {/*
+          * "Matching Jobs From Your Company" — full-width horizontal
+          * carousel anchored at the end of the profile. Employer-only;
+          * the carousel handles its own loading + empty + error states.
+          */}
+        {isEmployer && c.id && (
+          <MatchingJobsCarousel candidateId={c.id} />
+        )}
       </div>
     </section>
   );
