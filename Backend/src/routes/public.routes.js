@@ -228,6 +228,28 @@ router.get('/candidates/:id', optionalAuth, validate(v.idParam, 'params'), async
 
 /**
  * @swagger
+ * /public/candidates/{candidateId}/portfolio:
+ *   get:
+ *     tags: [Public]
+ *     summary: Visibility-filtered Work Portfolio & Achievements for a candidate
+ *     description: |
+ *       Returns the candidate's portfolio items, filtered by visibility:
+ *         - public rows are returned to anyone (incl. guests)
+ *         - companies_only rows additionally require an employer-role token
+ *         - private rows only return to the candidate themselves
+ *     parameters: [{ name: candidateId, in: path, required: true, schema: { type: integer } }]
+ *     responses:
+ *       '200': { description: Portfolio items returned, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ */
+router.get(
+  '/candidates/:candidateId/portfolio',
+  optionalAuth,
+  validate(require('../validators/public.validator').candidateIdParam, 'params'),
+  asyncHandler(require('../controllers/candidatePortfolio.controller').listForCandidate)
+);
+
+/**
+ * @swagger
  * /public/candidates/{id}/skills:
  *   get:
  *     tags: [Skills]

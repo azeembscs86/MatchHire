@@ -26,6 +26,15 @@ export const publicApi = {
 
   candidates(params = {}) { return call(api.get('/public/candidates', { params })); },
   candidate(id) { return call(api.get(`/public/candidates/${id}`)); },
+  /**
+   * Foreign-viewer fetch of a candidate's Work Portfolio &
+   * Achievements. Server filters visibility by the caller's auth
+   * context (guest → public only, employer → public + companies_only,
+   * owner → all). Already bundled on `candidate(id)` for one-shot
+   * use; this method is here for surfaces that only need the
+   * portfolio without the rest of the profile payload.
+   */
+  candidatePortfolio(id) { return call(api.get(`/public/candidates/${id}/portfolio`)); },
 
   categories() { return call(api.get('/public/categories')); },
   skills() { return call(api.get('/public/skills')); },

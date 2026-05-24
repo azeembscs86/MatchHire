@@ -1173,6 +1173,79 @@ router.post('/onboarding/advance', validate(v.onboardingAdvance), asyncHandler(c
  */
 router.post('/onboarding/reset', asyncHandler(controller.onboardingReset));
 
+/* ============================================================== *
+ * Work Portfolio & Achievements — universal CRUD for the
+ * logged-in candidate. Public foreign-viewer read endpoint is
+ * mounted on `public.routes` (no candidate role required to
+ * view a public portfolio item).
+ * ============================================================== */
+const portfolioController = require('../controllers/candidatePortfolio.controller');
+
+/**
+ * @swagger
+ * /candidates/portfolio/list:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: List the logged-in candidate's portfolio items (all visibilities)
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       '200': { description: Portfolio items returned, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ */
+router.post('/portfolio/list', asyncHandler(portfolioController.listMine));
+
+/**
+ * @swagger
+ * /candidates/portfolio:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: Create a portfolio item (project / achievement / certificate / ...)
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       '201': { description: Portfolio item created, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ *       '400': { $ref: '#/components/responses/ValidationError' }
+ */
+router.post('/portfolio', validate(v.portfolioCreate), asyncHandler(portfolioController.create));
+
+/**
+ * @swagger
+ * /candidates/portfolio/{id}/update:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: Update one of the candidate's portfolio items
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: integer, minimum: 1 }
+ *     responses:
+ *       '200': { description: Portfolio item updated, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ *       '404': { $ref: '#/components/responses/NotFoundError' }
+ */
+router.post(
+  '/portfolio/:id/update',
+  validate(v.portfolioIdParam, 'params'),
+  validate(v.portfolioUpdate),
+  asyncHandler(portfolioController.update)
+);
+
+/**
+ * @swagger
+ * /candidates/portfolio/{id}/delete:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: Soft-delete a portfolio item
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       '200': { description: Portfolio item deleted, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ *       '404': { $ref: '#/components/responses/NotFoundError' }
+ */
+router.post(
+  '/portfolio/:id/delete',
+  validate(v.portfolioIdParam, 'params'),
+  asyncHandler(portfolioController.remove)
+);
+
 /**
  * @swagger
  * /candidates/similar:

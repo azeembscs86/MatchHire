@@ -32,6 +32,7 @@ import SkillsPicker from '../components/SkillsPicker.jsx';
 import ProfileImageUpload from '../components/ProfileImageUpload.jsx';
 import ProfileCompletionCard from '../components/ProfileCompletionCard.jsx';
 import WorkExperienceCard from '../components/WorkExperienceCard.jsx';
+import PortfolioEditor from '../components/PortfolioEditor.jsx';
 import { candidatesApi, skillsApi } from '../api/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -608,6 +609,20 @@ export default function Profile() {
               candidatesApi.profileCompletion().then(setCompletion).catch(() => {});
             }}
           />
+
+          {/* -------- 04a Work Portfolio & Achievements --------
+              Universal proof-of-experience surface — projects,
+              achievements, certificates, work samples, etc. The
+              editor manages its own list state, but every save /
+              delete refreshes the profile-completion card so the
+              portfolio strength bar moves immediately. */}
+          <div className="form-card">
+            <PortfolioEditor
+              onAfterWrite={() => {
+                candidatesApi.profileCompletion().then(setCompletion).catch(() => {});
+              }}
+            />
+          </div>
 
           {/* -------- 04b Education -------- */}
           {/*

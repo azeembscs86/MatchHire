@@ -18,6 +18,7 @@ const jobRepo = require('../repositories/job.repository');
 const companyRepo = require('../repositories/company.repository');
 const candidateRepo = require('../repositories/candidate.repository');
 const candidateExperienceRepo = require('../repositories/candidateExperience.repository');
+const candidatePortfolioRepo = require('../repositories/candidatePortfolio.repository');
 const metaRepo = require('../repositories/meta.repository');
 const matchService = require('./match.service');
 const cache = require('../cache/cache.helper');
@@ -154,6 +155,17 @@ async function getCandidate(id, viewer = null) {
     data = { ...candidate, experiences };
     await cache.setCache(key, data, cache.TTL.CANDIDATE_DETAIL);
   }
+  // Work Portfolio & Achievements — visibility filtered per
+  // viewer. Guests see public-only; employers also see
+  // companies_only; the candidate themselves sees everything.
+  // Fetched fresh (not part of the cached blob) so visibility
+  // can't bleed across viewer roles.
+  const selfView = !!viewer && Number(viewer.id) === Number(id);
+  const portfolio = await candidatePortfolioRepo.listForViewer(Number(id), {
+    viewerRole: viewer?.role || null,
+    selfView,
+  }).catch(() => []);
+
   // Layer per-viewer fields on top of the cached anonymous payload.
   // Email + has_resume are exposed ONLY to employer viewers — the
   // auth context is the gate, never the request body — and are
@@ -177,9 +189,9 @@ async function getCandidate(id, viewer = null) {
         [Number(id)]
       ),
     ]);
-    return { ...data, email: row?.email || null, has_resume: !!resume };
+    return { ...data, email: row?.email || null, has_resume: !!resume, portfolio };
   }
-  return data;
+  return { ...data, portfolio };
 }
 
 async function categories() {

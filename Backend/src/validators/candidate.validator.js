@@ -229,6 +229,45 @@ const validateAndApply = Joi.object({
   resume_url: Joi.string().uri().max(500).allow('', null),
 }).unknown(false);
 
+/**
+ * Universal portfolio item — used by create + update endpoints.
+ * `update` is just `create` with every field optional, so we
+ * `.fork()` it below. Both routes accept the same shape so the
+ * frontend can reuse one form for the editor.
+ */
+const portfolioCreate = Joi.object({
+  title: Joi.string().min(2).max(200).required(),
+  item_type: Joi.string().valid(
+    'project', 'achievement', 'certificate', 'work_sample', 'case_study',
+    'training', 'research', 'field_experience', 'volunteer',
+    'portfolio_link', 'publication', 'award',
+  ).default('project'),
+  category: Joi.string().max(120).allow('', null),
+  role_responsibility: Joi.string().max(200).allow('', null),
+  skills_used: Joi.alternatives(
+    Joi.array().items(Joi.string().max(60)).max(20),
+    Joi.string().max(500)
+  ).default([]),
+  tools_used: Joi.alternatives(
+    Joi.array().items(Joi.string().max(60)).max(20),
+    Joi.string().max(500)
+  ).default([]),
+  description: Joi.string().max(4000).allow('', null),
+  impact: Joi.string().max(2000).allow('', null),
+  proof_file_url: Joi.string().uri().max(500).allow('', null),
+  external_link: Joi.string().uri().max(500).allow('', null),
+  start_date: Joi.date().iso().allow(null),
+  end_date: Joi.date().iso().allow(null),
+  is_current: Joi.boolean().default(false),
+  visibility: Joi.string().valid('public', 'companies_only', 'private').default('companies_only'),
+}).unknown(false);
+
+const portfolioUpdate = portfolioCreate.fork(['title'], (f) => f.optional());
+
+const portfolioIdParam = Joi.object({
+  id: Joi.number().integer().positive().required(),
+});
+
 /** "Similar professionals" feed — optional limit override. */
 const similarFilters = Joi.object({
   limit: Joi.number().integer().min(1).max(100).default(50),
@@ -260,4 +299,7 @@ module.exports = {
   savedJobsList,
   similarFilters,
   sendMessage,
+  portfolioCreate,
+  portfolioUpdate,
+  portfolioIdParam,
 };

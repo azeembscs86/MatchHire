@@ -876,6 +876,147 @@
   .skills-input input{border:0;background:none;outline:0;flex:1;min-width:120px;font-size:14px;padding:5px}
 
   /*
+   * Work Portfolio & Achievements editor (Profile page) + the
+   * read-only display block on CandidateDetail. Same `.portfolio-
+   * list / .portfolio-card` styling powers both surfaces so the
+   * design stays consistent. The editor adds its own header,
+   * strength meter, and form variants below.
+   */
+  .portfolio-editor{display:flex;flex-direction:column;gap:14px}
+  .portfolio-head{
+    display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;
+  }
+  .portfolio-head h3{
+    font-family:'Fraunces',serif;font-size:22px;font-weight:600;
+    letter-spacing:-.01em;margin:0;color:var(--ink);
+  }
+  .portfolio-strength{
+    text-align:right;background:var(--bone);border:1px solid var(--line-soft);
+    padding:8px 14px;border-radius:10px;min-width:96px;
+  }
+  .portfolio-actions-row{display:flex;gap:8px}
+  .portfolio-form{
+    background:var(--bone);border:1px solid var(--line);border-radius:14px;
+    padding:18px;display:flex;flex-direction:column;gap:12px;
+  }
+  .portfolio-form-grid{
+    display:grid;grid-template-columns:1fr 1fr;gap:12px;
+  }
+  .portfolio-field{
+    display:flex;flex-direction:column;gap:6px;
+    font-size:11.5px;font-weight:600;color:var(--muted);
+    letter-spacing:.04em;text-transform:uppercase;
+  }
+  .portfolio-field-wide{grid-column:1 / -1}
+  .portfolio-field input[type="text"],
+  .portfolio-field input[type="url"],
+  .portfolio-field input[type="date"],
+  .portfolio-field select,
+  .portfolio-field textarea{
+    width:100%;padding:9px 11px;border-radius:9px;
+    background:var(--paper);border:1px solid var(--line);
+    font-size:14px;font-weight:400;letter-spacing:normal;text-transform:none;
+    color:var(--ink);font-family:inherit;line-height:1.5;
+    transition:border-color .15s ease,box-shadow .15s ease;
+  }
+  .portfolio-field textarea{resize:vertical;min-height:90px}
+  .portfolio-field input:focus,
+  .portfolio-field select:focus,
+  .portfolio-field textarea:focus{
+    outline:0;border-color:var(--coral);box-shadow:0 0 0 3px rgba(232,93,60,.10);
+  }
+  .portfolio-field-checkbox{
+    flex-direction:row;align-items:center;gap:8px;
+    font-size:13px;font-weight:400;letter-spacing:normal;text-transform:none;
+    color:var(--ink-soft);
+  }
+  .portfolio-field-checkbox input{accent-color:var(--coral);width:auto}
+  .portfolio-form-error{
+    padding:10px 12px;border-radius:8px;font-size:13px;
+    background:rgba(232,93,60,.08);border:1px solid rgba(232,93,60,.22);
+    color:var(--coral-deep,#C73E1D);
+  }
+  .portfolio-form-actions{
+    display:flex;gap:10px;justify-content:flex-end;
+  }
+  .portfolio-empty{
+    padding:18px;background:var(--bone);border:1px dashed var(--line);
+    border-radius:12px;
+  }
+  .portfolio-list{
+    list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px;
+  }
+  .portfolio-list-readonly{margin-top:6px}
+  .portfolio-card{
+    background:var(--paper);border:1px solid var(--line);border-radius:12px;
+    padding:14px 16px;display:flex;flex-direction:column;gap:8px;
+  }
+  .portfolio-card-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+  .portfolio-type{
+    font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--muted);margin-bottom:2px;
+  }
+  .portfolio-title{
+    font-family:'Fraunces',serif;font-size:16px;font-weight:600;
+    letter-spacing:-.01em;line-height:1.3;margin:0;color:var(--ink);
+    overflow-wrap:anywhere;
+  }
+  .portfolio-role{
+    margin:4px 0 0;font-size:13px;color:var(--ink-soft);line-height:1.4;
+  }
+  .portfolio-card-meta{
+    display:flex;flex-direction:column;gap:4px;align-items:flex-end;flex-shrink:0;
+  }
+  .portfolio-score{
+    display:inline-flex;align-items:center;
+    padding:2px 8px;border-radius:100px;
+    font-size:11px;font-weight:600;
+    background:rgba(63,107,79,.10);color:var(--sage);
+    border:1px solid rgba(63,107,79,.22);
+  }
+  .portfolio-visibility{
+    font-size:10.5px;font-weight:500;letter-spacing:.04em;
+    padding:2px 8px;border-radius:100px;
+    background:var(--bone);color:var(--ink-soft);
+    border:1px solid var(--line-soft);
+  }
+  .v-public{background:rgba(63,107,79,.10);color:var(--sage);border-color:rgba(63,107,79,.22)}
+  .v-private{background:rgba(232,93,60,.08);color:var(--coral-deep,#C73E1D);border-color:rgba(232,93,60,.22)}
+  .portfolio-dates{margin:0;font-size:12px;color:var(--muted)}
+  .portfolio-description,
+  .portfolio-impact{
+    margin:0;font-size:13.5px;color:var(--ink-soft);line-height:1.5;
+    white-space:pre-line;word-break:break-word;
+  }
+  .portfolio-impact strong{color:var(--coral-deep,#C73E1D);font-weight:600}
+  .portfolio-tag-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}
+  .portfolio-tag{
+    display:inline-flex;align-items:center;
+    padding:3px 9px;border-radius:100px;
+    font-size:11px;font-weight:500;line-height:1.3;
+    border:1px solid transparent;
+  }
+  .portfolio-tag-skill{
+    background:rgba(63,107,79,.10);color:var(--sage);
+    border-color:rgba(63,107,79,.22);
+  }
+  .portfolio-tag-tool{
+    background:var(--bone);color:var(--ink-soft);
+    border-color:var(--line-soft);
+  }
+  .portfolio-link{margin:0;font-size:13px}
+  .portfolio-link a{color:var(--coral);font-weight:500}
+  .portfolio-link a:hover{text-decoration:underline}
+  .portfolio-card-actions{
+    display:flex;gap:8px;margin-top:6px;
+  }
+  @media (max-width:640px){
+    .portfolio-form-grid{grid-template-columns:1fr}
+    .portfolio-card-head{flex-direction:column;align-items:flex-start}
+    .portfolio-card-meta{flex-direction:row;align-items:center}
+  }
+
+  /*
    * Professional MessageModal — used by the candidate-to-candidate
    * messaging surface (Similar Professionals feed). A focused
    * single-column modal so the user's attention stays on the

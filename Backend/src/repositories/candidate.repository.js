@@ -394,6 +394,18 @@ async function computeCompletionBreakdown(user_id) {
     [user_id]
   );
 
+  // Work Portfolio & Achievements — new section in §38. We count
+  // non-deleted rows so adding any evidence credits the section,
+  // but full credit only kicks in at 2+ items (mirroring the
+  // work-experience curve).
+  const portfolioCount = Number(
+    (await db.queryOne(
+      `SELECT COUNT(*) AS n FROM candidate_portfolio_items
+       WHERE candidate_user_id = ? AND deleted_at IS NULL`,
+      [user_id]
+    ))?.n || 0
+  );
+
   // Relocation/work-mode signal: either column populated counts.
   const hasRelocationSignal = cp.relocation_scope != null
     || cp.work_preference != null
@@ -403,7 +415,9 @@ async function computeCompletionBreakdown(user_id) {
     {
       key: 'profile_image',
       label: 'Profile image',
-      weight: 10,
+      // Weight reduced 10 → 8 to make room for the new portfolio
+      // section while keeping the 100-point total intact.
+      weight: 8,
       fill: cp.profile_image ? 1 : 0,
       hint: 'Upload your profile image to improve profile visibility.',
     },
@@ -424,7 +438,9 @@ async function computeCompletionBreakdown(user_id) {
     {
       key: 'about',
       label: 'About you',
-      weight: 10,
+      // Weight reduced 10 → 8 to make room for the new portfolio
+      // section while keeping the 100-point total intact.
+      weight: 8,
       // Validator enforces summary >= 60 chars, so credit only when
       // it clears the same bar — half-credit at >= 30 chars to keep
       // the bar moving as the user types.
@@ -439,7 +455,9 @@ async function computeCompletionBreakdown(user_id) {
     {
       key: 'skills',
       label: 'Skills & expertise',
-      weight: 15,
+      // Weight reduced from 15 → 13 to free 2 points for the new
+      // Work Portfolio section without breaking the 100-point total.
+      weight: 13,
       // 3 skills = fully credited; 1 skill = 1/3; saturates at 1.
       fill: Math.min(1, skillCount / 3),
       hint: 'Add at least 3 skills to get better job matches.',
@@ -447,7 +465,8 @@ async function computeCompletionBreakdown(user_id) {
     {
       key: 'work_experience',
       label: 'Work experience',
-      weight: 20,
+      // Weight reduced 20 → 18 to free 2 points for portfolio.
+      weight: 18,
       // 1 entry = 50% credit, 2+ = full credit. Fallback to parsed
       // resume only when the normalised table is empty.
       fill: (() => {
@@ -460,7 +479,9 @@ async function computeCompletionBreakdown(user_id) {
     {
       key: 'resume_upload',
       label: 'Resume',
-      weight: 10,
+      // Weight reduced 10 → 9 to make room for the new portfolio
+      // section while keeping the 100-point total intact.
+      weight: 9,
       fill: (resumeRow || cp.resume_url) ? 1 : 0,
       hint: 'Upload your resume so companies can review your experience.',
     },
@@ -484,10 +505,28 @@ async function computeCompletionBreakdown(user_id) {
     },
     {
       key: 'social_links',
-      label: 'Social links & portfolio',
-      weight: 5,
+      label: 'Social links',
+      // Weight reduced 5 → 4 — the new Work Portfolio section
+      // covers a lot of what the social-link block used to cover
+      // (proof of work, sample artefacts, public artefacts).
+      weight: 4,
       fill: scoreFraction([!!cp.linkedin_url, !!cp.portfolio_url, !!cp.github_url]),
       hint: 'Add a LinkedIn / portfolio / GitHub link so recruiters can verify your work.',
+    },
+    {
+      key: 'work_portfolio',
+      label: 'Work Portfolio & Achievements',
+      // 10 points — adding 1 evidence item earns half credit; 2+
+      // items earn full credit. Mirrors the work-experience curve
+      // so the strength meter moves smoothly as candidates flesh
+      // out the new section.
+      weight: 10,
+      fill: (() => {
+        if (portfolioCount >= 2) return 1;
+        if (portfolioCount === 1) return 0.5;
+        return 0;
+      })(),
+      hint: 'Add projects, achievements, certificates, or other proof of work so companies trust your profile.',
     },
   ];
 

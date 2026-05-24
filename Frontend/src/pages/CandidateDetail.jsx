@@ -299,7 +299,66 @@ export default function CandidateDetail() {
               </section>
             )}
 
-            {!c.summary && skills.length === 0 && experiences.length === 0 && (
+            {/*
+              * Work Portfolio & Achievements — read-only display.
+              * The backend filters the array by visibility based on
+              * the authenticated viewer's role (employer / candidate
+              * / guest), so we can render whatever lands here
+              * verbatim. Hidden when the candidate has no items the
+              * current viewer is allowed to see.
+              */}
+            {Array.isArray(c.portfolio) && c.portfolio.length > 0 && (
+              <section className="jd-section">
+                <h2>Work Portfolio &amp; Achievements</h2>
+                <ul className="portfolio-list portfolio-list-readonly">
+                  {c.portfolio.map((p) => (
+                    <li key={p.id} className="portfolio-card">
+                      <div className="portfolio-card-head">
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div className="portfolio-type">
+                            {String(p.item_type || 'project').replace(/_/g, ' ')}
+                          </div>
+                          <h4 className="portfolio-title" title={p.title}>{p.title}</h4>
+                          {p.role_responsibility && (
+                            <p className="portfolio-role">{p.role_responsibility}</p>
+                          )}
+                        </div>
+                      </div>
+                      {(p.start_date || p.is_current) && (
+                        <p className="portfolio-dates">
+                          {[
+                            p.start_date ? new Date(p.start_date).toLocaleDateString(undefined, { year: 'numeric', month: 'short' }) : null,
+                            p.is_current ? 'Present'
+                              : (p.end_date ? new Date(p.end_date).toLocaleDateString(undefined, { year: 'numeric', month: 'short' }) : null),
+                          ].filter(Boolean).join(' – ')}
+                        </p>
+                      )}
+                      {p.description && <p className="portfolio-description">{p.description}</p>}
+                      {p.impact && <p className="portfolio-impact"><strong>Impact: </strong>{p.impact}</p>}
+                      {(p.skills_used?.length > 0 || p.tools_used?.length > 0) && (
+                        <div className="portfolio-tag-row">
+                          {(p.skills_used || []).map((s) => (
+                            <span key={`s-${s}`} className="portfolio-tag portfolio-tag-skill">{s}</span>
+                          ))}
+                          {(p.tools_used || []).map((s) => (
+                            <span key={`t-${s}`} className="portfolio-tag portfolio-tag-tool">{s}</span>
+                          ))}
+                        </div>
+                      )}
+                      {p.external_link && (
+                        <p className="portfolio-link">
+                          <a href={p.external_link} target="_blank" rel="noopener noreferrer">
+                            Proof / link ↗
+                          </a>
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {!c.summary && skills.length === 0 && experiences.length === 0 && (!Array.isArray(c.portfolio) || c.portfolio.length === 0) && (
               <EmptyState
                 title="Not much to show yet"
                 message="This candidate hasn't published a full profile yet."

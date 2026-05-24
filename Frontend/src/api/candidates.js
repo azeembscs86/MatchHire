@@ -130,6 +130,19 @@ export const candidatesApi = {
   },
 
   /**
+   * Work Portfolio & Achievements — CRUD for the logged-in
+   * candidate. The companion foreign-viewer fetch lives on
+   * `publicApi.candidatePortfolio` so the visibility gate runs
+   * on the server.
+   */
+  portfolio: {
+    list() { return call(api.post('/candidates/portfolio/list')); },
+    create(payload) { return call(api.post('/candidates/portfolio', payload)); },
+    update(id, payload) { return call(api.post(`/candidates/portfolio/${id}/update`, payload)); },
+    remove(id) { return call(api.post(`/candidates/portfolio/${id}/delete`)); },
+  },
+
+  /**
    * "Similar Professionals" feed for the logged-in candidate.
    * Server returns rows with similarity_score > 50%, sorted desc.
    */
