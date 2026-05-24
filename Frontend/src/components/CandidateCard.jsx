@@ -58,6 +58,7 @@ export default function CandidateCard({
       onClick={open}
       ariaLabel={`Open profile for ${candidate.n}`}
       className="cand-card"
+      testId="candidate-card"
     >
       {tier ? (
         <span className={`cand-match-pill match-chip-${tier.key}`} title={tier.label + ' match'}>
@@ -112,6 +113,7 @@ export default function CandidateCard({
             className="btn btn-coral btn-sm"
             onClick={(e) => { e.stopPropagation(); onContact(candidate); }}
             aria-label={`${contactLabel} ${candidate.n}`}
+            data-testid="candidate-message-button"
           >
             {contactLabel}
           </button>

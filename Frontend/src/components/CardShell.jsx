@@ -34,6 +34,7 @@ export default function CardShell({
   featured = false,
   variant = 'grid',
   className = '',
+  testId,
   children,
 }) {
   function handleKey(e) {
@@ -62,6 +63,7 @@ export default function CardShell({
       onClick={onClick}
       onKeyDown={handleKey}
       aria-label={ariaLabel}
+      data-testid={testId}
     >
       {children}
     </div>

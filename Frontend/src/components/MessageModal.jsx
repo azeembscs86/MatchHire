@@ -109,6 +109,7 @@ export default function MessageModal({ candidate, onClose, onSent }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="msg-modal-title"
+        data-testid="candidate-message-modal"
       >
         <header className="msg-modal-head">
           <div>
@@ -169,11 +170,16 @@ export default function MessageModal({ candidate, onClose, onSent }) {
               placeholder="Keep it professional — career, skills, jobs, or networking."
               required
               disabled={sending}
+              data-testid="candidate-message-textarea"
             />
           </label>
 
           {errorMsg && (
-            <div role="alert" className="msg-modal-error">{errorMsg}</div>
+            <div
+              role="alert"
+              className="msg-modal-error"
+              data-testid="professional-message-error"
+            >{errorMsg}</div>
           )}
           {okMsg && !errorMsg && (
             <div role="status" className="msg-modal-ok">{okMsg}</div>
@@ -191,6 +197,7 @@ export default function MessageModal({ candidate, onClose, onSent }) {
               className="btn btn-coral"
               disabled={sending || body.trim().length < 10}
               aria-busy={sending}
+              data-testid="candidate-message-send"
             >
               {sending ? 'Sending…' : 'Send'}
             </button>

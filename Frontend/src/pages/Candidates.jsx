@@ -185,7 +185,10 @@ export default function Candidates() {
                 ? `★ Similar to you · ${total != null ? Number(total).toLocaleString() : '—'} matches`
                 : `★ For employers · ${total != null ? Number(total).toLocaleString() : '—'} candidates`}
           </span>
-          <h1 className="display">
+          <h1
+            className="display"
+            data-testid={isCandidate ? 'similar-professionals-heading' : undefined}
+          >
             {isEmployer ? (
               <>Recommended <span className="ital" style={{ fontStyle: 'italic', color: 'var(--coral)' }}>candidates</span>.</>
             ) : isCandidate ? (

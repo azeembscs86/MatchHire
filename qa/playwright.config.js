@@ -31,12 +31,11 @@ const BASE_URL = process.env.QA_BASE_URL || 'http://localhost:5173';
 
 module.exports = defineConfig({
   testDir: path.join(__dirname, 'e2e'),
-  // Logs in as each canonical QA role once and snapshots storage
-  // state to disk. Individual specs that need auth use the
-  // `loadStorageState` helper to pick the right snapshot. This
-  // bypasses the auth rate limiter and is ~10× faster than
-  // fresh logins per test.
-  globalSetup: require.resolve('./helpers/global-setup.js'),
+  // Authenticated specs log in on-the-fly via the API context and
+  // inject tokens with `addInitScript` (see candidate-flow.spec.js).
+  // That avoids the cross-context handoff issues the old
+  // storage-state global setup ran into without making any extra
+  // login calls than the per-test approach already requires.
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,           // serial — easier to debug + shared backend state
