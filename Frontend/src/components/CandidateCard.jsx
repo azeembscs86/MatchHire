@@ -29,7 +29,19 @@ function matchTier(score) {
   return { key: 'mod',    label: 'Potential' };
 }
 
-export default function CandidateCard({ candidate, rankTop = false, match = null, onContact = null }) {
+export default function CandidateCard({
+  candidate,
+  rankTop = false,
+  match = null,
+  onContact = null,
+  /**
+   * Label rendered on the contact button when `onContact` is set.
+   * Defaults to "Contact" (employer view); the candidate-role
+   * "Similar Professionals" surface passes "Message" so the button
+   * matches the LinkedIn-style networking semantics.
+   */
+  contactLabel = 'Contact',
+}) {
   const navigate = useNavigate();
 
   function open() {
@@ -99,9 +111,9 @@ export default function CandidateCard({ candidate, rankTop = false, match = null
             type="button"
             className="btn btn-coral btn-sm"
             onClick={(e) => { e.stopPropagation(); onContact(candidate); }}
-            aria-label={`Contact ${candidate.n}`}
+            aria-label={`${contactLabel} ${candidate.n}`}
           >
-            Contact
+            {contactLabel}
           </button>
         </div>
       )}

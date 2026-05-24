@@ -875,6 +875,87 @@
   .skill-pill button{color:var(--bone);opacity:.6;font-size:14px;line-height:1}
   .skills-input input{border:0;background:none;outline:0;flex:1;min-width:120px;font-size:14px;padding:5px}
 
+  /*
+   * Professional MessageModal — used by the candidate-to-candidate
+   * messaging surface (Similar Professionals feed). A focused
+   * single-column modal so the user's attention stays on the
+   * compose form. Templates + content filter explained inline in
+   * the component.
+   */
+  .msg-modal-overlay{
+    position:fixed;inset:0;background:rgba(14,17,22,.55);backdrop-filter:blur(4px);
+    z-index:120;display:flex;align-items:center;justify-content:center;padding:20px;
+    animation:fadeIn .2s ease;
+  }
+  .msg-modal{
+    background:var(--paper);border-radius:18px;
+    width:100%;max-width:560px;max-height:90vh;
+    display:flex;flex-direction:column;overflow:hidden;
+    box-shadow:0 30px 80px -20px rgba(0,0,0,.35);
+  }
+  .msg-modal-head{
+    display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
+    padding:20px 22px 12px;border-bottom:1px solid var(--line-soft);
+  }
+  .msg-modal-head h3{
+    font-family:'Fraunces',serif;font-size:20px;font-weight:600;
+    margin:0;letter-spacing:-.01em;
+  }
+  .msg-modal-close{
+    width:32px;height:32px;border-radius:50%;
+    background:transparent;color:var(--muted-2);font-size:22px;line-height:1;
+    cursor:pointer;display:grid;place-items:center;
+  }
+  .msg-modal-close:hover{background:var(--bone);color:var(--ink)}
+  .msg-modal-templates{padding:14px 22px 0;display:flex;flex-direction:column;gap:8px}
+  .msg-template-row{display:flex;flex-wrap:wrap;gap:6px}
+  .msg-template-chip{
+    padding:5px 12px;border-radius:100px;font-size:12px;font-weight:500;
+    background:var(--bone);border:1px solid var(--line);color:var(--ink-soft);
+    cursor:pointer;transition:background .15s ease,color .15s ease,border-color .15s ease;
+  }
+  .msg-template-chip:hover{
+    background:var(--ink);color:var(--bone);border-color:var(--ink);
+  }
+  .msg-modal-form{
+    padding:14px 22px 20px;display:flex;flex-direction:column;gap:12px;
+    overflow-y:auto;
+  }
+  .msg-modal-label{
+    display:flex;flex-direction:column;gap:6px;
+    font-size:12px;font-weight:600;letter-spacing:.04em;
+    text-transform:uppercase;color:var(--muted);
+  }
+  .msg-modal-input,.msg-modal-textarea{
+    width:100%;padding:10px 12px;border-radius:10px;
+    background:var(--paper);border:1px solid var(--line);
+    font-size:14px;color:var(--ink);font-family:inherit;font-weight:400;
+    line-height:1.5;letter-spacing:normal;text-transform:none;
+    transition:border-color .15s ease,box-shadow .15s ease;
+  }
+  .msg-modal-textarea{resize:vertical;min-height:120px}
+  .msg-modal-input:focus,.msg-modal-textarea:focus{
+    outline:0;border-color:var(--coral);box-shadow:0 0 0 3px rgba(232,93,60,.10);
+  }
+  .msg-modal-error{
+    padding:10px 12px;border-radius:8px;font-size:13px;
+    background:rgba(232,93,60,.08);border:1px solid rgba(232,93,60,.22);
+    color:var(--coral-deep,#C73E1D);line-height:1.45;
+  }
+  .msg-modal-ok{
+    padding:10px 12px;border-radius:8px;font-size:13px;
+    background:rgba(63,107,79,.10);border:1px solid rgba(63,107,79,.22);
+    color:var(--sage);line-height:1.45;
+  }
+  .msg-modal-actions{
+    display:flex;gap:10px;justify-content:flex-end;margin-top:4px;
+  }
+  .msg-modal-actions .btn{min-width:110px}
+  @media (max-width:640px){
+    .msg-modal-actions{flex-direction:column-reverse}
+    .msg-modal-actions .btn{width:100%}
+  }
+
   /* ───── Auth modal ───── */
   .modal-overlay{
     position:fixed;inset:0;background:rgba(14,17,22,.5);backdrop-filter:blur(4px);

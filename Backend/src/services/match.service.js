@@ -258,9 +258,159 @@ function validateApplication(job, candidate) {
   };
 }
 
+/**
+ * Candidate-to-candidate similarity. Used by the "Similar
+ * Professionals" feed on the Candidates page for logged-in
+ * candidate viewers.
+ *
+ * Different shape from `scoreJob`: there's no job here, just two
+ * candidate context objects. Weights per product brief:
+ *
+ *   skills       0..60   Jaccard overlap of skill sets — the
+ *                        dominant signal. A Software Engineer
+ *                        looking at another Software Engineer
+ *                        should land high purely on shared stack.
+ *   role/title   0..25   word overlap between current_title /
+ *                        headline (>2-char tokens).
+ *   experience   0..15   closeness in years. Same-tier candidates
+ *                        get full credit; large gaps reduce but
+ *                        never zero (1pt floor).
+ *
+ * Returns `{ score, matched_skills, skills_they_have,
+ * skills_you_have, experience_comparison }`. Caller filters on
+ * `score > 50` and sorts desc.
+ */
+function candidateSimilarity(me, them) {
+  // --- skills (60 pts) ---
+  const mySkills = new Set(
+    (me.skills || []).map((s) => String(s.name || s).toLowerCase()).filter(Boolean)
+  );
+  const theirSkills = new Set(
+    (them.skills || []).map((s) => String(s.name || s).toLowerCase()).filter(Boolean)
+  );
+  let skillsScore = 0;
+  let matched = [];
+  let theyOnly = [];
+  let meOnly = [];
+  if (mySkills.size > 0 && theirSkills.size > 0) {
+    matched = [...mySkills].filter((s) => theirSkills.has(s));
+    const union = new Set([...mySkills, ...theirSkills]);
+    skillsScore = Math.round(60 * (matched.length / union.size));
+    theyOnly = [...theirSkills].filter((s) => !mySkills.has(s));
+    meOnly = [...mySkills].filter((s) => !theirSkills.has(s));
+  }
+
+  // --- role / title (25 pts) ---
+  const myTitle = lower(me.current_title || me.headline);
+  const theirTitle = lower(them.current_title || them.headline);
+  let roleScore = 0;
+  if (myTitle && theirTitle) {
+    const myWords = new Set(myTitle.split(/[^a-z0-9]+/).filter((w) => w.length > 2));
+    const theirWords = new Set(theirTitle.split(/[^a-z0-9]+/).filter((w) => w.length > 2));
+    const overlap = [...myWords].filter((w) => theirWords.has(w));
+    if (overlap.length >= 2) roleScore = 25;
+    else if (overlap.length === 1) roleScore = 15;
+  }
+
+  // --- experience (15 pts) ---
+  const myYears = Number(me.years_experience || 0);
+  const theirYears = Number(them.years_experience || 0);
+  const gap = Math.abs(myYears - theirYears);
+  let expScore;
+  if (gap <= 1) expScore = 15;
+  else if (gap <= 3) expScore = 12;
+  else if (gap <= 5) expScore = 8;
+  else if (gap <= 8) expScore = 4;
+  else expScore = 1;
+
+  return {
+    score: Math.min(100, skillsScore + roleScore + expScore),
+    matched_skills: matched,
+    skills_they_have: theyOnly,
+    skills_you_have: meOnly,
+    experience_comparison: {
+      you: myYears,
+      candidate: theirYears,
+      gap_years: theirYears - myYears,
+    },
+  };
+}
+
+/**
+ * Professional message validator. Used before a candidate-to-
+ * candidate message is persisted. Rejects:
+ *
+ *   - sequences of 7+ digits (phone numbers)
+ *   - email-shaped tokens
+ *   - off-platform contact hints (whatsapp / instagram / etc.)
+ *   - relationship-leaning words (girlfriend / boyfriend / marry / ...)
+ *   - basic profanity
+ *   - bodies under 10 chars (spam guard)
+ *
+ * Returns `{ ok, reason?, message? }`. The frontend surfaces the
+ * `message` field verbatim to the user.
+ */
+const PROFESSIONAL_BLOCK_MESSAGE =
+  'Only professional discussions are allowed on MatchHire. ' +
+  'Please keep your message related to career, skills, jobs, or professional networking.';
+
+function validateProfessionalMessage(text) {
+  const raw = String(text || '');
+  if (raw.trim().length < 10) {
+    return { ok: false, reason: 'too-short', message: 'Message is too short — share a little more context.' };
+  }
+  const t = raw.toLowerCase();
+  if (/\d{7,}/.test(raw)) {
+    return { ok: false, reason: 'phone', message: PROFESSIONAL_BLOCK_MESSAGE };
+  }
+  if (/[\w.+-]+@[\w-]+\.\w{2,}/.test(raw)) {
+    return { ok: false, reason: 'email', message: PROFESSIONAL_BLOCK_MESSAGE };
+  }
+  // Off-platform messaging hints — MatchHire doesn't want users
+  // funneled to external chat surfaces without context.
+  const offPlatform = ['whatsapp', 'whats app', 'telegram', 'snapchat', 'instagram', 'tinder'];
+  for (const w of offPlatform) {
+    if (new RegExp(`\\b${w}\\b`, 'i').test(t)) {
+      return { ok: false, reason: 'off-platform', message: PROFESSIONAL_BLOCK_MESSAGE };
+    }
+  }
+  // Relationship / romantic / harassment terms.
+  const banned = [
+    'girlfriend', 'boyfriend', 'marry', 'marriage', 'wedding',
+    'sexy', 'kiss', 'flirt', 'hookup', 'crush',
+  ];
+  for (const w of banned) {
+    if (new RegExp(`\\b${w}\\b`, 'i').test(t)) {
+      return { ok: false, reason: 'inappropriate', message: PROFESSIONAL_BLOCK_MESSAGE };
+    }
+  }
+  // Romantic phrases — "date" is too ambiguous as a single word
+  // (interview date / due date / project date), but pinned to a
+  // pronoun it's reliably a romantic ask. Same for "send pic(s)".
+  const bannedPhrases = [
+    /\b(date|dating)\s+(me|you|him|her|them)\b/i,
+    /\bgo\s+out\s+with\s+(me|you)\b/i,
+    /\bsend\s+(me\s+)?(pic|pics|picture|photo|selfie)/i,
+    /\bnumber\s+please\b/i,
+  ];
+  for (const rx of bannedPhrases) {
+    if (rx.test(raw)) {
+      return { ok: false, reason: 'inappropriate', message: PROFESSIONAL_BLOCK_MESSAGE };
+    }
+  }
+  // Basic profanity.
+  const profanity = ['fuck', 'shit', 'bitch', 'asshole', 'cunt'];
+  for (const w of profanity) if (t.includes(w)) {
+    return { ok: false, reason: 'profanity', message: PROFESSIONAL_BLOCK_MESSAGE };
+  }
+  return { ok: true };
+}
+
 module.exports = {
   scoreJob,
   validateApplication,
+  candidateSimilarity,
+  validateProfessionalMessage,
   ACCEPT_THRESHOLD,
   BORDERLINE_THRESHOLD,
 };

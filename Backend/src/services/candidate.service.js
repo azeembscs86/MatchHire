@@ -308,6 +308,178 @@ async function applyWithValidation(user_id, job_id, payload = {}) {
   };
 }
 
+const SIMILARITY_FLOOR = 50;
+
+/**
+ * "Similar Professionals" — AI-ranked feed of other candidates that
+ * share the logged-in candidate's skills / role / experience band.
+ * Powers the Candidate-role branch of the Candidates discovery page,
+ * replacing the generic candidate browse.
+ *
+ * Pipeline (no N+1):
+ *   1. Load my candidate context.
+ *   2. SQL prefilter to public candidates whose listed skills
+ *      overlap any of mine (capped at 500).
+ *   3. Bulk-load profile + skills for the pool in 2 queries.
+ *   4. Score each via `matchService.candidateSimilarity`, drop
+ *      anything <= 50%, sort highest first.
+ *
+ * Returns rich rows (matched_skills, skills_they_have,
+ * skills_you_have, experience_comparison) so the UI can render
+ * the "Profile Comparison" section without a second round-trip.
+ */
+async function similarCandidates(user_id, { limit = 50 } = {}) {
+  const me = await jobRepo.loadCandidateContext(user_id);
+  if (!me) throw new AppError('Candidate profile not found', 404);
+
+  const mySkillsLower = (me.skills || [])
+    .map((s) => String(s.name || s).toLowerCase()).filter(Boolean);
+  if (mySkillsLower.length === 0) {
+    return { floor: SIMILARITY_FLOOR, total: 0, records: [] };
+  }
+
+  // Prefilter: other public candidates with any overlapping skill.
+  const placeholders = mySkillsLower.map(() => '?').join(',');
+  const idRows = await db.query(
+    `SELECT DISTINCT cs.candidate_user_id
+     FROM candidate_skills cs
+     INNER JOIN skills s ON s.id = cs.skill_id
+     INNER JOIN users u ON u.id = cs.candidate_user_id
+     INNER JOIN candidate_profiles cp ON cp.user_id = u.id
+     WHERE LOWER(s.name) IN (${placeholders})
+       AND u.id <> ?
+       AND u.role = 'candidate'
+       AND u.status = 'active'
+       AND u.deleted_at IS NULL
+       AND cp.is_public = 1
+     LIMIT 500`,
+    [...mySkillsLower, user_id]
+  );
+  const ids = idRows.map((r) => Number(r.candidate_user_id));
+  if (ids.length === 0) {
+    return { floor: SIMILARITY_FLOOR, total: 0, records: [] };
+  }
+
+  // Bulk-load profile + skills for the prefiltered pool.
+  const idPh = ids.map(() => '?').join(',');
+  const [profiles, skillRows] = await Promise.all([
+    db.query(
+      `SELECT u.id, u.full_name, u.avatar_url, u.created_at,
+              cp.headline, cp.summary, cp.current_title, cp.years_experience,
+              cp.location, cp.country, cp.open_to_remote, cp.profile_strength
+       FROM users u
+       INNER JOIN candidate_profiles cp ON cp.user_id = u.id
+       WHERE u.id IN (${idPh})`,
+      ids
+    ),
+    db.query(
+      `SELECT cs.candidate_user_id, s.name
+       FROM candidate_skills cs
+       INNER JOIN skills s ON s.id = cs.skill_id
+       WHERE cs.candidate_user_id IN (${idPh})`,
+      ids
+    ),
+  ]);
+
+  const skillByUser = new Map();
+  for (const r of skillRows) {
+    const arr = skillByUser.get(r.candidate_user_id) || [];
+    arr.push({ name: r.name });
+    skillByUser.set(r.candidate_user_id, arr);
+  }
+
+  const scored = profiles.map((p) => {
+    const them = { ...p, skills: skillByUser.get(p.id) || [] };
+    const sim = matchService.candidateSimilarity(me, them);
+    if (sim.score <= SIMILARITY_FLOOR) return null;
+    return {
+      candidate_id: p.id,
+      name: p.full_name,
+      profile_image: p.avatar_url,
+      current_title: p.current_title || p.headline || null,
+      current_company: null, // not in candidate_profiles schema today
+      experience_years: p.years_experience != null ? Number(p.years_experience) : null,
+      location: p.location || p.country || null,
+      skills: (skillByUser.get(p.id) || []).map((s) => s.name),
+      professional_summary_short: (p.summary || '').slice(0, 220) || null,
+      similarity_score: sim.score,
+      matched_skills: sim.matched_skills,
+      skills_they_have: sim.skills_they_have,
+      skills_you_have: sim.skills_you_have,
+      experience_comparison: sim.experience_comparison,
+    };
+  }).filter(Boolean);
+
+  scored.sort((a, b) => b.similarity_score - a.similarity_score);
+  return {
+    floor: SIMILARITY_FLOOR,
+    total: scored.length,
+    records: scored.slice(0, limit),
+  };
+}
+
+/**
+ * Candidate-to-candidate professional message. Persisted only when
+ * the body passes the content filter. The recipient must currently
+ * appear in the sender's similarity feed (>50%) — we re-score on
+ * send to avoid trusting a stale client-side check.
+ */
+async function sendCandidateMessage(senderUserId, recipientUserId, { subject = null, body }) {
+  if (Number(senderUserId) === Number(recipientUserId)) {
+    throw new AppError('You can\'t message yourself.', 400);
+  }
+
+  // Content gate FIRST so a clearly-inappropriate body short-
+  // circuits without loading both profiles.
+  const verdict = matchService.validateProfessionalMessage(body);
+  if (!verdict.ok) {
+    const err = new AppError(verdict.message, 422);
+    err.reason = verdict.reason;
+    throw err;
+  }
+
+  // Similarity gate — load both contexts and rescore.
+  const me = await jobRepo.loadCandidateContext(Number(senderUserId));
+  const them = await jobRepo.loadCandidateContext(Number(recipientUserId));
+  if (!me || !them) throw new AppError('Candidate not found', 404);
+
+  // Recipient must be a public, active candidate.
+  const recipientRow = await db.queryOne(
+    `SELECT u.id, u.role, u.status, cp.is_public
+     FROM users u INNER JOIN candidate_profiles cp ON cp.user_id = u.id
+     WHERE u.id = ? LIMIT 1`,
+    [Number(recipientUserId)]
+  );
+  if (!recipientRow || recipientRow.role !== 'candidate'
+      || recipientRow.status !== 'active' || !recipientRow.is_public) {
+    throw new AppError('Recipient not available for messaging.', 404);
+  }
+
+  const sim = matchService.candidateSimilarity(me, them);
+  if (sim.score <= SIMILARITY_FLOOR) {
+    throw new AppError(
+      'You can only message candidates whose profile is similar to yours (above 50%).',
+      403
+    );
+  }
+
+  const trimmedSubject = subject ? String(subject).slice(0, 200) : null;
+  const trimmedBody = String(body).slice(0, 4000);
+
+  const [res] = await db.getPool().execute(
+    `INSERT INTO candidate_messages
+       (sender_user_id, recipient_user_id, subject, body, similarity_score)
+     VALUES (?, ?, ?, ?, ?)`,
+    [Number(senderUserId), Number(recipientUserId), trimmedSubject, trimmedBody, sim.score]
+  );
+
+  return {
+    message_id: res.insertId,
+    similarity_score: sim.score,
+    sent_at: new Date().toISOString(),
+  };
+}
+
 module.exports = {
   getProfile,
   updateProfile,
@@ -323,4 +495,6 @@ module.exports = {
   listApplications,
   dashboardStats,
   matchJobs,
+  similarCandidates,
+  sendCandidateMessage,
 };

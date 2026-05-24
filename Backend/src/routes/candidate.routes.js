@@ -1173,4 +1173,44 @@ router.post('/onboarding/advance', validate(v.onboardingAdvance), asyncHandler(c
  */
 router.post('/onboarding/reset', asyncHandler(controller.onboardingReset));
 
+/**
+ * @swagger
+ * /candidates/similar:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: AI-ranked similar professionals for the logged-in candidate
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       '200': { description: Similar candidates returned, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ */
+router.post(
+  '/similar',
+  validate(v.similarFilters),
+  asyncHandler(controller.similarCandidates)
+);
+
+/**
+ * @swagger
+ * /candidates/{candidateId}/message:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: Send a professional message to a similar candidate (similarity > 50%)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - name: candidateId
+ *         in: path
+ *         required: true
+ *         schema: { type: integer, minimum: 1 }
+ *     responses:
+ *       '201': { description: Message sent, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ *       '403': { description: Below similarity threshold }
+ *       '422': { description: Message blocked by content filter }
+ */
+router.post(
+  '/:candidateId/message',
+  validate(pubV.candidateIdParam, 'params'),
+  validate(v.sendMessage),
+  asyncHandler(controller.sendCandidateMessage)
+);
+
 module.exports = router;

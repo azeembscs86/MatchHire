@@ -17,8 +17,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import CandidateCard from '../components/CandidateCard.jsx';
+import MessageModal from '../components/MessageModal.jsx';
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.jsx';
-import { publicApi, employersApi } from '../api/index.js';
+import { publicApi, employersApi, candidatesApi } from '../api/index.js';
 import { toCandidateCardShape } from '../api/adapters.js';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -58,15 +59,56 @@ function toRecommendedShape(r, idx = 0) {
   };
 }
 
+/**
+ * Adapt a row from `/candidates/similar` (candidate-role viewer)
+ * onto the same `{ view, match }` shape so the card render below
+ * doesn't need a separate code path. `match.jobTitle` doubles as
+ * the "current title" line on the card so candidate-similarity
+ * rows display their role instead of a non-existent matched job.
+ */
+function toSimilarShape(r, idx = 0) {
+  const view = toCandidateCardShape({
+    id: r.candidate_id,
+    full_name: r.name,
+    avatar_url: r.profile_image,
+    headline: r.current_title,
+    current_title: r.current_title,
+    years_experience: r.experience_years,
+    location: r.location,
+    skills: (r.skills || []).map((name) => ({ name })),
+  }, idx);
+  if (!view) return null;
+  if (r.experience_years != null) {
+    view.rate = `${Math.round(Number(r.experience_years))} yrs`;
+  }
+  return {
+    view,
+    match: {
+      score: r.similarity_score,
+      jobTitle: r.current_title || null,
+      matched: r.matched_skills || [],
+      // For similarity feed, "missing" repurposed as "different skills
+      // they have" — surfaces what the viewer could learn from them.
+      missing: (r.skills_they_have || []).slice(0, 3),
+      raw: r,
+    },
+  };
+}
+
 export default function Candidates() {
   const { role } = useAuth();
   const isEmployer = role === 'employer';
+  const isCandidate = role === 'candidate';
 
   const [filters, setFilters] = useState({ keyword: '', skill: '', remote: null });
   const [candidates, setCandidates] = useState([]);
   const [total, setTotal] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Candidate-only: target row for the MessageModal. When null, the
+  // modal isn't rendered. The full row is kept (not just the id) so
+  // the modal can show the recipient's name + title at the top.
+  const [messageTarget, setMessageTarget] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,15 +117,27 @@ export default function Candidates() {
       setError(null);
       try {
         if (isEmployer) {
-          // Employer branch — no keyword/skill filters yet (the
-          // matches are already narrowed to the company's job board).
+          // Employer branch — AI recommendations for the company's
+          // active jobs.
           const res = await employersApi.recommendedCandidates({ limit: 100 });
           if (cancelled) return;
           setCandidates(
             (res?.records || []).map((r, i) => toRecommendedShape(r, i)).filter(Boolean)
           );
           setTotal(res?.total ?? null);
+        } else if (isCandidate) {
+          // Candidate branch — "Similar Professionals" only, never
+          // the full candidate list. Server enforces is_public +
+          // role + similarity > 50%; client just renders.
+          const res = await candidatesApi.similarCandidates({ limit: 100 });
+          if (cancelled) return;
+          setCandidates(
+            (res?.records || []).map((r, i) => toSimilarShape(r, i)).filter(Boolean)
+          );
+          setTotal(res?.total ?? null);
         } else {
+          // Guests fall through to the existing public discovery
+          // surface. No behaviour change.
           const params = { page: 1, limit: 24 };
           if (filters.keyword) params.keyword = filters.keyword;
           if (filters.skill) params.skill = filters.skill;
@@ -104,7 +158,7 @@ export default function Candidates() {
     }
     load();
     return () => { cancelled = true; };
-  }, [isEmployer, filters]);
+  }, [isEmployer, isCandidate, filters]);
 
   function update(patch) { setFilters((f) => ({ ...f, ...patch })); }
 
@@ -127,11 +181,15 @@ export default function Candidates() {
           <span className="eyebrow" style={{ display: 'block', marginBottom: 18 }}>
             {isEmployer
               ? `★ AI matched · ${total != null ? Number(total).toLocaleString() : '—'} above 50%`
-              : `★ For employers · ${total != null ? Number(total).toLocaleString() : '—'} candidates`}
+              : isCandidate
+                ? `★ Similar to you · ${total != null ? Number(total).toLocaleString() : '—'} matches`
+                : `★ For employers · ${total != null ? Number(total).toLocaleString() : '—'} candidates`}
           </span>
           <h1 className="display">
             {isEmployer ? (
               <>Recommended <span className="ital" style={{ fontStyle: 'italic', color: 'var(--coral)' }}>candidates</span>.</>
+            ) : isCandidate ? (
+              <>Similar <span className="ital" style={{ fontStyle: 'italic', color: 'var(--coral)' }}>professionals</span>.</>
             ) : (
               <>Hand-picked <span className="ital" style={{ fontStyle: 'italic', color: 'var(--coral)' }}>talent</span>, ready to interview.</>
             )}
@@ -139,16 +197,17 @@ export default function Candidates() {
           <p>
             {isEmployer
               ? 'Candidates matching your active posted jobs above 50% — ranked highest match first.'
-              : 'Browse our highest-rated open candidates. Every profile is verified, references checked, and actively job-hunting.'}
+              : isCandidate
+                ? 'Candidates with skills and experience similar to your profile. Message anyone above 50% similarity to network professionally.'
+                : 'Browse our highest-rated open candidates. Every profile is verified, references checked, and actively job-hunting.'}
           </p>
         </div>
       </div>
 
-      {/* Filters bar — only renders on the public branch. The employer
-          recommendations endpoint sorts on the server, and the
-          downstream candidate set is small enough that client-side
-          re-filtering doesn't add real value yet. */}
-      {!isEmployer && (
+      {/* Filters bar — only renders on the public (guest) branch.
+          Employer + candidate branches are both server-ranked feeds
+          where keyword/skill re-filtering doesn't add real value. */}
+      {!isEmployer && !isCandidate && (
         <div className="container" style={{ padding: '32px 0 24px' }}>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 24 }}>
             <input
@@ -175,9 +234,13 @@ export default function Candidates() {
         </div>
       )}
 
-      <div className="container" style={{ padding: isEmployer ? '32px 0 80px' : '0 0 80px' }}>
+      <div className="container" style={{ padding: (isEmployer || isCandidate) ? '32px 0 80px' : '0 0 80px' }}>
         {loading
-          ? <LoadingState label={isEmployer ? 'Scoring candidates against your jobs…' : 'Loading candidates…'} />
+          ? <LoadingState label={
+              isEmployer ? 'Scoring candidates against your jobs…'
+              : isCandidate ? 'Finding professionals similar to you…'
+              : 'Loading candidates…'
+            } />
           : error
             ? <ErrorState error={error} />
             : candidates.length === 0
@@ -185,10 +248,14 @@ export default function Candidates() {
                 <EmptyState
                   title={isEmployer
                     ? 'No strong candidate matches found yet'
-                    : 'No candidates match these filters'}
+                    : isCandidate
+                      ? 'No similar professionals found yet'
+                      : 'No candidates match these filters'}
                   message={isEmployer
                     ? 'No active jobs at your company score above 50% against the current public candidate pool. Add more required skills to your postings or check back as more candidates join.'
-                    : 'Try adjusting your filters or check back as more talent joins.'}
+                    : isCandidate
+                      ? 'No similar professionals found yet. Update your skills and experience to get better recommendations.'
+                      : 'Try adjusting your filters or check back as more talent joins.'}
                 />
               )
               : (
@@ -197,9 +264,20 @@ export default function Candidates() {
                     <CandidateCard
                       key={row.view.id}
                       candidate={row.view}
-                      rankTop={!isEmployer && i < 3}
+                      rankTop={!isEmployer && !isCandidate && i < 3}
                       match={row.match}
-                      onContact={isEmployer ? () => handleContact(i) : null}
+                      onContact={
+                        isEmployer
+                          ? () => handleContact(i)
+                          : isCandidate
+                            ? () => setMessageTarget({
+                                id: row.view.id,
+                                name: row.view.n,
+                                current_title: row.match?.jobTitle || null,
+                              })
+                            : null
+                      }
+                      contactLabel={isCandidate ? 'Message' : 'Contact'}
                     />
                   ))}
                 </div>
@@ -211,6 +289,13 @@ export default function Candidates() {
           </div>
         )}
       </div>
+
+      {messageTarget && (
+        <MessageModal
+          candidate={messageTarget}
+          onClose={() => setMessageTarget(null)}
+        />
+      )}
     </section>
   );
 }

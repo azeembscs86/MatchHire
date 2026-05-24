@@ -129,6 +129,23 @@ export const candidatesApi = {
     reset() { return call(api.post('/candidates/onboarding/reset')); },
   },
 
+  /**
+   * "Similar Professionals" feed for the logged-in candidate.
+   * Server returns rows with similarity_score > 50%, sorted desc.
+   */
+  similarCandidates(body = {}) {
+    return call(api.post('/candidates/similar', body));
+  },
+
+  /**
+   * Send a candidate-to-candidate professional message. Server
+   * gates on content (regex / banned terms) + similarity (>50%);
+   * 422 on content reject, 403 on similarity gate.
+   */
+  sendMessage(candidateId, payload) {
+    return call(api.post(`/candidates/${candidateId}/message`, payload));
+  },
+
   resume: {
     list() { return call(api.post('/candidates/resume/list')); },
     /** Multipart upload. `file` is the browser File object. */

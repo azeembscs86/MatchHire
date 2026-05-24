@@ -229,6 +229,21 @@ const validateAndApply = Joi.object({
   resume_url: Joi.string().uri().max(500).allow('', null),
 }).unknown(false);
 
+/** "Similar professionals" feed — optional limit override. */
+const similarFilters = Joi.object({
+  limit: Joi.number().integer().min(1).max(100).default(50),
+}).unknown(false);
+
+/**
+ * Candidate-to-candidate message payload. Content gating
+ * (banned terms / phone / email / similarity > 50%) happens in
+ * the service so we keep the route-level validator permissive.
+ */
+const sendMessage = Joi.object({
+  subject: Joi.string().max(200).allow('', null),
+  body: Joi.string().min(10).max(4000).required(),
+}).unknown(false);
+
 module.exports = {
   profileUpdate,
   skillsUpdate,
@@ -243,4 +258,6 @@ module.exports = {
   experienceIdParam,
   onboardingAdvance,
   savedJobsList,
+  similarFilters,
+  sendMessage,
 };

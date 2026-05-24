@@ -351,3 +351,30 @@ exports.onboardingReset = async (req, res) => {
   const data = await onboardingService.reset(req.user.id);
   return response.success(res, data, 'Onboarding reset');
 };
+
+/**
+ * AI-ranked "Similar Professionals" feed. Returns candidates whose
+ * skills / role / experience overlap the logged-in candidate's
+ * profile above 50%. Replaces the generic public candidate browse
+ * for candidate-role viewers.
+ */
+exports.similarCandidates = async (req, res) => {
+  const limit = Math.min(Math.max(Number(req.body?.limit) || 50, 1), 100);
+  const data = await service.similarCandidates(req.user.id, { limit });
+  return response.success(res, data, 'Similar candidates returned');
+};
+
+/**
+ * Send a candidate-to-candidate professional message. The service
+ * gates on both content (regex / banned terms) and similarity
+ * (>50%) — a 422 is returned for inappropriate content, 403 for
+ * similarity gate, 400 for self-message.
+ */
+exports.sendCandidateMessage = async (req, res) => {
+  const data = await service.sendCandidateMessage(
+    req.user.id,
+    Number(req.params.candidateId),
+    req.body || {}
+  );
+  return response.created(res, data, 'Message sent');
+};
