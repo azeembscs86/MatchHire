@@ -242,6 +242,54 @@
    *    taller siblings in the same grid row; long content can still
    *    grow the card.
    */
+  /*
+   * .card-shell — single source of truth for the OUTER surface of
+   * every clickable tile (Job cards, Candidate cards, anything
+   * else added later). Inner-content classes (.job-card / .cand-
+   * card) own their internal layout only; padding, border, radius,
+   * shadow, hover, focus, min-height all live here so the two
+   * card types are pixel-aligned in every grid.
+   *
+   *   - 14px radius
+   *   - 16px / 14px padding (matches the compact JobCard pass)
+   *   - 316px min-height keeps short cards aligned with tall ones
+   *     in the same row; .card-shell-row drops it back to 0 for
+   *     compact horizontal list layouts (Dashboard matches rail).
+   *   - hover: 2px lift + soft shadow + slightly darker border.
+   *   - is-featured: coral-tinted border that survives hover.
+   */
+  .card-shell{
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:16px 16px 14px;
+    transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease;
+    position:relative;
+    display:flex;flex-direction:column;
+    min-height:316px;height:100%;
+  }
+  .card-shell.clickable{cursor:pointer}
+  .card-shell.clickable:focus-visible{
+    outline:2px solid var(--coral);outline-offset:3px;
+  }
+  .card-shell:hover{
+    transform:translateY(-2px);
+    box-shadow:0 1px 0 rgba(14,17,22,.04), 0 16px 36px -18px rgba(14,17,22,.16);
+    border-color:rgba(14,17,22,.22);
+  }
+  .card-shell.is-featured{
+    border-color:rgba(232,93,60,.32);
+    box-shadow:0 1px 0 rgba(232,93,60,.05);
+  }
+  .card-shell.is-featured:hover{border-color:rgba(232,93,60,.55)}
+  .card-shell-row{min-height:0;height:auto;padding:14px 16px;border-radius:12px}
+
+  /*
+   * .job-card is now ONLY an inner-layout class; its visual surface
+   * comes from `.card-shell` above. The legacy ruleset below stays
+   * as a thin alias so any external embeds still receive the
+   * outer styling, even when CardShell isn't in use.
+   */
   .job-card{
     background:var(--paper);border:1px solid var(--line);border-radius:14px;
     padding:16px 16px 14px;
@@ -249,12 +297,6 @@
     cursor:default;position:relative;
     display:flex;flex-direction:column;min-height:316px;height:100%;
   }
-  /*
-   * Whole-card click target. The card is `role="button" tabIndex={0}`
-   * in JSX; this style gives the matching mouse/keyboard affordances.
-   * Apply / Favourite / Save buttons inside stop propagation so they
-   * keep their own activation.
-   */
   .job-card.clickable{cursor:pointer}
   .job-card.clickable:focus-visible{
     outline:2px solid var(--coral);outline-offset:3px;
@@ -613,22 +655,18 @@
   .co-stats span:first-child{color:var(--muted)}
   .co-stats span:last-child{font-weight:500;font-family:'Fraunces',serif;font-size:14px}
 
-  /* ───── Top Candidates ───── */
-  .cand-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
-  .cand-card{
-    background:var(--paper);border:1px solid var(--line);border-radius:18px;
-    padding:28px;transition:all .25s;cursor:pointer;position:relative;
-  }
-  .cand-card:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg);border-color:rgba(14,17,22,.22)}
-  /* Whole-card click target — matches the JobCard / CompanyCard
-     affordances so focus rings + keyboard activation work the same
-     way across every discovery grid. */
-  .cand-card.clickable,.co-card.clickable{cursor:pointer}
-  .cand-card.clickable:focus-visible,.co-card.clickable:focus-visible{
-    outline:2px solid var(--coral);outline-offset:3px;
-  }
-  .co-card.clickable:hover{border-color:rgba(14,17,22,.22)}
-  .cand-rank{position:absolute;top:24px;right:24px;font-family:'Fraunces',serif;font-size:14px;color:var(--muted);font-style:italic}
+  /*
+   * ───── Top Candidates ─────
+   * `.cand-card` is now an INNER-layout class. Outer surface
+   * (border, radius, padding, shadow, hover, focus) is provided
+   * by `.card-shell`; this rule used to redeclare them with
+   * slightly different values (28px padding, 18px radius, -4px
+   * hover lift) which is exactly the visual divergence we're
+   * unifying. Inner-only rules below set how the avatar / name /
+   * meta-row stack inside the shared shell.
+   */
+  .cand-grid{display:grid;grid-template-columns:repeat(auto-fit, minmax(min(100%, 280px), 1fr));gap:18px;align-items:stretch}
+  .cand-rank{position:absolute;top:14px;right:16px;font-family:'Fraunces',serif;font-size:13px;color:var(--muted);font-style:italic}
   .cand-rank.top{color:var(--coral);font-weight:600}
   /*
    * Match-pill (employer "Recommended candidates" surface) — takes
@@ -637,9 +675,9 @@
    * so a recommended row and a recommended job read as siblings.
    */
   .cand-match-pill{
-    position:absolute;top:18px;right:18px;
+    position:absolute;top:12px;right:14px;
     display:inline-flex;align-items:center;gap:6px;
-    padding:4px 10px;border-radius:100px;
+    padding:3px 9px;border-radius:100px;
     font-size:11px;font-weight:600;letter-spacing:.01em;
     border:1px solid transparent;line-height:1.2;white-space:nowrap;
   }
@@ -686,12 +724,31 @@
     .jd-contact-btn,.jd-resume-btn{width:100%;min-width:0}
     .jd-action-error{max-width:none}
   }
-  .cand-avatar{width:72px;height:72px;border-radius:50%;display:grid;place-items:center;font-family:'Fraunces',serif;font-size:28px;font-weight:500;margin-bottom:18px;border:2px solid var(--line)}
-  .cand-name{font-family:'Fraunces',serif;font-size:22px;font-weight:500;letter-spacing:-.01em;margin-bottom:4px}
-  .cand-role{font-size:13px;color:var(--muted);margin-bottom:18px}
-  .cand-skills{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:20px}
+  /* Compact avatar — same size as JobCard's company logo so the
+     two card types feel visually weighted the same. */
+  .cand-avatar{
+    width:40px;height:40px;border-radius:10px;
+    display:grid;place-items:center;
+    font-family:'Fraunces',serif;font-size:18px;font-weight:600;
+    margin-bottom:10px;border:none;
+  }
+  /* Slightly tighter typography so the candidate card matches the
+     compact JobCard pass (was 22px serif). Line-clamp guards keep
+     long names from breaking the shared 316px min-height shell. */
+  .cand-name{
+    font-family:'Fraunces',serif;font-size:18px;font-weight:600;
+    letter-spacing:-.01em;margin-bottom:2px;line-height:1.25;
+    display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;
+    overflow:hidden;word-break:break-word;
+  }
+  .cand-role{
+    font-size:12.5px;color:var(--muted);margin-bottom:12px;line-height:1.35;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+    overflow:hidden;word-break:break-word;min-height:34px;
+  }
+  .cand-skills{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
   .cand-skill{font-size:11px;padding:4px 10px;background:var(--bone);border-radius:100px}
-  .cand-meta{display:flex;justify-content:space-between;padding-top:18px;border-top:1px solid var(--line-soft);font-size:13px}
+  .cand-meta{display:flex;justify-content:space-between;align-items:flex-end;padding-top:10px;border-top:1px solid var(--line-soft);font-size:12.5px;margin-top:auto}
   .cand-meta div{display:flex;flex-direction:column;gap:2px}
   .cand-meta span:first-child{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
   .cand-meta span:last-child{font-family:'Fraunces',serif;font-weight:500}

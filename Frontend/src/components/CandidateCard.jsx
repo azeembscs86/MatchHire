@@ -20,6 +20,7 @@
  * @param {function} [props.onContact]  Optional Contact handler (employer view).
  */
 import { useNavigate } from 'react-router-dom';
+import CardShell from './CardShell.jsx';
 
 function matchTier(score) {
   if (score == null) return null;
@@ -35,27 +36,16 @@ export default function CandidateCard({ candidate, rankTop = false, match = null
     if (candidate?.id == null) return;
     navigate(`/candidates/${candidate.id}`);
   }
-  function onKey(e) {
-    const tag = (e.target?.tagName || '').toLowerCase();
-    if (tag === 'button' || tag === 'a' || tag === 'input') return;
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      open();
-    }
-  }
 
   const tier = match ? matchTier(match.score) : null;
   const matched = match?.matched?.slice(0, 4) || [];
   const missing = match?.missing?.slice(0, 3) || [];
 
   return (
-    <div
-      className="cand-card clickable"
-      role="button"
-      tabIndex={0}
+    <CardShell
       onClick={open}
-      onKeyDown={onKey}
-      aria-label={`Open profile for ${candidate.n}`}
+      ariaLabel={`Open profile for ${candidate.n}`}
+      className="cand-card"
     >
       {tier ? (
         <span className={`cand-match-pill match-chip-${tier.key}`} title={tier.label + ' match'}>
@@ -115,6 +105,6 @@ export default function CandidateCard({ candidate, rankTop = false, match = null
           </button>
         </div>
       )}
-    </div>
+    </CardShell>
   );
 }

@@ -55,6 +55,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useFavorites } from '../context/FavoritesContext.jsx';
 import { useSavedJobs } from '../context/SavedJobsContext.jsx';
+import CardShell from './CardShell.jsx';
 
 function HeartIcon({ filled }) {
   if (filled) {
@@ -193,28 +194,17 @@ export default function JobCard({
 
   function openDetail() { navigate(`/jobs/${job.id}`); }
 
-  function handleCardKey(e) {
-    if (e.key === 'Enter' || e.key === ' ') {
-      const tag = (e.target?.tagName || '').toLowerCase();
-      if (tag === 'button' || tag === 'a' || tag === 'input') return;
-      e.preventDefault();
-      openDetail();
-    }
-  }
-
   const isRow = variant === 'row';
-  const rowAttrs = {
-    className: `job-card clickable${featured && job.featured ? ' featured' : ''}${isRow ? ' job-card-row' : ''}`,
-    role: 'button',
-    tabIndex: 0,
-    onClick: openDetail,
-    onKeyDown: handleCardKey,
-    'aria-label': `Open details for ${job.title} at ${job.co}`,
-  };
 
   return (
     <div className={`job-card-wrapper${isRow ? ' job-card-wrapper-row' : ''}`}>
-      <div {...rowAttrs}>
+      <CardShell
+        onClick={openDetail}
+        ariaLabel={`Open details for ${job.title} at ${job.co}`}
+        featured={featured && job.featured}
+        variant={isRow ? 'row' : 'grid'}
+        className={`job-card${isRow ? ' job-card-row' : ''}`}
+      >
         {/*
           * Top-right action cluster: [ Featured? ]  [ ♥ ]  [ ⌘ ].
           *
@@ -368,7 +358,7 @@ export default function JobCard({
             )}
           </div>
         )}
-      </div>
+      </CardShell>
     </div>
   );
 }
