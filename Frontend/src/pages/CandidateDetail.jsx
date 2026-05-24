@@ -28,6 +28,40 @@ function initials(name = '') {
     .map((p) => p[0]?.toUpperCase()).join('') || '··';
 }
 
+/*
+ * Lucide-style inline icons. The project doesn't ship a runtime
+ * icon library — JobCard already uses the same hand-rolled SVG
+ * pattern (stroke-based, 24×24 viewBox, currentColor) — so a 50-
+ * line dependency would be overkill for two glyphs. Both icons
+ * inherit colour from the surrounding button text so they read
+ * correctly on any button variant or theme.
+ */
+function MessageIcon({ size = 16 }) {
+  return (
+    <svg
+      viewBox="0 0 24 24" width={size} height={size}
+      fill="none" stroke="currentColor" strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+    >
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+    </svg>
+  );
+}
+
+function DownloadIcon({ size = 16 }) {
+  return (
+    <svg
+      viewBox="0 0 24 24" width={size} height={size}
+      fill="none" stroke="currentColor" strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+    >
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
+
 function formatRange(start, end, isCurrent) {
   const opt = { year: 'numeric', month: 'short' };
   const s = start ? new Date(start).toLocaleDateString(undefined, opt) : '—';
@@ -182,6 +216,7 @@ export default function CandidateDetail() {
                   <button
                     type="button"
                     className="btn btn-coral jd-contact-btn"
+                    aria-label={`Contact ${c.full_name}`}
                     onClick={() => {
                       if (!c.email) {
                         window.alert(`No contact email available for ${c.full_name}.`);
@@ -191,17 +226,20 @@ export default function CandidateDetail() {
                       window.location.href = `mailto:${c.email}?subject=${encodeURIComponent(subject)}`;
                     }}
                   >
+                    <MessageIcon />
                     Contact
                   </button>
                   {c.has_resume && (
                     <button
                       type="button"
                       className="btn btn-coral jd-resume-btn"
+                      aria-label={`Download primary resume for ${c.full_name}`}
                       onClick={handleDownloadResume}
                       disabled={downloading}
                       aria-busy={downloading}
                     >
-                      {downloading ? 'Preparing…' : 'Download Resume ↓'}
+                      <DownloadIcon />
+                      {downloading ? 'Preparing…' : 'Download Resume'}
                     </button>
                   )}
                 </div>
