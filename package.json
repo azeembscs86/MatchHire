@@ -17,24 +17,31 @@
     "install:all": "npm install && npm install --prefix Backend && npm install --prefix Frontend",
     "lint": "npm run lint --prefix Backend",
     "qa:seed": "node qa/test-data/seed-test-users.js",
+    "qa:start": "PW_AUTO_START=1 playwright test --config qa/playwright.config.js",
     "qa:api": "jest --config qa/jest.config.js",
     "qa:e2e": "playwright test --config qa/playwright.config.js",
+    "qa:headed": "playwright test --config qa/playwright.config.js --headed",
+    "qa:debug": "PWDEBUG=1 playwright test --config qa/playwright.config.js --headed",
+    "qa:matrix": "PW_FULL_MATRIX=1 playwright test --config qa/playwright.config.js",
+    "qa:smoke": "playwright test --config qa/playwright.config.js --grep @smoke",
     "qa:accessibility": "playwright test --config qa/playwright.config.js --grep @a11y",
     "qa:lighthouse": "node qa/scripts/lighthouse.js",
     "qa:report": "node qa/scripts/report.js",
+    "qa:report:open": "playwright show-report qa/reports/html",
     "qa:full": "node qa/scripts/run-full.js"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1",
-    "@playwright/test": "^1.48.0",
     "@axe-core/playwright": "^4.10.0",
-    "jest": "^29.7.0",
-    "supertest": "^7.0.0",
+    "@playwright/test": "^1.48.0",
     "axios": "^1.7.7",
-    "dotenv": "^16.4.7",
     "bcryptjs": "^2.4.3",
-    "mysql2": "^3.11.4",
+    "chrome-launcher": "^1.1.2",
+    "concurrently": "^9.2.1",
+    "dotenv": "^16.4.7",
+    "jest": "^29.7.0",
     "lighthouse": "^12.2.1",
-    "chrome-launcher": "^1.1.2"
+    "mysql2": "^3.11.4",
+    "start-server-and-test": "^3.0.5",
+    "supertest": "^7.0.0"
   }
 }

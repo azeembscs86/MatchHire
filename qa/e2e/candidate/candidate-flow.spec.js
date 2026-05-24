@@ -32,58 +32,11 @@
  */
 
 const { test, expect } = require('@playwright/test');
-const { API_URL, qaUser } = require('../helpers/env');
-
-const STORAGE_KEYS = {
-  access: 'matchhire:access_token',
-  refresh: 'matchhire:refresh_token',
-  user: 'matchhire:user',
-  mode: 'matchhire:auth_mode',
-};
-
-async function loginCandidate(context) {
-  const user = qaUser('CANDIDATE');
-  const res = await context.request.post(`${API_URL}/auth/login`, {
-    data: { email: user.email, password: user.password, rememberMe: true },
-  });
-  const body = await res.json();
-  if (!res.ok() || body?.Response?.responseCode !== 1) {
-    throw new Error(
-      `QA candidate login failed (HTTP ${res.status()}): ${body?.Response?.message || 'unknown'}`
-    );
-  }
-  return body.Data;
-}
+const { authenticatePage } = require('../../helpers/auth.helper');
 
 test.describe('@candidate Candidate-page flows', () => {
-  test.beforeEach(async ({ page, context }) => {
-    const { access_token, refresh_token, user } = await loginCandidate(context);
-
-    // addInitScript runs at the start of EVERY navigation on this
-    // context, BEFORE any page JS executes. By the time React
-    // mounts and AuthContext reads localStorage, the tokens are
-    // already there — so the SPA renders as the signed-in
-    // candidate without needing a manual reload dance.
-    await context.addInitScript(
-      ({ keys, access, refresh, userJson }) => {
-        try {
-          localStorage.setItem(keys.access, access);
-          if (refresh) localStorage.setItem(keys.refresh, refresh);
-          if (userJson) localStorage.setItem(keys.user, userJson);
-          localStorage.setItem(keys.mode, 'local');
-        } catch (_e) { /* noop */ }
-      },
-      {
-        keys: STORAGE_KEYS,
-        access: access_token,
-        refresh: refresh_token || '',
-        userJson: user ? JSON.stringify(user) : '',
-      }
-    );
-
-    // Sanity touch — visiting the SPA on this context primes the
-    // origin so subsequent goto()s see the injected storage.
-    await page.goto('/');
+  test.beforeEach(async ({ page }) => {
+    await authenticatePage(page, 'CANDIDATE');
   });
 
   test('shows "Similar Professionals" heading, not the public browse', async ({ page }) => {

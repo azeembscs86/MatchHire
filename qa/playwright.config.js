@@ -3,39 +3,112 @@
 /**
  * Playwright config for MatchHire QA automation.
  *
- * Assumptions:
- *   - Backend on http://localhost:3500 (override with QA_API_URL)
- *   - Frontend on http://localhost:5173 (override with QA_BASE_URL)
- *   - Both servers already running (the `qa:full` orchestrator
- *     in `qa/scripts/run-full.js` handles starting them before
- *     spawning playwright; running `npm run qa:e2e` directly
- *     assumes the dev servers are up).
- *
- * Reports:
- *   - HTML report at `qa/reports/html/`
- *   - JSON summary at `qa/reports/playwright.json`
- *   - Failed-test screenshots, videos, traces at `qa/screenshots/`
- *     and `qa/reports/traces/` respectively.
+ * What this config sets up:
+ *   - Auto-starts the backend + frontend dev servers via the
+ *     `webServer` block when `PW_AUTO_START=1` (default in
+ *     qa/.env.qa). When 0, the suite assumes both are already
+ *     running — useful for fast local iteration where you don't
+ *     want Playwright to manage the lifecycle.
+ *   - Projects: one functional `chromium` project + opt-in
+ *     `firefox`, `webkit`, `tablet`, `mobile` projects. The full
+ *     cross-browser matrix runs only when `PW_FULL_MATRIX=1` so
+ *     the default `npm run qa:e2e` stays under a minute on a
+ *     laptop.
+ *   - Artefacts (screenshots, videos, traces) land under
+ *     qa/screenshots, qa/videos, qa/traces respectively.
+ *   - HTML report at qa/reports/html (open via `npm run qa:report`).
  *
  * Run subsets with grep tags:
- *   @a11y         — accessibility-focused specs
  *   @smoke        — fast happy-path checks
+ *   @a11y         — accessibility-focused specs
  *   @candidate    — flows that need the candidate test user
  *   @company      — flows that need the company test user
+ *
+ * Toggle env:
+ *   PW_AUTO_START=1 (default)  start backend+frontend automatically
+ *   PW_FULL_MATRIX=1            enable firefox/webkit/mobile/tablet
+ *   QA_BASE_URL / FRONTEND_URL  override the SPA URL
+ *   QA_API_URL / BACKEND_URL    override the API URL
  */
 
 const path = require('node:path');
+const fs = require('node:fs');
+const dotenv = require('dotenv');
 const { defineConfig, devices } = require('@playwright/test');
 
-const BASE_URL = process.env.QA_BASE_URL || 'http://localhost:5173';
+// Load .env.qa first so the values below see it. (Backend dotenvs
+// are loaded inside helpers/env.js; this only needs the QA defaults.)
+dotenv.config({ path: path.resolve(__dirname, '.env.qa') });
+
+const BASE_URL  = process.env.FRONTEND_URL || process.env.QA_BASE_URL || 'http://localhost:5173';
+const API_URL   = process.env.BACKEND_URL  || process.env.QA_API_URL  || 'http://127.0.0.1:3500/api/v1';
+const AUTO_START = process.env.PW_AUTO_START === '1';
+const FULL_MATRIX = process.env.PW_FULL_MATRIX === '1';
+const ROOT = path.resolve(__dirname, '..');
+
+// The artefact buckets the QA brief asks for live alongside the
+// reports/ dir. Playwright writes per-test artefacts into
+// outputDir; we keep that as `reports/test-artifacts` so reports
+// stay self-contained, then mirror the screenshots/videos/traces
+// folders for ad-hoc helpers (screenshot.helper.js).
+const ARTIFACTS_DIR = path.join(__dirname, 'reports/test-artifacts');
+for (const sub of ['screenshots', 'videos', 'traces', 'reports']) {
+  fs.mkdirSync(path.join(__dirname, sub), { recursive: true });
+}
+
+// Functional projects: every spec runs in these by default. The
+// `desktop-chrome` baseline must always be present (it's the one
+// the existing specs were authored against). The matrix expands
+// to firefox / webkit / tablet / mobile only when explicitly
+// asked for via PW_FULL_MATRIX — otherwise local runs stay fast.
+const projects = [
+  {
+    name: 'desktop-chrome',
+    use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
+  },
+];
+if (FULL_MATRIX) {
+  projects.push(
+    { name: 'desktop-firefox', use: { ...devices['Desktop Firefox'], viewport: { width: 1440, height: 900 } } },
+    { name: 'desktop-webkit',  use: { ...devices['Desktop Safari'],  viewport: { width: 1440, height: 900 } } },
+    { name: 'tablet',          use: { ...devices['iPad (gen 7)'] } },
+    { name: 'mobile',          use: { ...devices['iPhone 13'] } },
+  );
+}
+
+const webServer = AUTO_START
+  ? [
+      {
+        // Backend: Express + MySQL + Redis. The `/public/jobs`
+        // endpoint is the cheapest GET in the API — it responds
+        // 200 with the first page of results — which makes it a
+        // reliable signal of "backend is up + DB is reachable".
+        // We deliberately avoid hitting POST-only auth endpoints
+        // (Playwright probes with GET so they'd return 404 here).
+        command: 'npm run dev --prefix Backend',
+        url: `${API_URL.replace(/\/api\/v1$/, '')}/api/v1/public/jobs?limit=1`,
+        cwd: ROOT,
+        reuseExistingServer: true,
+        timeout: 90_000,
+        ignoreHTTPSErrors: true,
+      },
+      {
+        command: 'npm run dev --prefix Frontend',
+        url: BASE_URL,
+        cwd: ROOT,
+        reuseExistingServer: true,
+        timeout: 90_000,
+      },
+    ]
+  : undefined;
 
 module.exports = defineConfig({
   testDir: path.join(__dirname, 'e2e'),
-  // Authenticated specs log in on-the-fly via the API context and
-  // inject tokens with `addInitScript` (see candidate-flow.spec.js).
-  // That avoids the cross-context handoff issues the old
-  // storage-state global setup ran into without making any extra
-  // login calls than the per-test approach already requires.
+  // Auth specs log in on-the-fly via the API context and inject
+  // tokens with `addInitScript` (see qa/helpers/auth.helper.js +
+  // qa/e2e/candidate/candidate-flow.spec.js). That avoids the
+  // cross-context handoff issues storage-state has historically
+  // run into.
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,           // serial — easier to debug + shared backend state
@@ -46,7 +119,7 @@ module.exports = defineConfig({
     ['html', { outputFolder: path.join(__dirname, 'reports/html'), open: 'never' }],
     ['json', { outputFile: path.join(__dirname, 'reports/playwright.json') }],
   ],
-  outputDir: path.join(__dirname, 'reports/test-artifacts'),
+  outputDir: ARTIFACTS_DIR,
   use: {
     baseURL: BASE_URL,
     headless: true,
@@ -59,12 +132,6 @@ module.exports = defineConfig({
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
   },
-  projects: [
-    {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
-    },
-    // Add 'firefox' / 'webkit' projects here when cross-browser
-    // matters. Each adds ~30s install + ~2x run time.
-  ],
+  projects,
+  webServer,
 });

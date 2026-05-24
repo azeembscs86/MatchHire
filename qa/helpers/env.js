@@ -13,6 +13,10 @@
 const path = require('node:path');
 const dotenv = require('dotenv');
 
+// Load order matters — first non-empty value wins (dotenv won't
+// overwrite already-set keys). Order: QA defaults → Backend local
+// overrides → Backend defaults. Shell exports always beat all three.
+dotenv.config({ path: path.resolve(__dirname, '../.env.qa') });
 dotenv.config({ path: path.resolve(__dirname, '../../Backend/.env.local') });
 dotenv.config({ path: path.resolve(__dirname, '../../Backend/.env') });
 

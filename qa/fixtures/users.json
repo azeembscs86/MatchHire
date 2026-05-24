@@ -1,0 +1,24 @@
+{
+  "_": "QA test users. Do NOT edit manually — keep in sync with qa/test-data/users.js. Passwords come from QA_TEST_PASSWORD env or the seeder default; this fixture exists so non-Node tooling (and humans browsing the suite) can see who logs in.",
+  "candidate": {
+    "email": "qa-candidate@matchhire-qa.com",
+    "full_name": "QA Candidate",
+    "role": "candidate"
+  },
+  "candidatePeer": {
+    "email": "qa-peer-candidate@matchhire-qa.com",
+    "full_name": "QA Peer Candidate",
+    "role": "candidate"
+  },
+  "company": {
+    "email": "qa-company@matchhire-qa.com",
+    "full_name": "QA Company Owner",
+    "role": "employer",
+    "company_name": "QA Test Company"
+  },
+  "admin": {
+    "email": "qa-admin@matchhire-qa.com",
+    "full_name": "QA Admin",
+    "role": "admin"
+  }
+}
