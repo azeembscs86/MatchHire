@@ -34,7 +34,20 @@ const jobCreate = Joi.object({
   experience_level: Joi.string().valid('entry', 'junior', 'mid', 'senior', 'lead', 'executive').default('mid'),
   location: Joi.string().max(190).allow('', null),
   country: Joi.string().max(80).allow('', null),
+  /*
+   * `work_mode` is the canonical 3-state field shown as a badge on
+   * every job card. Defaults to "onsite" if the employer leaves the
+   * field empty — this matches the DB column default and means
+   * cards never show a blank work-mode chip.
+   */
+  work_mode: Joi.string().valid('onsite', 'hybrid', 'remote').default('onsite'),
+  /*
+   * Legacy boolean alias kept so older clients that still send
+   * `is_remote` keep working. The repository normalises it into
+   * `work_mode` when the new field is absent.
+   */
   is_remote: Joi.boolean().default(false),
+  is_global_remote: Joi.boolean().default(false),
   salary_min: Joi.number().min(0).allow(null),
   salary_max: Joi.number().min(0).allow(null),
   salary_currency: Joi.string().max(8).default('USD'),

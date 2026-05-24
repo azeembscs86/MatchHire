@@ -102,7 +102,18 @@ export function toJobCardShape(j) {
     title: j.title,
     city: j.city || null,
     country: j.country || null,
-    workMode: j.work_mode || null,
+    // Canonical 3-state work mode shown as a badge on every job
+    // card. Falls back to 'onsite' when the API didn't supply one
+    // — old rows pre-migration-039 could carry NULL even though
+    // the DB default is 'onsite', and we don't want to render an
+    // empty chip on the card. Backend migration 039 backfills the
+    // column too, so this is defence-in-depth.
+    workMode: (() => {
+      const v = String(j.work_mode || '').toLowerCase();
+      if (v === 'remote' || v === 'hybrid' || v === 'onsite') return v;
+      if (j.is_global_remote || j.is_remote) return 'remote';
+      return 'onsite';
+    })(),
     isGlobalRemote: !!j.is_global_remote,
     loc: [j.city || j.location, j.country, j.is_global_remote ? 'Global remote' : (j.is_remote ? 'Remote' : null)]
       .filter(Boolean)

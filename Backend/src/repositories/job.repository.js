@@ -69,16 +69,35 @@ function jobsListSelect() {
 
 async function create(data) {
   const slug = `${slugify(data.title)}-${Date.now()}`;
+  // Normalise the work-mode triple so the row always lands with a
+  // valid, non-null value. Order of precedence:
+  //   1. explicit `work_mode` from the payload (if it's a valid enum)
+  //   2. legacy `is_remote=true`  → 'remote'
+  //   3. default                    → 'onsite'
+  //
+  // The DB column also defaults to 'onsite', but we set it here too
+  // so the SAME default is visible in the returned row without a
+  // re-select.
+  const wm = ['onsite', 'hybrid', 'remote'].includes(String(data.work_mode))
+    ? String(data.work_mode)
+    : (data.is_remote ? 'remote' : 'onsite');
+  // Keep `is_remote` in sync with `work_mode` so filters that still
+  // read the boolean (older code paths, recommended-for-user
+  // scoring) stay consistent.
+  const isRemoteFlag = wm === 'remote' ? 1 : 0;
+
   const [res] = await db.getPool().execute(
     `INSERT INTO jobs
       (company_id, posted_by_user_id, category_id, title, slug, description, responsibilities, requirements, benefits,
-       job_type, experience_level, location, country, is_remote, salary_min, salary_max, salary_currency, salary_period,
+       job_type, experience_level, location, country, is_remote, work_mode, is_global_remote,
+       salary_min, salary_max, salary_currency, salary_period,
        skills_tags, application_deadline, vacancies, status, is_featured, admin_status, published_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?)`,
     [
       data.company_id, data.posted_by_user_id || null, data.category_id || null,
       data.title, slug, data.description, data.responsibilities || null, data.requirements || null, data.benefits || null,
-      data.job_type, data.experience_level, data.location || null, data.country || null, data.is_remote ? 1 : 0,
+      data.job_type, data.experience_level, data.location || null, data.country || null,
+      isRemoteFlag, wm, data.is_global_remote ? 1 : 0,
       data.salary_min ?? null, data.salary_max ?? null, data.salary_currency || 'USD', data.salary_period || 'year',
       (data.skills_tags || []).join(','), data.application_deadline || null, data.vacancies || 1,
       data.status || 'open', data.is_featured ? 1 : 0,
@@ -206,13 +225,25 @@ async function ownsJob(jobId, userId) {
 
 async function update(id, fields) {
   const allowed = ['title','description','responsibilities','requirements','benefits','category_id','job_type','experience_level',
-    'location','country','is_remote','salary_min','salary_max','salary_currency','salary_period','skills_tags',
+    'location','country','is_remote','work_mode','is_global_remote',
+    'salary_min','salary_max','salary_currency','salary_period','skills_tags',
     'application_deadline','vacancies','status','is_featured','admin_status','closed_at','published_at'];
+  // Normalise `work_mode` so it's always a valid enum value when
+  // provided. Updating `work_mode` also synchronises `is_remote` to
+  // keep the legacy boolean in agreement with the 3-state column.
+  const patch = { ...fields };
+  if ('work_mode' in patch) {
+    patch.work_mode = ['onsite', 'hybrid', 'remote'].includes(String(patch.work_mode))
+      ? String(patch.work_mode)
+      : 'onsite';
+    patch.is_remote = patch.work_mode === 'remote';
+  }
+
   const sets = []; const params = [];
   for (const k of allowed) {
-    if (k in fields) {
-      let v = fields[k];
-      if (k === 'is_remote' || k === 'is_featured') v = v ? 1 : 0;
+    if (k in patch) {
+      let v = patch[k];
+      if (k === 'is_remote' || k === 'is_featured' || k === 'is_global_remote') v = v ? 1 : 0;
       if (k === 'skills_tags' && Array.isArray(v)) v = v.join(',');
       sets.push(`${k} = ?`); params.push(v);
     }

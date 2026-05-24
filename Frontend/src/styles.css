@@ -374,6 +374,13 @@
   }
   .trust-feat{background:rgba(232,93,60,.12);color:var(--coral-deep);border-color:rgba(232,93,60,.22)}
   .trust-remote{background:rgba(63,107,79,.10);color:var(--sage);border-color:rgba(63,107,79,.22)}
+  /* Work-mode chips: each of the 3 states gets its own neutral
+     tint so candidates can scan a grid without reading the text.
+     Onsite uses the bone/ink-soft palette (calm, neutral); Hybrid
+     uses a soft plum so it reads as "the middle ground" between
+     sage Remote and neutral Onsite. */
+  .trust-onsite{background:rgba(14,17,22,.04);color:var(--ink-soft);border-color:var(--line-soft)}
+  .trust-hybrid{background:rgba(91,58,82,.10);color:var(--plum);border-color:rgba(91,58,82,.20)}
   .trust-soon{background:rgba(184,137,58,.14);color:var(--gold);border-color:rgba(184,137,58,.28)}
 
   /*

@@ -149,21 +149,35 @@ function WhyRecommended({ reasons = [], missing = [] }) {
 }
 
 /**
- * Inline trust badges row — Remote / Global remote / Closing soon.
+ * Inline trust badges row — Work mode (always) + optional Global
+ * remote / Closing soon flags.
  *
- * The Featured badge used to live in this row but moved into the
- * top-right action cluster (next to the heart + bookmark icons) so
- * the most prominent flag sits at eye level with the actions a
- * candidate is about to take. This row only renders when at least
- * one of the remaining flags applies, keeping the card clean for
- * unflagged roles.
+ * The work-mode chip is the load-bearing one: every job card shows
+ * one of "Remote / Hybrid / Onsite" so candidates never have to
+ * guess. Missing values fall back to "Onsite" upstream in
+ * `toJobCardShape`, so the chip is never blank. The Featured pill
+ * lives in the top-right action cluster (next to the heart +
+ * bookmark icons), so the most prominent flag sits at eye level
+ * with the actions a candidate is about to take.
  */
 function TrustBadges({ job }) {
-  const badges = [];
-  if (job.isGlobalRemote) badges.push({ key: 'gr', cls: 'remote', label: 'Global remote' });
-  else if (/remote/i.test(job.loc || '')) badges.push({ key: 'rm', cls: 'remote', label: 'Remote' });
-  if (job.closingSoon && !job.isExpired) badges.push({ key: 'cs', cls: 'soon', label: job.deadline || 'Closing soon' });
-  if (badges.length === 0) return null;
+  const mode = String(job.workMode || 'onsite').toLowerCase();
+  const modeMeta = {
+    remote: { cls: 'remote', label: 'Remote' },
+    hybrid: { cls: 'hybrid', label: 'Hybrid' },
+    onsite: { cls: 'onsite', label: 'Onsite' },
+  }[mode] || { cls: 'onsite', label: 'Onsite' };
+
+  const badges = [{ key: 'wm', ...modeMeta }];
+  // Global-remote is a distinct signal from work_mode=remote (the
+  // company has explicitly opened the role worldwide); only surface
+  // it when both apply.
+  if (job.isGlobalRemote && mode === 'remote') {
+    badges.push({ key: 'gr', cls: 'remote', label: 'Global remote' });
+  }
+  if (job.closingSoon && !job.isExpired) {
+    badges.push({ key: 'cs', cls: 'soon', label: job.deadline || 'Closing soon' });
+  }
   return (
     <div className="trust-row" aria-label="Job badges">
       {badges.map((b) => (
