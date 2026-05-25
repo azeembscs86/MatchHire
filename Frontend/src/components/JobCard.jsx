@@ -123,15 +123,23 @@ function MatchBadge({ score }) {
 
 /**
  * Recommended-because checklist. Compact alternative to the old
- * reason-chip row. Renders up to 3 matched reasons (✓) then up to 2
- * missing skills (✖). Nothing renders if neither set has data.
+ * reason-chip row. Renders up to 2 matched reasons (✓) then up to 1
+ * missing skill (✖) — capped at 3 total rows so the slot height is
+ * identical across every card in a grid row. The outer container is
+ * always rendered (even when empty) so the reserved vertical slot is
+ * never collapsed, keeping cards visually aligned even when one job
+ * has no reasons and its sibling has five.
  */
 function WhyRecommended({ reasons = [], missing = [] }) {
-  const positives = (reasons || []).filter(Boolean).slice(0, 3);
-  const negatives = (missing || []).slice(0, 2);
-  if (positives.length === 0 && negatives.length === 0) return null;
+  const positives = (reasons || []).filter(Boolean).slice(0, 2);
+  const negatives = (missing || []).slice(0, 1);
+  const isEmpty = positives.length === 0 && negatives.length === 0;
   return (
-    <ul className="why-list" aria-label="Why we're recommending this role">
+    <ul
+      className={`why-list${isEmpty ? ' why-list-empty' : ''}`}
+      aria-label="Why we're recommending this role"
+      aria-hidden={isEmpty || undefined}
+    >
       {positives.map((r, i) => (
         <li key={`p-${i}`} className="why-item why-item-yes">
           <span className="why-icon" aria-hidden="true">✓</span>
@@ -289,7 +297,11 @@ export default function JobCard({
           */}
         {!isRow && <WhyRecommended reasons={reasons} missing={missing} />}
 
-        {/* Meta row — experience · type · deadline */}
+        {/* Meta row — experience · type · deadline. Always rendered
+            (even when empty) so the slot height is reserved and every
+            card in the grid keeps the same vertical rhythm. Single
+            line, overflow-hidden so an extra chip can never push the
+            footer downward. */}
         <div className="job-meta-row">
           {job.experience && <span className="meta-chip" title={`Experience: ${job.experience}`}>{job.experience}</span>}
           {job.type && <span className="meta-chip" title={`Job type: ${job.type}`}>{job.type}</span>}
@@ -303,20 +315,21 @@ export default function JobCard({
           )}
         </div>
 
-        {/* Skills tags */}
-        {visibleSkills.length > 0 && (
-          <div className="job-tags">
-            {visibleSkills.map((t) => (
-              <span key={t} className="job-tag" title={t}>{t}</span>
-            ))}
-            {extraSkills > 0 && (
-              <span className="job-tag job-tag-more" title="More skills required for this role">+{extraSkills}</span>
-            )}
-          </div>
-        )}
+        {/* Skills tags — fixed-height single line. If the chips would
+            wrap, the +N overflow pill at the end absorbs them. The
+            container is always rendered so the slot stays reserved
+            even when a job has no listed skills. */}
+        <div className="job-tags">
+          {visibleSkills.map((t) => (
+            <span key={t} className="job-tag" title={t}>{t}</span>
+          ))}
+          {extraSkills > 0 && (
+            <span className="job-tag job-tag-more" title="More skills required for this role">+{extraSkills}</span>
+          )}
+        </div>
 
         {/* spacer pushes footer + actions to the bottom of the card */}
-        <div style={{ flex: 1 }} />
+        <div className="job-spacer" />
 
         <div className="job-foot">
           <div className="job-pay text-truncate" title={`${job.pay} · ${job.type}`}>

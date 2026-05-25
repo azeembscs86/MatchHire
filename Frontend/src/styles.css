@@ -220,10 +220,19 @@
    * (mobile sidebars, embedded rails) without forcing a horizontal
    * scrollbar.
    */
+  /*
+   * Equal-height grid: `align-items:stretch` (default — restated for
+   * clarity) lets every card in a row grow to the tallest card's
+   * height, so the JobCard's `.card-shell { height:100% }` actually
+   * fills the cell. The previous `align-items:start` clipped this
+   * and left short cards visibly shorter than their neighbours.
+   */
   .jobs-grid{
-    display:grid;gap:18px;align-items:start;
+    display:grid;gap:18px;align-items:stretch;
     grid-template-columns:repeat(auto-fit, minmax(min(100%, 340px), 1fr));
   }
+  .jobs-grid > *{height:100%}
+  .jobs-grid .job-card-wrapper{height:100%}
 
   /*
    * Wrapper for one (card + missing-skills) unit. The wrapper is the
@@ -314,7 +323,7 @@
    * lives as a real element inside `.job-card-actions` (top-right,
    * before the heart + bookmark icons) — see `.featured-badge` below.
    */
-  .job-head{display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;padding-right:84px}
+  .job-head{display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;padding-right:84px;min-height:44px}
   /* Featured cards reserve extra room on the right so the bigger
      action cluster (Featured pill + heart + bookmark) doesn't tuck
      under the company name / location. On narrow widths the cluster
@@ -336,11 +345,24 @@
    */
   .job-title{
     font-family:'Fraunces',serif;font-size:18px;font-weight:600;
-    letter-spacing:-.01em;line-height:1.28;margin-bottom:10px;min-height:42px;
+    letter-spacing:-.01em;line-height:1.28;margin-bottom:10px;
+    /* Fixed two-line slot. `min-height` keeps one-line titles
+       aligned with two-line siblings; the `.text-clamp-2` utility
+       on the JSX side caps longer titles to two lines with an
+       ellipsis so a verbose title can never push the footer down. */
+    min-height:48px;max-height:48px;overflow:hidden;
   }
 
-  /* Meta row — experience · job type · deadline */
-  .job-meta-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+  /* Meta row — experience · job type · deadline.
+     Fixed one-line slot. `flex-wrap:nowrap` + `overflow:hidden` keep
+     this row exactly one chip-height tall so an extra meta value
+     (e.g. a longer experience label) can never increase card height.
+     The container is always rendered (even when empty) so the slot
+     is reserved across every card in the grid. */
+  .job-meta-row{
+    display:flex;flex-wrap:nowrap;gap:6px;margin-bottom:8px;
+    min-height:22px;overflow:hidden;
+  }
   .meta-chip{
     font-size:10.5px;font-weight:500;letter-spacing:.01em;
     padding:3px 8px;border-radius:100px;
@@ -353,11 +375,22 @@
     border-color:rgba(232,93,60,.2);font-weight:600;
   }
 
-  /* Skill tags row — no clipping; +N pill absorbs overflow */
-  .job-tags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
-  .job-tag{font-size:11px;padding:3px 9px;background:var(--bone);border-radius:100px;color:var(--ink-soft);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /*
+   * Skill tags row — fixed-height single line. Tags are no longer
+   * allowed to wrap onto a second row; the +N pill at the end
+   * already absorbs overflow, so wrapping was only ever a visual
+   * regression that made one card taller than the next. The slot
+   * is always rendered (empty container retains the reserved
+   * height) so a job with no skills stays vertically aligned with
+   * one that lists six.
+   */
+  .job-tags{
+    display:flex;gap:6px;flex-wrap:nowrap;margin-bottom:8px;
+    min-height:22px;overflow:hidden;
+  }
+  .job-tag{font-size:11px;padding:3px 9px;background:var(--bone);border-radius:100px;color:var(--ink-soft);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0}
   .job-tag.match{background:var(--sage-soft);color:var(--sage)}
-  .job-tag-more{background:transparent;border:1px dashed var(--line);color:var(--muted)}
+  .job-tag-more{background:transparent;border:1px dashed var(--line);color:var(--muted);flex-shrink:0}
 
   /*
    * Trust badges row — small inline pills for Featured / Remote /
@@ -365,7 +398,14 @@
    * card's most distinctive flags are visible without taking extra
    * vertical room.
    */
-  .trust-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+  /* Trust badges row — fixed-height single line so a card with
+     three badges (Remote · Global remote · Closing soon) doesn't
+     stack while its single-badge sibling stays compact. */
+  .trust-row{
+    display:flex;flex-wrap:nowrap;gap:6px;margin-bottom:8px;
+    min-height:22px;overflow:hidden;
+  }
+  .trust-row .trust-chip{flex-shrink:0}
   .trust-chip{
     display:inline-flex;align-items:center;gap:4px;
     font-size:10.5px;font-weight:600;letter-spacing:.02em;
@@ -446,14 +486,27 @@
    * Recommended-because checklist. Compact one-line items with a
    * leading ✓ (matched) or ✖ (missing). Sits between the match badge
    * and the skill tags so candidates can scan reasons at a glance.
+   *
+   * The slot is height-locked: the JSX caps the list at 3 rows
+   * (2 ✓ + 1 ✖) and we reserve `min-height:60px` on the container,
+   * so a job with zero reasons keeps the same vertical rhythm as
+   * one with three. `overflow:hidden` is the safety net against an
+   * unusually long reason wrapping to two lines.
    */
   .why-list{
     list-style:none;margin:0 0 10px;padding:0;
     display:flex;flex-direction:column;gap:3px;
+    /* Three-row reserved slot. JSX caps the list at 2 ✓ + 1 ✖,
+       so the height is bounded; the slot is always reserved (even
+       when empty) so cards with no reasons stay aligned with cards
+       that have three. */
+    min-height:60px;max-height:60px;overflow:hidden;
   }
+  .why-list-empty{}
   .why-item{
     display:flex;align-items:flex-start;gap:7px;
     font-size:11.5px;line-height:1.35;color:var(--ink-soft);
+    min-height:18px;
   }
   .why-icon{
     flex:none;font-size:10px;line-height:16px;font-weight:700;
@@ -466,7 +519,16 @@
     min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   }
 
-  .job-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;padding-top:10px;border-top:1px solid var(--line-soft);margin-top:auto}
+  /*
+   * Bottom spacer — absorbs any leftover vertical room so the
+   * footer + Apply row dock to the bottom of every card, regardless
+   * of how much body content sits above. Combined with the grid's
+   * `align-items:stretch`, this is what keeps salary / posted-date /
+   * Apply buttons perfectly aligned across a row of cards.
+   */
+  .job-spacer{flex:1 1 auto;min-height:6px}
+
+  .job-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;padding-top:10px;border-top:1px solid var(--line-soft);margin-top:auto;min-height:42px}
   .job-pay{font-family:'Fraunces',serif;font-size:15px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
   .job-pay span{font-size:11px;color:var(--muted);font-family:'Geist',sans-serif;font-weight:400}
   .job-time{font-size:11px;color:var(--muted);flex-shrink:0}
@@ -612,13 +674,15 @@
     flex-direction:column;min-height:0;
     padding:14px 16px;border-radius:12px;
   }
-  .job-card-row .job-head{margin-bottom:6px;padding-right:74px}
+  .job-card-row .job-head{margin-bottom:6px;padding-right:74px;min-height:0}
   .job-card-row.featured .job-head{padding-right:160px}
   .job-card-row .job-logo{width:36px;height:36px;font-size:15px}
-  .job-card-row .job-title{font-size:15.5px;min-height:0;margin-bottom:6px}
-  .job-card-row .job-meta-row{margin-bottom:6px}
-  .job-card-row .job-tags{margin-bottom:6px}
-  .job-card-row .job-foot{padding-top:8px;margin-top:6px}
+  .job-card-row .job-title{font-size:15.5px;min-height:0;max-height:none;margin-bottom:6px}
+  .job-card-row .job-meta-row{margin-bottom:6px;min-height:0}
+  .job-card-row .job-tags{margin-bottom:6px;min-height:0}
+  .job-card-row .trust-row{min-height:0}
+  .job-card-row .why-list{min-height:0;max-height:none}
+  .job-card-row .job-foot{padding-top:8px;margin-top:6px;min-height:0}
   .job-card-row .apply-btn{min-height:38px;font-size:12.5px}
 
   /* Logo color variants */
@@ -1220,10 +1284,16 @@
     /* Mobile keeps the new compact paddings — height now grows
        organically with content. */
     .job-card{min-height:auto;padding:14px}
-    .job-title{font-size:16.5px;min-height:auto}
-    .job-head{padding-right:74px}
+    /* On mobile cards are stacked one-per-row, so the fixed slot
+       heights aren't needed for cross-card alignment — but we keep
+       the title's two-line clamp so a very long title still can't
+       balloon a card. */
+    .card-shell{min-height:auto;padding:14px}
+    .job-title{font-size:16.5px;min-height:auto;max-height:none}
+    .job-head{padding-right:74px;min-height:0}
     .job-actions-row{flex-direction:column}
     .job-view-link{flex:none}
+    .why-list{min-height:0;max-height:none}
     .search-bar{grid-template-columns:1fr}
     .search-field{border-right:0;border-bottom:1px solid var(--line-soft)}
     .hero-stats{flex-direction:column;gap:20px}
