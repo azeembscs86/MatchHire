@@ -29,10 +29,56 @@ function loadJson(file) {
   catch (e) { return null; }
 }
 
+/**
+ * Walk the Playwright JSON report and collapse it into a single
+ * tally + a list of failure objects + a list of "finding"
+ * attachments produced by qa/helpers/report.helper.js#attachFindings.
+ * Findings carry console errors, API failures, and UI issues; the
+ * report renders them per-test with a priority badge so reviewers
+ * can scan the most important issues first.
+ */
 function summarisePlaywright(pw) {
-  if (!pw) return { passed: 0, failed: 0, skipped: 0, suites: [] };
+  if (!pw) return { passed: 0, failed: 0, skipped: 0, failures: [], findings: [] };
   let passed = 0, failed = 0, skipped = 0;
   const failures = [];
+  const findings = [];
+
+  function priorityFor(finding) {
+    if (!finding || typeof finding !== 'object') return 'low';
+    if (finding.source === 'pageerror') return 'critical';
+    if (typeof finding.status === 'number' && finding.status >= 500) return 'critical';
+    if (/hydration|invariant violation/i.test(finding.text || '')) return 'critical';
+    if (finding.source === 'console') return 'high';
+    if (typeof finding.status === 'number' && finding.status >= 400) return 'high';
+    if (finding.kind === 'overlap' || finding.kind === 'overflow' || finding.kind === 'uneven-heights') return 'medium';
+    return 'low';
+  }
+
+  function readFindings(attachments, specTitle) {
+    if (!Array.isArray(attachments)) return;
+    for (const att of attachments) {
+      if (att?.name !== 'qa-findings.json') continue;
+      try {
+        const body = att.body
+          ? JSON.parse(Buffer.from(att.body, 'base64').toString('utf-8'))
+          : att.path
+            ? JSON.parse(fs.readFileSync(att.path, 'utf-8'))
+            : null;
+        if (!body) continue;
+        const consoleErrors = (body.consoleErrors || []).map((e) => ({ ...e, priority: priorityFor(e) }));
+        const apiFailures = (body.apiFailures || []).map((f) => ({ ...f, priority: priorityFor(f) }));
+        const uiIssues = (body.uiIssues || []).map((u) => ({ ...u, priority: priorityFor(u) }));
+        findings.push({
+          test: specTitle,
+          consoleErrors,
+          apiFailures,
+          uiIssues,
+          suggestedFixes: body.suggestedFixes || [],
+        });
+      } catch { /* skip malformed attachments */ }
+    }
+  }
+
   function walk(suites = []) {
     for (const s of suites) {
       for (const spec of s.specs || []) {
@@ -41,6 +87,7 @@ function summarisePlaywright(pw) {
             if (r.status === 'passed') passed += 1;
             else if (r.status === 'skipped') skipped += 1;
             else { failed += 1; failures.push({ title: spec.title, status: r.status, error: r.error?.message?.split('\n')[0] || '' }); }
+            readFindings(r.attachments, spec.title);
           }
         }
       }
@@ -48,7 +95,7 @@ function summarisePlaywright(pw) {
     }
   }
   walk(pw.suites || []);
-  return { passed, failed, skipped, failures };
+  return { passed, failed, skipped, failures, findings };
 }
 
 function summariseLighthouse(lh) {
@@ -71,6 +118,33 @@ function render(report) {
       <td>${escapeHtml(f.status)}</td>
       <td><pre>${escapeHtml(f.error || '')}</pre></td>
     </tr>`).join('') || '<tr><td colspan="3">No failures</td></tr>';
+
+  // Findings — flatten per-test attachments into a single
+  // priority-ordered list so reviewers see critical issues first.
+  // Priority order: critical → high → medium → low.
+  const priorityRank = { critical: 0, high: 1, medium: 2, low: 3 };
+  const allFindings = [];
+  for (const f of (playwright.findings || [])) {
+    for (const e of f.consoleErrors) allFindings.push({ test: f.test, kind: 'console', detail: e.text, priority: e.priority });
+    for (const a of f.apiFailures) allFindings.push({ test: f.test, kind: 'api', detail: `${a.method} ${a.url} → ${a.status}`, priority: a.priority });
+    for (const u of f.uiIssues) allFindings.push({ test: f.test, kind: u.kind, detail: u.detail || '', priority: u.priority });
+  }
+  allFindings.sort((a, b) => (priorityRank[a.priority] ?? 9) - (priorityRank[b.priority] ?? 9));
+  const findingsRows = allFindings.length === 0
+    ? '<tr><td colspan="4">No findings recorded. Every test ran cleanly.</td></tr>'
+    : allFindings.map((f) => `
+      <tr>
+        <td><span class="prio prio-${f.priority}">${f.priority}</span></td>
+        <td>${escapeHtml(f.kind)}</td>
+        <td>${escapeHtml(f.test)}</td>
+        <td><code>${escapeHtml(f.detail || '')}</code></td>
+      </tr>`).join('');
+
+  const suggestionRows = (playwright.findings || [])
+    .flatMap((f) => f.suggestedFixes.map((s) => ({ test: f.test, fix: s })));
+  const suggestionsHtml = suggestionRows.length === 0
+    ? '<p style="color:#6B6258;font-size:13px;">No suggestions emitted. Add `suggestedFixes` to a finding via report.helper.js to populate this list.</p>'
+    : `<ul>${suggestionRows.map((s) => `<li><strong>${escapeHtml(s.test)}:</strong> ${escapeHtml(s.fix)}</li>`).join('')}</ul>`;
 
   const lhRows = lighthouse.length === 0
     ? '<tr><td colspan="5">No Lighthouse runs found. Run `npm run qa:lighthouse` first.</td></tr>'
@@ -103,6 +177,14 @@ function render(report) {
     th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #EDE5D3; vertical-align: top; }
     th { font-weight: 600; color: #6B6258; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
     pre { margin: 0; white-space: pre-wrap; font-size: 12px; color: #C73E1D; }
+    code { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; }
+    .prio { display: inline-block; padding: 2px 8px; border-radius: 100px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+    .prio-critical { background: #fde9e3; color: #C73E1D; }
+    .prio-high     { background: #fff1d6; color: #8a5b00; }
+    .prio-medium   { background: #e7f0ff; color: #1f4793; }
+    .prio-low      { background: #eef0eb; color: #3F6B4F; }
+    ul { margin: 0 0 24px; padding-left: 20px; font-size: 13px; }
+    ul li { margin-bottom: 6px; }
   </style>
 </head>
 <body>
@@ -129,6 +211,15 @@ function render(report) {
     <thead><tr><th>Test</th><th>Status</th><th>Error</th></tr></thead>
     <tbody>${failRows}</tbody>
   </table>
+
+  <h2>Findings (priority-ordered)</h2>
+  <table>
+    <thead><tr><th>Priority</th><th>Kind</th><th>Test</th><th>Detail</th></tr></thead>
+    <tbody>${findingsRows}</tbody>
+  </table>
+
+  <h2>Suggested fixes</h2>
+  ${suggestionsHtml}
 
   <h2>Lighthouse</h2>
   <table>

@@ -117,7 +117,7 @@ export default function DashboardCompany() {
 
   if (loading) {
     return (
-      <section className="view active" id="view-dash-company" style={{ background: 'var(--bone)' }}>
+      <section className="view active" id="view-dash-company" data-testid="company-dashboard" style={{ background: 'var(--bone)' }}>
         <div className="container" style={{ padding: '48px 0' }}>
           <LoadingState label="Loading your hiring dashboard…" />
         </div>
@@ -131,7 +131,7 @@ export default function DashboardCompany() {
   const hired = stats?.applications?.by_status?.hired ?? 0;
 
   return (
-    <section className="view active" id="view-dash-company" style={{ background: 'var(--bone)' }}>
+    <section className="view active" id="view-dash-company" data-testid="company-dashboard" style={{ background: 'var(--bone)' }}>
       <div className="dash-layout">
         <aside className="dash-sidebar">
           <div className="dash-side-head">

@@ -109,10 +109,14 @@ module.exports = defineConfig({
   // qa/e2e/candidate/candidate-flow.spec.js). That avoids the
   // cross-context handoff issues storage-state has historically
   // run into.
-  timeout: 60_000,
+  timeout: 90_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,           // serial — easier to debug + shared backend state
-  retries: process.env.CI ? 1 : 0,
+  // One retry locally too — Vite's dev server occasionally
+  // re-bundles a route on first hit during a long suite, and a
+  // single retry absorbs that without masking real flakes (a
+  // genuine failure still fails both attempts).
+  retries: 1,
   workers: 1,
   reporter: [
     ['list'],
@@ -124,7 +128,11 @@ module.exports = defineConfig({
     baseURL: BASE_URL,
     headless: true,
     actionTimeout: 10_000,
-    navigationTimeout: 30_000,
+    // Vite's dev server re-bundles on the first hit to a new
+    // route; the SSR-less app then has to do a JSON hydrate.
+    // 60s comfortably absorbs that even under a long suite while
+    // still flagging genuine deadlocks (page never resolves).
+    navigationTimeout: 60_000,
     // Trace + screenshot ONLY on failure — keep the green path
     // fast. Override with `--trace on` from the CLI when
     // diagnosing flakes.

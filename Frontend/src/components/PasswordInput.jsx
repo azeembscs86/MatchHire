@@ -48,6 +48,7 @@ export default function PasswordInput({
   autoComplete = 'current-password',
   id,
   ariaLabel,
+  testId,
 }) {
   const [show, setShow] = useState(false);
   return (
@@ -62,6 +63,7 @@ export default function PasswordInput({
         minLength={minLength}
         autoComplete={autoComplete}
         aria-label={ariaLabel}
+        data-testid={testId}
         style={{ paddingRight: 42, width: '100%' }}
       />
       <button

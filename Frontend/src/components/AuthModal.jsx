@@ -105,7 +105,15 @@ function SignIn({ onSwitch, onClose }) {
       )}
       <div className="form-field">
         <label>Email</label>
-        <input type="email" required placeholder="you@email.com" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+        <input
+          type="email"
+          required
+          placeholder="you@email.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          autoComplete="email"
+          data-testid="candidate-login-email"
+        />
       </div>
       <div className="form-field">
         <label>Password</label>
@@ -114,6 +122,7 @@ function SignIn({ onSwitch, onClose }) {
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="current-password"
           ariaLabel="Password"
+          testId="candidate-login-password"
         />
       </div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '4px 0 14px 0', fontSize: 13 }}>
@@ -134,7 +143,12 @@ function SignIn({ onSwitch, onClose }) {
           Forgot password?
         </Link>
       </div>
-      <button className="btn btn-coral" type="submit" disabled={submitting}>
+      <button
+        className="btn btn-coral"
+        type="submit"
+        disabled={submitting}
+        data-testid="candidate-login-submit"
+      >
         {submitting ? 'Signing in…' : 'Sign in →'}
       </button>
       <div className="form-foot">

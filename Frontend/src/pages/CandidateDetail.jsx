@@ -237,6 +237,7 @@ export default function CandidateDetail() {
                       onClick={handleDownloadResume}
                       disabled={downloading}
                       aria-busy={downloading}
+                      data-testid="resume-download-button"
                     >
                       <DownloadIcon />
                       {downloading ? 'Preparing…' : 'Download Resume'}

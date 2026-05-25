@@ -226,6 +226,7 @@ export default function JobCard({
         featured={featured && job.featured}
         variant={isRow ? 'row' : 'grid'}
         className={`job-card${isRow ? ' job-card-row' : ''}`}
+        testId="job-card"
       >
         {/*
           * Top-right action cluster: [ Featured? ]  [ ♥ ]  [ ⌘ ].
@@ -378,6 +379,7 @@ export default function JobCard({
                 type="button"
                 disabled={applyingId === job.id}
                 aria-busy={applyingId === job.id}
+                data-testid="apply-now-button"
                 style={{ width: '100%' }}
               >
                 {applyingId === job.id ? 'Applying…' : 'Apply Now'}
