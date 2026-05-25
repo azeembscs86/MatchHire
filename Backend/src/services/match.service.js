@@ -263,25 +263,33 @@ function validateApplication(job, candidate) {
  * Professionals" feed on the Candidates page for logged-in
  * candidate viewers.
  *
- * Different shape from `scoreJob`: there's no job here, just two
- * candidate context objects. Weights per product brief:
+ * Scoring weights (out of 100):
  *
- *   skills       0..60   Jaccard overlap of skill sets — the
- *                        dominant signal. A Software Engineer
- *                        looking at another Software Engineer
- *                        should land high purely on shared stack.
- *   role/title   0..25   word overlap between current_title /
- *                        headline (>2-char tokens).
- *   experience   0..15   closeness in years. Same-tier candidates
- *                        get full credit; large gaps reduce but
- *                        never zero (1pt floor).
+ *   skills       0..65   Built from BOTH (a) absolute count of
+ *                        shared skills (capped at 5) and (b) the
+ *                        better of "my coverage" vs "their
+ *                        coverage" of the shared set. A candidate
+ *                        with two skills both of which I also
+ *                        have is therefore a strong match even
+ *                        if my profile has ten more — the
+ *                        previous Jaccard-only formula penalised
+ *                        candidates with fewer listed skills
+ *                        than the viewer.
+ *   role/title   0..20   Word overlap between current_title /
+ *                        headline (>2-char tokens). Optional.
+ *   experience   0..15   Closeness in years. Skills matter more,
+ *                        so this is a tie-breaker rather than a
+ *                        gate — even an 8-year gap still earns
+ *                        4 pts so an experienced and a junior
+ *                        engineer with overlapping skills both
+ *                        surface.
  *
  * Returns `{ score, matched_skills, skills_they_have,
  * skills_you_have, experience_comparison }`. Caller filters on
- * `score > 50` and sorts desc.
+ * `score > SIMILARITY_FLOOR` and sorts desc.
  */
 function candidateSimilarity(me, them) {
-  // --- skills (60 pts) ---
+  // --- skills (65 pts) ---
   const mySkills = new Set(
     (me.skills || []).map((s) => String(s.name || s).toLowerCase()).filter(Boolean)
   );
@@ -294,13 +302,26 @@ function candidateSimilarity(me, them) {
   let meOnly = [];
   if (mySkills.size > 0 && theirSkills.size > 0) {
     matched = [...mySkills].filter((s) => theirSkills.has(s));
-    const union = new Set([...mySkills, ...theirSkills]);
-    skillsScore = Math.round(60 * (matched.length / union.size));
     theyOnly = [...theirSkills].filter((s) => !mySkills.has(s));
     meOnly = [...mySkills].filter((s) => !theirSkills.has(s));
+
+    // Absolute-count component (45 pts). 5+ shared skills saturates
+    // — beyond that the candidate is clearly in the same lane.
+    const countComponent = Math.min(matched.length, 5) / 5; // 0..1
+    // Coverage component (20 pts). Use the BETTER of the two
+    // coverages so a candidate whose listed stack is a subset of
+    // mine doesn't get penalised for having fewer skills overall.
+    // Example: me [PHP, MySQL, Laravel, Docker, Redis], them
+    // [PHP, MySQL] — coverage of them = 1.0, coverage of me =
+    // 0.4, max = 1.0, full 20 pts.
+    const myCoverage = matched.length / mySkills.size;
+    const theirCoverage = matched.length / theirSkills.size;
+    const coverageComponent = Math.max(myCoverage, theirCoverage); // 0..1
+
+    skillsScore = Math.round(45 * countComponent + 20 * coverageComponent);
   }
 
-  // --- role / title (25 pts) ---
+  // --- role / title (20 pts) ---
   const myTitle = lower(me.current_title || me.headline);
   const theirTitle = lower(them.current_title || them.headline);
   let roleScore = 0;
@@ -308,8 +329,8 @@ function candidateSimilarity(me, them) {
     const myWords = new Set(myTitle.split(/[^a-z0-9]+/).filter((w) => w.length > 2));
     const theirWords = new Set(theirTitle.split(/[^a-z0-9]+/).filter((w) => w.length > 2));
     const overlap = [...myWords].filter((w) => theirWords.has(w));
-    if (overlap.length >= 2) roleScore = 25;
-    else if (overlap.length === 1) roleScore = 15;
+    if (overlap.length >= 2) roleScore = 20;
+    else if (overlap.length === 1) roleScore = 12;
   }
 
   // --- experience (15 pts) ---
@@ -319,9 +340,9 @@ function candidateSimilarity(me, them) {
   let expScore;
   if (gap <= 1) expScore = 15;
   else if (gap <= 3) expScore = 12;
-  else if (gap <= 5) expScore = 8;
-  else if (gap <= 8) expScore = 4;
-  else expScore = 1;
+  else if (gap <= 5) expScore = 9;
+  else if (gap <= 8) expScore = 6;
+  else expScore = 4;
 
   return {
     score: Math.min(100, skillsScore + roleScore + expScore),
