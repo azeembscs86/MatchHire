@@ -130,9 +130,11 @@ module.exports = defineConfig({
     actionTimeout: 10_000,
     // Vite's dev server re-bundles on the first hit to a new
     // route; the SSR-less app then has to do a JSON hydrate.
-    // 60s comfortably absorbs that even under a long suite while
-    // still flagging genuine deadlocks (page never resolves).
-    navigationTimeout: 60_000,
+    // The responsive sweep hits 6 viewports × 5 routes which
+    // historically triggered a >60s cold compile on one of the
+    // less-trafficked routes (/forgot-password). 90s absorbs
+    // that without masking genuine deadlocks.
+    navigationTimeout: 90_000,
     // Trace + screenshot ONLY on failure — keep the green path
     // fast. Override with `--trace on` from the CLI when
     // diagnosing flakes.

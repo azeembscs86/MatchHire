@@ -20,6 +20,14 @@
 
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{background:var(--bone);color:var(--ink);font-family:'Geist',system-ui,sans-serif;font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  /*
+   * `overflow-x:hidden` on BOTH html + body so the off-canvas
+   * mobile drawer (position:fixed translated 100% to the right
+   * when closed) never extends documentElement.scrollWidth. The
+   * body-only clip was insufficient because documentElement.
+   * scrollWidth measures the html box, not the body box.
+   */
+  html{overflow-x:hidden}
   body{min-height:100vh;overflow-x:hidden}
 
   /* Subtle paper grain */
@@ -2224,4 +2232,147 @@
   .jd-actions{flex-direction:column;align-items:stretch}
   .jd-actions .btn{width:100%}
   .jd-section{padding:20px}
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Mobile navigation + global responsive polish (2026-05)
+ * ───────────────────────────────────────────────────────────── */
+
+/*
+ * Hamburger toggle. Hidden by default; the @media block below
+ * the 900px breakpoint flips it visible and hides the inline
+ * desktop nav + action cluster.
+ */
+.mobile-nav-toggle{
+  display:none;
+  background:transparent;border:0;cursor:pointer;
+  padding:10px;border-radius:10px;color:var(--ink);
+  margin-left:8px;
+}
+.mobile-nav-toggle:hover{background:var(--bone-2)}
+.mobile-nav-toggle:focus-visible{outline:2px solid var(--coral);outline-offset:2px}
+.hamburger{
+  display:inline-flex;flex-direction:column;justify-content:center;
+  width:22px;height:18px;gap:4px;position:relative;
+}
+.hamburger i{
+  display:block;height:2px;width:100%;background:currentColor;border-radius:2px;
+  transition:transform .2s ease,opacity .2s ease;
+}
+.hamburger.is-open i:nth-child(1){transform:translateY(6px) rotate(45deg)}
+.hamburger.is-open i:nth-child(2){opacity:0}
+.hamburger.is-open i:nth-child(3){transform:translateY(-6px) rotate(-45deg)}
+
+/*
+ * Drawer overlay + panel. The overlay covers the full viewport
+ * and fades in; the panel slides from the right. Both render
+ * unconditionally so React doesn't re-mount when the toggle
+ * fires; the `is-open` class controls visibility + transform.
+ */
+.mobile-drawer-overlay{
+  position:fixed;inset:0;z-index:90;
+  background:rgba(14,17,22,.42);opacity:0;pointer-events:none;
+  transition:opacity .2s ease;
+}
+.mobile-drawer-overlay.is-open{opacity:1;pointer-events:auto}
+.mobile-drawer{
+  position:fixed;top:0;right:0;bottom:0;
+  width:min(86vw,360px);background:var(--paper);
+  display:flex;flex-direction:column;
+  transform:translateX(100%);transition:transform .25s ease;
+  box-shadow:-12px 0 32px -16px rgba(14,17,22,.25);
+  padding:18px 20px 22px;overflow-y:auto;z-index:91;
+}
+.mobile-drawer.is-open{transform:translateX(0)}
+.mobile-drawer-head{
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:18px;
+}
+.mobile-drawer-eyebrow{
+  font-family:'Geist Mono',monospace;font-size:10px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--muted);
+}
+.mobile-drawer-close{
+  background:transparent;border:0;font-size:28px;line-height:1;
+  color:var(--ink);cursor:pointer;padding:4px 10px;border-radius:8px;
+}
+.mobile-drawer-close:hover{background:var(--bone-2)}
+.mobile-drawer-user{
+  padding:12px 14px;border-radius:12px;background:var(--bone);
+  margin-bottom:14px;
+}
+.mobile-drawer-user-name{font-family:'Fraunces',serif;font-size:16px;color:var(--ink)}
+.mobile-drawer-user-meta{font-size:11px;color:var(--muted);margin-top:2px;word-break:break-all}
+.mobile-drawer-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.mobile-drawer-section{
+  font-family:'Geist Mono',monospace;font-size:10px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--muted);
+  padding:14px 4px 6px;
+}
+.mobile-drawer-link{
+  display:flex;justify-content:space-between;align-items:center;gap:8px;
+  padding:12px 14px;border-radius:10px;font-size:15px;
+  color:var(--ink);text-decoration:none;
+}
+.mobile-drawer-link:hover{background:var(--bone-2)}
+.mobile-drawer-link.is-active{
+  background:rgba(232,93,60,.10);color:var(--coral-deep);font-weight:600;
+}
+.mobile-drawer-badge{
+  background:var(--coral);color:#fff;font-family:'Geist Mono',monospace;
+  font-size:11px;padding:2px 8px;border-radius:100px;
+}
+.mobile-drawer-actions{
+  margin-top:auto;display:flex;flex-direction:column;gap:10px;
+  padding-top:18px;border-top:1px solid var(--line-soft);
+}
+
+/*
+ * Show the hamburger + hide the inline desktop nav at the
+ * tablet/phone breakpoint. 900px is the point where the inline
+ * nav-menu + signed-in action cluster start to crowd the logo —
+ * anything narrower belongs in the drawer.
+ */
+@media (max-width:900px){
+  .nav-desktop{display:none}
+  .nav-actions-desktop{display:none}
+  .mobile-nav-toggle{display:inline-flex;align-items:center;justify-content:center}
+  /* Keep the nav-inner row tidy — logo on the left, hamburger on the right. */
+  .nav-inner{padding:14px 0}
+}
+
+/*
+ * Mobile (≤640px): tighten container padding + form ergonomics +
+ * make sure tap targets are large enough. Most card grids
+ * already collapse to a single column in the existing 640px
+ * block above; this block layers the remaining polish.
+ */
+@media (max-width:640px){
+  /* Forms — full-width inputs + buttons, no horizontal scroll. */
+  form input, form select, form textarea{width:100%;box-sizing:border-box}
+  form .btn, form button[type="submit"]{width:100%}
+  /* Filter rows that horizontally pack chips at desktop should
+     wrap cleanly on mobile — they already use flex-wrap, just
+     drop fixed mins. */
+  .form-row{grid-template-columns:1fr}
+
+  /* Dashboard topbar — wrap the title + CTA stack onto two rows
+     so a long welcome message + button never blows out the row. */
+  .dash-topbar{flex-direction:column;align-items:stretch}
+  .dash-topbar-actions{width:100%}
+  .dash-topbar-actions .btn{width:100%}
+
+  /* Modal panel — clamp height so the form area is reachable on
+     short phones without the bottom buttons clipping. */
+  .modal{max-height:calc(100vh - 20px);overflow:hidden auto}
+}
+
+/*
+ * Very narrow phones (≤380px) — drop container padding one more
+ * notch so 320-wide devices still fit content edge-to-edge.
+ */
+@media (max-width:380px){
+  .container,.container-wide{padding:0 14px}
+  .modal{padding:14px}
+  .dash-main{padding:18px 14px}
 }

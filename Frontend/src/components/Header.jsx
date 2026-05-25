@@ -14,14 +14,17 @@
  * header swaps between guest and signed-in modes immediately after
  * login/logout - no full reload needed.
  *
- * The favorites count + dashboard dropdown sit alongside the action
- * buttons. We hide both when the user is anonymous since they only
- * make sense for an authenticated role.
+ * Below the 900px breakpoint the inline nav + action cluster
+ * collapse into a hamburger that opens MobileNav — a slide-in
+ * drawer carrying the same nav links + role-aware dashboard
+ * shortcuts + signed-in/signed-out actions, so no destination is
+ * ever stranded behind a hidden menu on mobile.
  */
 import { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import Logo from './Logo.jsx';
 import DashboardDropdown from './DashboardDropdown.jsx';
+import MobileNav from './MobileNav.jsx';
 import { useAuthModal } from '../context/AuthModalContext.jsx';
 import { useFavorites } from '../context/FavoritesContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -35,6 +38,24 @@ const FALLBACK_PRIMARY = [
   { key: 'employer-onboarding', label: 'For Employers', to: '/employer-onboarding' },
 ];
 
+/**
+ * Map the authenticated user's role to the dashboard shortcut
+ * links surfaced inside the mobile drawer. Mirrors the
+ * DashboardDropdown options so the two surfaces stay in sync.
+ */
+function dashboardLinksFor(role) {
+  if (role === 'candidate') return [{ to: '/dashboard/candidate', label: 'Candidate Hub' }];
+  if (role === 'employer')  return [{ to: '/dashboard/company',   label: 'Company Hub' }];
+  if (role === 'admin' || role === 'super_admin') {
+    return [
+      { to: '/dashboard/candidate', label: 'Candidate Hub' },
+      { to: '/dashboard/company',   label: 'Company Hub' },
+      { to: '/dashboard/admin',     label: 'Admin Console' },
+    ];
+  }
+  return [];
+}
+
 export default function Header() {
   const { openAuth } = useAuthModal();
   const { count } = useFavorites();
@@ -42,6 +63,7 @@ export default function Header() {
   const navigate = useNavigate();
 
   const [nav, setNav] = useState({ primary: FALLBACK_PRIMARY, dashboard: null });
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   // Refetch the menu whenever the auth state flips. The API layer
   // attaches the bearer token automatically so this single call
@@ -59,13 +81,15 @@ export default function Header() {
     navigate('/');
   }
 
+  const primaryLinks = nav.primary || FALLBACK_PRIMARY;
+
   return (
     <header className="main-nav">
       <div className="container nav-inner">
         <Logo />
-        <nav>
+        <nav className="nav-desktop">
           <ul className="nav-menu">
-            {(nav.primary || FALLBACK_PRIMARY).map((l) => (
+            {primaryLinks.map((l) => (
               <li key={l.key || l.to}>
                 <NavLink to={l.to} end={l.end} className={({ isActive }) => (isActive ? 'active' : undefined)}>
                   {l.label}
@@ -74,7 +98,7 @@ export default function Header() {
             ))}
           </ul>
         </nav>
-        <div className="nav-actions">
+        <div className="nav-actions nav-actions-desktop">
           {isAuthenticated && user?.role === 'candidate' && (
             <button
               className="dash-trigger"
@@ -103,6 +127,20 @@ export default function Header() {
             </>
           )}
         </div>
+
+        <MobileNav
+          open={mobileOpen}
+          onOpen={() => setMobileOpen(true)}
+          onClose={() => setMobileOpen(false)}
+          primaryLinks={primaryLinks}
+          isAuthenticated={isAuthenticated}
+          user={user}
+          favoritesCount={count}
+          dashboardLinks={isAuthenticated ? dashboardLinksFor(user?.role) : []}
+          onSignIn={() => openAuth('signin')}
+          onSignUp={() => openAuth('signup')}
+          onSignOut={handleLogout}
+        />
       </div>
     </header>
   );
