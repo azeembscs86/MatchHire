@@ -1741,6 +1741,19 @@
   .dash-main-flush > .view{background:transparent}
   .dash-main-flush > .view > .page-header{padding-top:36px}
 
+  /*
+   * Applications tab — each card sits in a wrapper so a status
+   * row can render ABOVE the JobCard without breaking the
+   * `.jobs-grid` flex calculations. The wrapper is the grid
+   * cell; the status row + JobCard stack vertically inside.
+   */
+  .application-card-wrap{display:flex;flex-direction:column;gap:8px;min-width:0}
+  .application-status-row{
+    display:flex;justify-content:space-between;align-items:center;gap:8px;
+    font-size:12px;
+  }
+  .application-status-row .pill{font-size:11px;padding:4px 10px}
+
   @media (max-width:1024px){
     .dash-layout{grid-template-columns:1fr}
     .dash-sidebar{position:static;height:auto;padding:20px}

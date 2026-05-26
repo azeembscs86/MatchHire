@@ -27,6 +27,10 @@ const { authenticatePage } = require('../../helpers/auth.helper');
 
 const TAB_ROUTES = [
   '/dashboard/candidate',
+  '/dashboard/candidate/applications',
+  '/dashboard/candidate/messages',
+  '/dashboard/candidate/notifications',
+  '/dashboard/candidate/settings',
   '/favorites',
   '/saved-jobs',
   '/preferences',

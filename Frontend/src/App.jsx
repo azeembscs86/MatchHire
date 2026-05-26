@@ -42,6 +42,10 @@ import DashboardCandidate from './pages/DashboardCandidate.jsx';
 import DashboardCompany from './pages/DashboardCompany.jsx';
 import DashboardAdmin from './pages/DashboardAdmin.jsx';
 import CandidateDashboardLayout from './components/CandidateDashboardLayout.jsx';
+import CandidateApplications from './pages/CandidateApplications.jsx';
+import CandidateMessages from './pages/dashboard/CandidateMessages.jsx';
+import CandidateNotifications from './pages/dashboard/CandidateNotifications.jsx';
+import CandidateSettings from './pages/dashboard/CandidateSettings.jsx';
 import VerifyEmail from './pages/VerifyEmail.jsx';
 import VerifyPending from './pages/VerifyPending.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
@@ -93,6 +97,18 @@ export default function App() {
             <Route path="/preferences" element={<Preferences />} />
             <Route path="/favorites" element={<Favorites />} />
             <Route path="/saved-jobs" element={<SavedJobs />} />
+            {/*
+             * Dedicated candidate dashboard tabs. Each route
+             * mounts inside the shell so the sidebar stays
+             * anchored on the left and the active row
+             * highlights correctly via NavLink. Messages /
+             * Notifications / Settings render placeholder empty
+             * states until their backing surfaces ship.
+             */}
+            <Route path="/dashboard/candidate/applications" element={<CandidateApplications />} />
+            <Route path="/dashboard/candidate/messages" element={<CandidateMessages />} />
+            <Route path="/dashboard/candidate/notifications" element={<CandidateNotifications />} />
+            <Route path="/dashboard/candidate/settings" element={<CandidateSettings />} />
           </Route>
           {/*
            * Candidate Onboarding Wizard (7 steps) keeps its own

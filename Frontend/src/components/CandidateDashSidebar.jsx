@@ -95,18 +95,12 @@ export default function CandidateDashSidebar({
       </div>
       <ul className="dash-nav">
         <NavRow to="/dashboard/candidate" icon="●" label="Overview" />
-        {/*
-         * "My Applications" still lives as an inline section on
-         * the Overview page (no dedicated route yet) — keep the
-         * row visible but inert so the navigation reads complete.
-         * When the dedicated route ships, swap this for a NavRow.
-         */}
-        <li>
-          <a>
-            <span className="ic" aria-hidden="true">▤</span> My Applications
-            {appsTotal != null && <span className="badge">{appsTotal}</span>}
-          </a>
-        </li>
+        <NavRow
+          to="/dashboard/candidate/applications"
+          icon="▤"
+          label="My Applications"
+          badge={appsTotal}
+        />
         <NavRow to="/favorites" icon="♥" label="Favourites" badge={favoritesTotal} />
         <NavRow to="/saved-jobs" icon="⌘" label="Saved for Later" />
         {/*
@@ -119,6 +113,8 @@ export default function CandidateDashSidebar({
          * stay live so deep-links and the alternate entry
          * points keep working.
          */}
+        <NavRow to="/dashboard/candidate/messages" icon="✉" label="Messages" />
+        <NavRow to="/dashboard/candidate/notifications" icon="◉" label="Notifications" />
         <li>
           <a>
             <span className="ic" aria-hidden="true">☎</span> Interviews
@@ -126,9 +122,9 @@ export default function CandidateDashSidebar({
           </a>
         </li>
         <div className="dash-nav-section">Account</div>
-        <li><a><span className="ic" aria-hidden="true">⚙</span> Settings</a></li>
+        <NavRow to="/dashboard/candidate/settings" icon="⚙" label="Settings" />
         <li>
-          <a onClick={onSignOut} style={{ cursor: 'pointer' }}>
+          <a onClick={onSignOut} style={{ cursor: 'pointer' }} data-testid="candidate-sidebar-signout">
             <span className="ic" aria-hidden="true">⤓</span> Sign out
           </a>
         </li>

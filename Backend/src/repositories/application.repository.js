@@ -48,9 +48,32 @@ async function listForCandidate(candidate_user_id, { page = 1, limit = 10, statu
   const params = [candidate_user_id];
   if (status) { where.push('a.status = ?'); params.push(status); }
   const offset = (page - 1) * limit;
+  // Pulls everything the candidate-side Applications page needs
+  // to render a JobCard for each application — title + company +
+  // location + remote flag + work_mode + job_type for the card
+  // chrome, salary range + deadline so the meta row is complete,
+  // skills_tags so the chip row matches other surfaces, and the
+  // expiry-related columns so the page can flag rows whose
+  // posting closed after the candidate applied. Keeping all of
+  // this in ONE query (vs joining on the candidate-facing list
+  // again) keeps the dashboard's Applications tab a single
+  // round-trip.
+  // Keep the legacy aliases (job_id, job_title, job_location)
+  // consumed by DashboardCandidate's Applied Jobs section, and
+  // ADD the columns the dedicated Applications page needs (work
+  // mode, salary range, deadline, skills, featured flag). The
+  // row carries both `j.id` (preferred by toJobCardShape) and
+  // `job_id` (legacy alias) so neither call site needs changing.
   const rows = await db.query(
     `SELECT a.id, a.status, a.applied_at, a.updated_at, a.expected_salary,
-            j.id AS job_id, j.title AS job_title, j.location AS job_location, j.is_remote, j.job_type,
+            j.id AS job_id, j.id AS j_id,
+            j.title AS job_title, j.location AS job_location,
+            j.city, j.country, j.is_remote, j.work_mode, j.is_global_remote,
+            j.job_type, j.experience_level,
+            j.salary_min, j.salary_max, j.salary_currency, j.salary_period,
+            j.application_deadline, j.skills_tags,
+            j.published_at, j.created_at AS job_created_at,
+            j.is_featured,
             c.id AS company_id, c.name AS company_name, c.logo_url AS company_logo
      FROM applications a
      INNER JOIN jobs j ON j.id = a.job_id
