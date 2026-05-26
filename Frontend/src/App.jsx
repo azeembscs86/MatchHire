@@ -41,6 +41,7 @@ import EmployerOnboarding from './pages/EmployerOnboarding.jsx';
 import DashboardCandidate from './pages/DashboardCandidate.jsx';
 import DashboardCompany from './pages/DashboardCompany.jsx';
 import DashboardAdmin from './pages/DashboardAdmin.jsx';
+import CandidateDashboardLayout from './components/CandidateDashboardLayout.jsx';
 import VerifyEmail from './pages/VerifyEmail.jsx';
 import VerifyPending from './pages/VerifyPending.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
@@ -76,17 +77,29 @@ export default function App() {
 
         {/* Candidate-only flows */}
         <Route element={<ProtectedRoute roles={['candidate']} />}>
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/profile/review" element={<ReviewProfile />} />
           {/*
-           * Candidate Onboarding Wizard (7 steps). Reachable from the
-           * candidate dashboard via "Continue setup" banner; saves
-           * progress server-side so closing the tab resumes here.
+           * Candidate dashboard SHELL — sidebar + main column.
+           * Every page nested under it renders inside the same
+           * shell so the sidebar never disappears when the
+           * candidate clicks a tab (Favourites, Saved jobs,
+           * Profile, Preferences). The standalone
+           * DashboardCandidate page provides its OWN sidebar
+           * (also via CandidateDashSidebar) so the overview's
+           * existing layout stays unchanged.
+           */}
+          <Route element={<CandidateDashboardLayout />}>
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/profile/review" element={<ReviewProfile />} />
+            <Route path="/preferences" element={<Preferences />} />
+            <Route path="/favorites" element={<Favorites />} />
+            <Route path="/saved-jobs" element={<SavedJobs />} />
+          </Route>
+          {/*
+           * Candidate Onboarding Wizard (7 steps) keeps its own
+           * full-bleed layout — the wizard is a guided flow and
+           * should not be wrapped in the dashboard shell.
            */}
           <Route path="/onboarding" element={<Onboarding />} />
-          <Route path="/preferences" element={<Preferences />} />
-          <Route path="/favorites" element={<Favorites />} />
-          <Route path="/saved-jobs" element={<SavedJobs />} />
           <Route path="/dashboard/candidate" element={<DashboardCandidate />} />
         </Route>
 

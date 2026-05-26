@@ -1723,10 +1723,29 @@
   .health-status.warn::before{background:var(--gold)}
   .health-status.bad::before{background:var(--coral)}
 
+  /*
+   * Dashboard "flush" variant — used by CandidateDashboardLayout
+   * when wrapping pages that ship their own page-header / hero
+   * (Favourites, Saved-for-later, Profile, Preferences). Strips
+   * the default 36×44 padding so the wrapped page's own spacing
+   * isn't doubled up.
+   */
+  .dash-main-flush{padding:0;min-width:0}
+  /*
+   * When the wrapped page is the typical `.view.active >
+   * .page-header > .container` shape, the section's full-bleed
+   * background ends up inside the dash-main column. Squash the
+   * page-header padding-bottom slightly so the column feels
+   * cohesive with the dashboard topbar elsewhere.
+   */
+  .dash-main-flush > .view{background:transparent}
+  .dash-main-flush > .view > .page-header{padding-top:36px}
+
   @media (max-width:1024px){
     .dash-layout{grid-template-columns:1fr}
     .dash-sidebar{position:static;height:auto;padding:20px}
     .dash-main{padding:24px}
+    .dash-main-flush{padding:0}
     .stat-row{grid-template-columns:repeat(2,1fr)}
     .dash-row.split,.dash-row.split-3{grid-template-columns:1fr}
   }
@@ -1734,6 +1753,7 @@
     .stat-row{grid-template-columns:1fr}
     .dash-table{font-size:12px}
     .dash-table th:nth-child(n+4),.dash-table td:nth-child(n+4){display:none}
+    .dash-main-flush > .view > .page-header{padding-top:20px;padding-bottom:0}
   }
 
   /* ───── Preferences Page ───── */

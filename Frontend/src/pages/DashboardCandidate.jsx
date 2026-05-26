@@ -20,6 +20,7 @@ import ProfileCompletionCard from '../components/ProfileCompletionCard.jsx';
 import { filterActiveJobs } from '../api/adapters.js';
 import { useApplyToJob } from '../hooks/useApplyToJob.js';
 import JobCard from '../components/JobCard.jsx';
+import CandidateDashSidebar from '../components/CandidateDashSidebar.jsx';
 
 /**
  * Status → badge mapping for the Applied Jobs section.
@@ -43,38 +44,6 @@ const STATUS_PILL = {
   rejected:     { cls: 'pill-rejected',    label: 'Rejected' },
   withdrawn:    { cls: 'pill-rejected',    label: 'Withdrawn' },
 };
-
-function initials(name = '') {
-  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || '··';
-}
-
-/**
- * Sidebar avatar. Uses a real <img> so onError can fall back to
- * the initials block when the URL 404s (file deleted, stale URL,
- * network blip). The <img> sits absolutely-positioned over the
- * initials so the fallback is instant — no flash of broken image.
- */
-function DashAvatar({ user }) {
-  const [failed, setFailed] = useState(false);
-  const url = user?.avatar_url;
-  const showImg = !!url && !failed;
-  return (
-    <div
-      className={`dash-side-avatar${showImg ? '' : ' lg-1'}`}
-      style={{ position: 'relative', overflow: 'hidden' }}
-    >
-      {!showImg && initials(user?.full_name)}
-      {showImg && (
-        <img
-          src={url}
-          alt=""
-          onError={() => setFailed(true)}
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-        />
-      )}
-    </div>
-  );
-}
 
 function relative(iso) {
   if (!iso) return '';
@@ -194,37 +163,15 @@ export default function DashboardCandidate() {
   }
 
   return (
-    <section className="view active" id="view-dash-candidate" style={{ background: 'var(--bone)' }}>
+    <section className="view active" id="view-dash-candidate" data-testid="candidate-dashboard-shell" style={{ background: 'var(--bone)' }}>
       <div className="dash-layout">
-        <aside className="dash-sidebar">
-          <div className="dash-side-head">
-            <div className="dash-side-role">Candidate · Pro plan</div>
-            <div className="dash-side-name">
-              {/*
-               * Avatar — uses a real <img> so onError can fall back
-               * to initials when the file 404s (deleted on disk,
-               * stale URL, etc) rather than rendering a broken-image
-               * placeholder. The wrapper keeps the .dash-side-avatar
-               * class so layout/sizing stays consistent.
-               */}
-              <DashAvatar user={user} />
-              {user?.full_name?.split(' ')[0] || 'You'}
-            </div>
-          </div>
-          <ul className="dash-nav">
-            <li><a className="active"><span className="ic">●</span> Overview</a></li>
-            <li><a><span className="ic">▤</span> My Applications <span className="badge">{appsTotal}</span></a></li>
-            <li><Link to="/favorites"><span className="ic">♥</span> Favourites <span className="badge">{favoritesTotal}</span></Link></li>
-            <li><Link to="/saved-jobs"><span className="ic">⌘</span> Saved for Later</Link></li>
-            <li><Link to="/jobs"><span className="ic">★</span> Job Matches</Link></li>
-            <li><Link to="/profile"><span className="ic">⚙</span> Edit Profile</Link></li>
-            <li><Link to="/preferences"><span className="ic">⚙</span> Job Preferences</Link></li>
-            <li><a><span className="ic">☎</span> Interviews <span className="badge">{interviewsTotal}</span></a></li>
-            <div className="dash-nav-section">Account</div>
-            <li><a><span className="ic">⚙</span> Settings</a></li>
-            <li><a onClick={logout} style={{ cursor: 'pointer' }}><span className="ic">⤓</span> Sign out</a></li>
-          </ul>
-        </aside>
+        <CandidateDashSidebar
+          user={user}
+          appsTotal={appsTotal}
+          favoritesTotal={favoritesTotal}
+          interviewsTotal={interviewsTotal}
+          onSignOut={logout}
+        />
 
         <div className="dash-main">
           <div className="dash-topbar">
