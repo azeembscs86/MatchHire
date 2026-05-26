@@ -304,6 +304,16 @@ export default function JobCard({
 
         <div className="job-title text-clamp-2" title={job.title}>{job.title}</div>
 
+        {/*
+         * Short description preview — 2-line clamped excerpt that
+         * fills the previously-empty middle of the card with
+         * useful context. The CSS slot has a min-height so cards
+         * with no description still align with cards that do.
+         */}
+        {!isRow && job.summary && (
+          <p className="job-summary text-clamp-2" title={job.summary}>{job.summary}</p>
+        )}
+
         {/* Trust badges row — only renders when at least one badge applies. */}
         <TrustBadges job={job} />
 
@@ -398,7 +408,7 @@ export default function JobCard({
                 onClick={(e) => e.stopPropagation()}
                 style={{ width: '100%' }}
               >
-                ✓ Already Applied
+                <span className="apply-check" aria-hidden="true">✓</span> Applied
               </button>
             ) : job.isExpired ? (
               <button

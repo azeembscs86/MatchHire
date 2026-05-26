@@ -156,7 +156,31 @@ export function toJobCardShape(j) {
     status: j.status || null,
     applicationsCount: Number.isFinite(Number(j.applications_count)) ? Number(j.applications_count) : null,
     viewsCount: Number.isFinite(Number(j.views_count)) ? Number(j.views_count) : null,
+    // Short summary preview rendered between the title and the
+    // skills row so the card carries useful job context at a
+    // glance instead of feeling empty. Cap aggressively (180
+    // chars) so a verbose backend description can never push
+    // the fixed-height slot's clamp past 2 lines.
+    summary: shortSummary(j.description),
   };
+}
+
+/**
+ * Strip basic HTML / markdown noise from a job description and
+ * return the first ~180 chars suitable for a card preview. The
+ * CSS .text-clamp-2 on the rendered element handles the final
+ * "fits 2 lines" truncation; this just prevents the React tree
+ * from carrying multi-paragraph blobs around.
+ */
+function shortSummary(raw) {
+  if (!raw) return null;
+  const plain = String(raw)
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/[#*_`>]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!plain) return null;
+  return plain.length > 180 ? `${plain.slice(0, 178).trim()}…` : plain;
 }
 
 /**

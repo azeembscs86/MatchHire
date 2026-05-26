@@ -353,12 +353,27 @@
    */
   .job-title{
     font-family:'Fraunces',serif;font-size:18px;font-weight:600;
-    letter-spacing:-.01em;line-height:1.28;margin-bottom:10px;
+    letter-spacing:-.01em;line-height:1.28;margin-bottom:8px;
     /* Fixed two-line slot. `min-height` keeps one-line titles
        aligned with two-line siblings; the `.text-clamp-2` utility
        on the JSX side caps longer titles to two lines with an
        ellipsis so a verbose title can never push the footer down. */
     min-height:48px;max-height:48px;overflow:hidden;
+  }
+
+  /*
+   * Short description preview that sits between the title and
+   * the trust-row. Two-line clamped slot so the card fills the
+   * previously-empty middle space without growing taller than
+   * its siblings in the grid. The container is always rendered
+   * when the JSX passes a non-empty summary; cards without one
+   * fall through and the trust-row floats up — the spacer
+   * still pins the footer.
+   */
+  .job-summary{
+    font-size:12.5px;line-height:1.45;color:var(--ink-soft);
+    margin:0 0 10px;font-weight:400;
+    min-height:36px;max-height:36px;overflow:hidden;
   }
 
   /* Meta row — experience · job type · deadline.
@@ -541,12 +556,16 @@
 
   /*
    * Bottom spacer — absorbs any leftover vertical room so the
-   * footer + Apply row dock to the bottom of every card, regardless
-   * of how much body content sits above. Combined with the grid's
-   * `align-items:stretch`, this is what keeps salary / posted-date /
-   * Apply buttons perfectly aligned across a row of cards.
+   * footer + Apply row dock to the bottom of every card,
+   * regardless of how much body content sits above. Combined
+   * with the grid's `align-items:stretch`, this is what keeps
+   * salary / posted-date / Apply buttons perfectly aligned
+   * across a row of cards. We keep the spacer fully flexible —
+   * the per-section caps (.job-title, .job-summary, .job-tags,
+   * .why-list, .job-meta-row) already prevent any one card
+   * from running away on height.
    */
-  .job-spacer{flex:1 1 auto;min-height:6px}
+  .job-spacer{flex:1 1 auto;min-height:4px}
 
   .job-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;padding-top:10px;border-top:1px solid var(--line-soft);margin-top:auto;min-height:42px}
   .job-pay{font-family:'Fraunces',serif;font-size:15px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
@@ -579,8 +598,19 @@
     box-shadow:0 10px 22px -12px rgba(232,93,60,.55);
   }
   .apply-btn:disabled{cursor:not-allowed;transform:none;box-shadow:none}
-  .apply-btn-applied{background:#3F7F59;color:#fff;opacity:.95}
+  .apply-btn-applied{background:#3F7F59;color:#fff;opacity:.95;gap:8px}
   .apply-btn-applied:disabled{background:#3F7F59;color:#fff;opacity:.95}
+  /*
+   * Inline check on the "Applied" button. A small white circle
+   * with a green ✓ inside reads as a success affordance without
+   * pulling the eye away from the label.
+   */
+  .apply-check{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:18px;height:18px;border-radius:50%;
+    background:rgba(255,255,255,.22);color:#fff;
+    font-size:11px;font-weight:700;line-height:1;
+  }
   .apply-btn-expired{background:#8B5448;color:#fff;opacity:.9}
   .apply-btn-expired:disabled{background:#8B5448;color:#fff;opacity:.9}
   .apply-btn[aria-busy="true"]{opacity:.85}
