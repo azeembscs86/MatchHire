@@ -16,7 +16,7 @@
  * badge; omit and the row stays clean.
  */
 import { useState } from 'react';
-import { Link, NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 
 function initials(name = '') {
   return name
@@ -109,13 +109,16 @@ export default function CandidateDashSidebar({
         </li>
         <NavRow to="/favorites" icon="♥" label="Favourites" badge={favoritesTotal} />
         <NavRow to="/saved-jobs" icon="⌘" label="Saved for Later" />
-        <li>
-          <Link to="/jobs">
-            <span className="ic" aria-hidden="true">★</span> Job Matches
-          </Link>
-        </li>
-        <NavRow to="/profile" icon="⚙" label="Edit Profile" match={['/profile/review']} />
-        <NavRow to="/preferences" icon="⚙" label="Job Preferences" />
+        {/*
+         * Job Matches / Edit Profile / Job Preferences were
+         * removed from this sidebar (May 2026) — matching jobs
+         * are shown automatically on the dashboard, Edit Profile
+         * lives in the top-header "My Profile" menu, and Job
+         * Preferences has its own top-level menu entry. The
+         * underlying routes (/jobs, /profile, /preferences)
+         * stay live so deep-links and the alternate entry
+         * points keep working.
+         */}
         <li>
           <a>
             <span className="ic" aria-hidden="true">☎</span> Interviews
