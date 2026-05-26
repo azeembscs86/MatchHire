@@ -17,30 +17,13 @@ import { Link } from 'react-router-dom';
 import { employersApi } from '../api/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { LoadingState, ErrorState } from '../components/AsyncState.jsx';
+import JobCard from '../components/JobCard.jsx';
+import { toJobCardShape } from '../api/adapters.js';
 
 function initials(name = '') {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || '··';
 }
 
-function relative(iso) {
-  if (!iso) return '';
-  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (diff < 60) return 'just now';
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
-  return `${Math.floor(diff / 604800)}w ago`;
-}
-
-function statusPill(status) {
-  switch (status) {
-    case 'open': return { cls: 'pill-active', label: 'Active' };
-    case 'closed': return { cls: 'pill-paused', label: 'Closed' };
-    case 'archived': return { cls: 'pill-rejected', label: 'Archived' };
-    case 'draft': return { cls: 'pill-review', label: 'Draft' };
-    default: return { cls: 'pill-active', label: status || '—' };
-  }
-}
 
 export default function DashboardCompany() {
   const { user, logout } = useAuth();
@@ -203,37 +186,38 @@ export default function DashboardCompany() {
             {jobs.length === 0 ? (
               <p className="muted" style={{ padding: '12px 0' }}>No jobs posted yet. Use "Post new job" to create your first listing.</p>
             ) : (
-              <table className="dash-table">
-                <thead>
-                  <tr><th>Position</th><th>Applicants</th><th>Views</th><th>Posted</th><th>Status</th><th></th></tr>
-                </thead>
-                <tbody>
-                  {jobs.map((j) => {
-                    const pill = statusPill(j.status);
-                    return (
-                      <tr key={j.id}>
-                        <td>
-                          <div className="table-co">
-                            <div className="mini-logo lg-1">{(company.name || '·')[0]}</div>
-                            <div>
-                              <strong>{j.title}</strong>
-                              <small>
-                                {[j.location, j.is_remote ? 'Remote' : null].filter(Boolean).join(' · ')}
-                                {j.salary_min && j.salary_max ? ` · $${Math.round(j.salary_min/1000)}–${Math.round(j.salary_max/1000)}K` : ''}
-                              </small>
-                            </div>
-                          </div>
-                        </td>
-                        <td><strong style={{ fontFamily: "'Fraunces',serif" }}>{j.applications_count ?? 0}</strong></td>
-                        <td>{j.views_count ?? 0}</td>
-                        <td>{relative(j.published_at || j.created_at)}</td>
-                        <td><span className={`pill ${pill.cls}`}>{pill.label}</span></td>
-                        <td><div className="row-actions"><button className="icon-btn">✎</button></div></td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              /*
+               * Render every company posting through the shared
+               * JobCard. We deliberately do NOT pass `onApply`,
+               * which is how JobCard hides the Apply Now button —
+               * employer viewers should see the same card chrome
+               * (logo, title, work-mode badge, skills, salary,
+               * deadline) plus the employer-only signals
+               * surfaced by toJobCardShape: status pill,
+               * applicants count, views count, expired flag.
+               *
+               * The candidate-side rendering is unaffected: those
+               * fields default to null in `toJobCardShape`, so
+               * JobCard's conditional rendering keeps the
+               * candidate card visually identical.
+               */
+              <div className="jobs-grid" data-testid="company-jobs-grid">
+                {jobs.map((j) => {
+                  const view = toJobCardShape({
+                    ...j,
+                    company_name: company.name || j.company_name,
+                    company_id: company.id || j.company_id,
+                  });
+                  if (!view) return null;
+                  return (
+                    <JobCard
+                      key={j.id}
+                      job={view}
+                      featured={!!j.is_featured}
+                    />
+                  );
+                })}
+              </div>
             )}
           </div>
 

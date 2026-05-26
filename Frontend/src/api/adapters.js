@@ -147,6 +147,15 @@ export function toJobCardShape(j) {
     reasons: Array.isArray(j.reasons) ? j.reasons : [],
     missing: Array.isArray(j.missing) ? j.missing : [],
     featured: !!j.is_featured,
+    // Employer-side surfacing: when the API row carries posting
+    // status / applicant + view tallies, pass them through so a
+    // shared JobCard can render the company-side badge cluster
+    // (status pill + applicants chip + views chip) without
+    // affecting the candidate-side rendering — JobCard treats
+    // these as opt-in and skips them when null.
+    status: j.status || null,
+    applicationsCount: Number.isFinite(Number(j.applications_count)) ? Number(j.applications_count) : null,
+    viewsCount: Number.isFinite(Number(j.views_count)) ? Number(j.views_count) : null,
   };
 }
 

@@ -430,6 +430,18 @@
   .trust-onsite{background:rgba(14,17,22,.04);color:var(--ink-soft);border-color:var(--line-soft)}
   .trust-hybrid{background:rgba(91,58,82,.10);color:var(--plum);border-color:rgba(91,58,82,.20)}
   .trust-soon{background:rgba(184,137,58,.14);color:var(--gold);border-color:rgba(184,137,58,.28)}
+  /* Employer-side status chips. Reuse the trust-row palette
+     vocabulary so company cards read as the same visual family
+     as candidate cards — just with an extra signalling chip. */
+  .trust-status-active{background:var(--sage-soft);color:var(--sage);border-color:rgba(63,107,79,.22)}
+  .trust-status-draft{background:#FFF0D4;color:#9C6B14;border-color:rgba(184,137,58,.26)}
+  .trust-status-closed{background:#EFE8DA;color:var(--muted);border-color:var(--line)}
+  .trust-status-expired{background:rgba(232,93,60,.12);color:var(--coral-deep);border-color:rgba(232,93,60,.22)}
+  /* Applicants chip — uses the coral family so it reads as a
+     primary metric to act on (e.g. review applicants). Stays
+     compact so the meta row's fixed-height slot still clips
+     when content overflows. */
+  .meta-chip-applicants{background:rgba(232,93,60,.10);color:var(--coral-deep);border-color:rgba(232,93,60,.18);font-weight:600}
 
   /*
    * Tiered match badge. Three lines: the % + label, then a thin

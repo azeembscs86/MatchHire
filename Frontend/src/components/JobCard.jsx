@@ -186,6 +186,14 @@ function TrustBadges({ job }) {
   if (job.closingSoon && !job.isExpired) {
     badges.push({ key: 'cs', cls: 'soon', label: job.deadline || 'Closing soon' });
   }
+  // Employer-side status pill — only surfaces when `job.status`
+  // is provided (the candidate-side rendering doesn't populate
+  // it via toJobCardShape's null default, so candidate cards
+  // remain visually unchanged).
+  const statusMeta = statusBadge(job.status, job.isExpired);
+  if (statusMeta) {
+    badges.push({ key: 'st', cls: statusMeta.cls, label: statusMeta.label });
+  }
   return (
     <div className="trust-row" aria-label="Job badges">
       {badges.map((b) => (
@@ -193,6 +201,25 @@ function TrustBadges({ job }) {
       ))}
     </div>
   );
+}
+
+/**
+ * Map a posting status to a chip. `null` short-circuits so the
+ * candidate-side render path doesn't grow an extra badge.
+ * Expired postings always read as "Expired" regardless of the
+ * raw status flag — the underlying record may still say "open".
+ */
+function statusBadge(status, isExpired) {
+  if (isExpired) return { cls: 'status-expired', label: 'Expired' };
+  if (!status) return null;
+  const map = {
+    open:     { cls: 'status-active',  label: 'Active' },
+    active:   { cls: 'status-active',  label: 'Active' },
+    draft:    { cls: 'status-draft',   label: 'Draft' },
+    closed:   { cls: 'status-closed',  label: 'Closed' },
+    archived: { cls: 'status-closed',  label: 'Archived' },
+  };
+  return map[String(status).toLowerCase()] || null;
 }
 
 export default function JobCard({
@@ -312,6 +339,19 @@ export default function JobCard({
               title={job.deadlineRaw ? new Date(job.deadlineRaw).toLocaleString() : 'Apply deadline'}
             >
               {job.deadline}
+            </span>
+          )}
+          {/* Employer-side counters: applicants + views. Both opt-
+              in via toJobCardShape — candidate-side rendering
+              leaves them null so the chips never appear there. */}
+          {Number.isFinite(job.applicationsCount) && (
+            <span className="meta-chip meta-chip-applicants" title={`${job.applicationsCount} applicants`}>
+              {job.applicationsCount} {job.applicationsCount === 1 ? 'applicant' : 'applicants'}
+            </span>
+          )}
+          {Number.isFinite(job.viewsCount) && job.viewsCount > 0 && (
+            <span className="meta-chip" title={`${job.viewsCount} views`}>
+              {job.viewsCount} views
             </span>
           )}
         </div>
