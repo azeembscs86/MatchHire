@@ -214,6 +214,7 @@ export default function DashboardCompany() {
                       key={j.id}
                       job={view}
                       featured={!!j.is_featured}
+                      viewer="company"
                     />
                   );
                 })}

@@ -229,17 +229,38 @@ export default function JobCard({
   applied = false,
   applyingId = null,
   variant = 'grid',
+  /**
+   * Who's looking at this card. Controls which decorations render:
+   *
+   *   'candidate' (default) — match badge, why-recommended
+   *     checklist (matching + missing skills), Apply/Applied row.
+   *     Personalised hiring-marketplace view.
+   *   'company'             — NEVER renders the candidate-only
+   *     match score / profile-strength / missing-skills UI even
+   *     if a stray score leaks onto the row. Company-relevant
+   *     signals (status pill, applicants + views chips) stay.
+   *   'guest'               — public view: no match score, no
+   *     profile strength. (These are score-gated already, so a
+   *     guest with no score sees the plain card; the explicit
+   *     value just documents intent + hard-guards the path.)
+   */
+  viewer = 'candidate',
 }) {
   const navigate = useNavigate();
   const { isSaved, toggleSave } = useFavorites();
   const { isSavedForLater, toggleSave: toggleSavedForLater } = useSavedJobs();
   const saved = isSaved(job.id);
   const savedForLater = isSavedForLater(job.id);
-  const score = job.matchScore;
+  // Candidate-only match decorations. A company viewer never sees
+  // the match score / matching-skills / missing-skills surface —
+  // that information is meaningless (and arguably leaky) on the
+  // employer side. Guests have no score to show either.
+  const showMatchUI = viewer === 'candidate';
+  const score = showMatchUI ? job.matchScore : null;
   const visibleSkills = (job.tags || []).slice(0, variant === 'row' ? 2 : 3);
   const extraSkills = Math.max(0, (job.tags || []).length - visibleSkills.length);
-  const missing = Array.isArray(job.missing) ? job.missing : [];
-  const reasons = Array.isArray(job.reasons) ? job.reasons : [];
+  const missing = showMatchUI && Array.isArray(job.missing) ? job.missing : [];
+  const reasons = showMatchUI && Array.isArray(job.reasons) ? job.reasons : [];
 
   function openDetail() { navigate(`/jobs/${job.id}`); }
 
