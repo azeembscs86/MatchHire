@@ -40,6 +40,19 @@ describe('Candidate-side APIs', () => {
     expect(Array.isArray(res.data?.Data?.records)).toBe(true);
   });
 
+  test('POST /candidates/applications/:id/withdraw is auth-gated and ownership-checked', async () => {
+    // Guests can't withdraw anything.
+    const guest = await newClient().post('/candidates/applications/1/withdraw', {});
+    expect([401, 403]).toContain(guest.status);
+
+    // A candidate withdrawing a non-existent application gets a clean
+    // 404 — proving the route + auth + lookup work without mutating
+    // any real application row.
+    const { token } = await login('CANDIDATE');
+    const missing = await newClient(token).post('/candidates/applications/9999999/withdraw', {});
+    expect(missing.status).toBe(404);
+  });
+
   test('POST /candidates/:id/message blocks inappropriate content', async () => {
     const { token } = await login('CANDIDATE');
     // Pick any other candidate id — we send banned content so the

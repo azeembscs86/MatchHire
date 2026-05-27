@@ -210,6 +210,12 @@ exports.applyToJob = async (req, res) => {
   return response.created(res, data, 'Application submitted');
 };
 
+/** Withdraw one of the candidate's own applications (status → withdrawn). */
+exports.withdrawApplication = async (req, res) => {
+  const data = await service.withdrawApplication(req.user.id, Number(req.params.applicationId));
+  return response.success(res, data, 'Application withdrawn');
+};
+
 /** Paginated list of the candidate's own applications (optionally filtered by status). */
 exports.listApplications = async (req, res) => {
   const page = req.body?.page || 1;

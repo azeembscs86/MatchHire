@@ -658,6 +658,28 @@ router.post('/applications/:jobId', validate(pubV.jobIdParam, 'params'), validat
 
 /**
  * @swagger
+ * /candidates/applications/{applicationId}/withdraw:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: Withdraw one of the candidate's own applications
+ *     description: |
+ *       Flips the application's status to `withdrawn`. Only the owning
+ *       candidate may withdraw, and only while the application is still
+ *       in an active pipeline state (applied / reviewing / shortlisted /
+ *       interview / offered). The row is never deleted, so the employer
+ *       dashboard keeps full visibility of the withdrawal.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: applicationId, in: path, required: true, schema: { type: integer } }]
+ *     responses:
+ *       '200': { description: Application withdrawn, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ *       '403': { $ref: '#/components/responses/ForbiddenError' }
+ *       '404': { $ref: '#/components/responses/NotFoundError' }
+ *       '409': { $ref: '#/components/responses/ConflictError' }
+ */
+router.post('/applications/:applicationId/withdraw', validate(pubV.applicationIdParam, 'params'), asyncHandler(controller.withdrawApplication));
+
+/**
+ * @swagger
  * /candidates/dashboard/stats:
  *   post:
  *     tags: [Candidates]

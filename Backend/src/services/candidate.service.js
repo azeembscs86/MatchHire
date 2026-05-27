@@ -172,6 +172,47 @@ async function listApplications(user_id, paging) {
   return appRepo.listForCandidate(user_id, paging);
 }
 
+/**
+ * Application statuses a candidate is still allowed to withdraw from.
+ * Once an application is terminal — already withdrawn, rejected by the
+ * employer, or the candidate was hired — withdrawal is a no-op and we
+ * reject it so the UI can hide the button and the API stays honest.
+ */
+const WITHDRAWABLE_STATUSES = new Set([
+  'applied', 'reviewing', 'under_review', 'shortlisted', 'interview', 'offered',
+]);
+
+/**
+ * Withdraw one of the authenticated candidate's own applications.
+ *
+ * Ownership is enforced here (the application must belong to the
+ * caller) so a candidate can never withdraw someone else's row by
+ * guessing an id. The employer side keeps full visibility of the
+ * withdrawn row — we only flip the status, never delete — so the
+ * company dashboard can still see that the candidate pulled out.
+ */
+async function withdrawApplication(user_id, application_id) {
+  const application = await appRepo.findById(application_id);
+  if (!application) throw new AppError('Application not found', 404);
+  if (Number(application.candidate_user_id) !== Number(user_id)) {
+    throw new AppError('You can only withdraw your own applications', 403);
+  }
+  const status = String(application.status || '').toLowerCase();
+  if (status === 'withdrawn') {
+    throw new AppError('This application has already been withdrawn', 409);
+  }
+  if (!WITHDRAWABLE_STATUSES.has(status)) {
+    throw new AppError('This application can no longer be withdrawn', 409);
+  }
+  await appRepo.setStatus(application_id, 'withdrawn');
+  // Bust the same caches apply touches so both dashboards refresh.
+  await cache.deleteCache(cache.Keys.jobDetail(application.job_id));
+  await cache.deleteByPattern(cache.Patterns.jobsList);
+  await cache.deleteByPattern(cache.Patterns.dashboardStats('candidate'));
+  await cache.deleteByPattern(cache.Patterns.dashboardStats('employer'));
+  return appRepo.findById(application_id);
+}
+
 async function dashboardStats(user_id) {
   const key = cache.Keys.dashboardStats('candidate', user_id);
   return cache.rememberCache(key, cache.TTL.DASHBOARD_STATS, async () => {
@@ -493,6 +534,7 @@ module.exports = {
   applyToJob,
   applyWithValidation,
   listApplications,
+  withdrawApplication,
   dashboardStats,
   matchJobs,
   similarCandidates,

@@ -72,6 +72,8 @@ export const candidatesApi = {
   applications: {
     apply(jobId, payload = {}) { return call(api.post(`/candidates/applications/${jobId}`, payload)); },
     list(body = {}) { return call(api.post('/candidates/applications/list', body)); },
+    /** Withdraw one of the candidate's own applications (status → withdrawn). */
+    withdraw(applicationId) { return call(api.post(`/candidates/applications/${applicationId}/withdraw`)); },
   },
 
   dashboardStats() { return call(api.post('/candidates/dashboard/stats')); },

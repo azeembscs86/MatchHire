@@ -229,18 +229,21 @@
    * scrollbar.
    */
   /*
-   * Equal-height grid: `align-items:stretch` (default — restated for
-   * clarity) lets every card in a row grow to the tallest card's
-   * height, so the JobCard's `.card-shell { height:100% }` actually
-   * fills the cell. The previous `align-items:start` clipped this
-   * and left short cards visibly shorter than their neighbours.
+   * Auto-height grid (May 2027 redesign): `align-items:start` lets
+   * every card size to its own content instead of being stretched
+   * to the tallest sibling's height. The previous `stretch` +
+   * `height:100%` approach kept cards equal-height but opened a
+   * large blank band above the footer on any card with less content
+   * (no match block, no why-list) — the single biggest source of
+   * the "card looks empty" complaint. Cards are now compact and
+   * content-driven; in practice a logged-in candidate's feed is
+   * uniformly rich so rows still read as tidy, and sparse company /
+   * guest cards collapse cleanly instead of padding themselves out.
    */
   .jobs-grid{
-    display:grid;gap:18px;align-items:stretch;
+    display:grid;gap:18px;align-items:start;
     grid-template-columns:repeat(auto-fit, minmax(min(100%, 340px), 1fr));
   }
-  .jobs-grid > *{height:100%}
-  .jobs-grid .job-card-wrapper{height:100%}
 
   /*
    * Wrapper for one (card + missing-skills) unit. The wrapper is the
@@ -249,7 +252,7 @@
    * any future `overflow:hidden` or `border-radius` clip on the card
    * from cutting it off.
    */
-  .job-card-wrapper{display:flex;flex-direction:column;min-width:0}
+  .job-card-wrapper{display:flex;flex-direction:column;min-width:0;height:auto}
   /*
    * Equal-height card layout (May 2026):
    *  - .job-card is a flex column so the footer + Apply row can pin to
@@ -283,13 +286,12 @@
     transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease;
     position:relative;
     display:flex;flex-direction:column;
-    /* min-height is a gentle floor, NOT a fixed height — cards
-       grow with content and same-row siblings equalise via the
-       grid's align-items:stretch. 288px keeps a sparse card
-       (e.g. a company posting with no match/why-list block)
-       looking intentional without opening a large blank band
-       above the footer. */
-    min-height:288px;height:100%;
+    /* Auto-height (May 2027): no min-height floor and no
+       height:100%. Cards size to their content so a sparse card
+       collapses instead of opening a blank band above the footer.
+       The `.job-spacer` inside still docks the footer to the
+       bottom of the card's own content. */
+    height:auto;
   }
   .card-shell.clickable{cursor:pointer}
   .card-shell.clickable:focus-visible{
@@ -360,11 +362,11 @@
   .job-title{
     font-family:'Fraunces',serif;font-size:18px;font-weight:600;
     letter-spacing:-.01em;line-height:1.28;margin-bottom:8px;
-    /* Fixed two-line slot. `min-height` keeps one-line titles
-       aligned with two-line siblings; the `.text-clamp-2` utility
-       on the JSX side caps longer titles to two lines with an
-       ellipsis so a verbose title can never push the footer down. */
-    min-height:48px;max-height:48px;overflow:hidden;
+    /* Auto-height: no reserved min-height — a one-line title takes
+       one line. We keep a two-line cap (`max-height` + the JSX
+       `.text-clamp-2`) so a verbose title still can't break the
+       card design. */
+    max-height:48px;overflow:hidden;
   }
 
   /*
@@ -379,7 +381,9 @@
   .job-summary{
     font-size:12.5px;line-height:1.45;color:var(--ink-soft);
     margin:0 0 10px;font-weight:400;
-    min-height:36px;max-height:36px;overflow:hidden;
+    /* Two-line clamp only — no reserved min-height. Rendered solely
+       when the job actually has a description (JobCard guards it). */
+    max-height:36px;overflow:hidden;
   }
 
   /* Meta row — experience · job type · deadline.
@@ -390,7 +394,7 @@
      is reserved across every card in the grid. */
   .job-meta-row{
     display:flex;flex-wrap:nowrap;gap:6px;margin-bottom:8px;
-    min-height:22px;overflow:hidden;
+    overflow:hidden;
   }
   .meta-chip{
     font-size:10.5px;font-weight:500;letter-spacing:.01em;
@@ -415,7 +419,7 @@
    */
   .job-tags{
     display:flex;gap:6px;flex-wrap:nowrap;margin-bottom:8px;
-    min-height:22px;overflow:hidden;
+    overflow:hidden;
   }
   .job-tag{font-size:11px;padding:3px 9px;background:var(--bone);border-radius:100px;color:var(--ink-soft);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0}
   .job-tag.match{background:var(--sage-soft);color:var(--sage)}
@@ -432,7 +436,7 @@
      stack while its single-badge sibling stays compact. */
   .trust-row{
     display:flex;flex-wrap:nowrap;gap:6px;margin-bottom:8px;
-    min-height:22px;overflow:hidden;
+    overflow:hidden;
   }
   .trust-row .trust-chip{flex-shrink:0}
   .trust-chip{
@@ -537,13 +541,11 @@
   .why-list{
     list-style:none;margin:0 0 10px;padding:0;
     display:flex;flex-direction:column;gap:3px;
-    /* Three-row reserved slot. JSX caps the list at 2 ✓ + 1 ✖,
-       so the height is bounded; the slot is always reserved (even
-       when empty) so cards with no reasons stay aligned with cards
-       that have three. */
-    min-height:60px;max-height:60px;overflow:hidden;
+    /* Auto-height: no reserved slot. JobCard returns null when the
+       list is empty, so the container only exists when it has
+       content. The cap stays bounded by the JSX (2 ✓ + 1 ✖). */
+    max-height:60px;overflow:hidden;
   }
-  .why-list-empty{}
   .why-item{
     display:flex;align-items:flex-start;gap:7px;
     font-size:11.5px;line-height:1.35;color:var(--ink-soft);
@@ -619,6 +621,12 @@
   }
   .apply-btn-expired{background:#8B5448;color:#fff;opacity:.9}
   .apply-btn-expired:disabled{background:#8B5448;color:#fff;opacity:.9}
+  /* Company "View Applications" CTA — secondary (outline) so it
+     reads as a management action, not a primary apply. Overrides
+     the coral hover shadow inherited from .apply-btn. */
+  .apply-btn-manage:not(:disabled):hover{
+    box-shadow:0 8px 18px -12px rgba(14,17,22,.5);
+  }
   .apply-btn[aria-busy="true"]{opacity:.85}
   .job-view-link{display:none}
   /* legacy class kept for back-compat with any callers still using it */
@@ -1225,6 +1233,35 @@
   }
 
   /* ───── Auth modal ───── */
+  /*
+   * Lightweight confirmation dialog (Withdraw application, etc.).
+   * Single-column, centred, compact — distinct from the heavy
+   * two-column `.modal` auth layout. Reuses the same dim backdrop.
+   */
+  .confirm-overlay{
+    position:fixed;inset:0;background:rgba(14,17,22,.5);backdrop-filter:blur(4px);
+    z-index:120;display:flex;align-items:center;justify-content:center;padding:20px;
+    animation:fadeIn .2s ease;
+  }
+  .confirm-card{
+    background:var(--paper);border:1px solid var(--line);border-radius:18px;
+    width:100%;max-width:420px;padding:28px;
+    box-shadow:0 30px 80px -24px rgba(0,0,0,.4);
+    animation:slideUp .28s cubic-bezier(.2,.9,.3,1);
+  }
+  .confirm-title{font-family:'Fraunces',serif;font-size:22px;font-weight:600;letter-spacing:-.01em;margin-bottom:10px}
+  .confirm-body{font-size:14px;line-height:1.55;color:var(--muted);margin-bottom:22px}
+  .confirm-actions{display:flex;gap:10px;justify-content:flex-end}
+  .confirm-actions .btn{padding:10px 16px;font-size:13.5px}
+  @media (max-width:480px){
+    .confirm-actions{flex-direction:column-reverse}
+    .confirm-actions .btn{width:100%;justify-content:center}
+  }
+  /* Withdraw CTA under an application card — full width, secondary. */
+  .application-withdraw-btn{
+    width:100%;justify-content:center;margin-top:10px;
+  }
+
   .modal-overlay{
     position:fixed;inset:0;background:rgba(14,17,22,.5);backdrop-filter:blur(4px);
     z-index:100;display:none;align-items:center;justify-content:center;padding:20px;

@@ -318,7 +318,7 @@ export default function JobDetail() {
                 type="button"
                 style={{ minWidth: 180 }}
               >
-                ✓ Already Applied
+                ✓ Applied
               </button>
             ) : isExpired ? (
               <button

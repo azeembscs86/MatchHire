@@ -13,7 +13,7 @@
  * moves without an extra endpoint.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { employersApi } from '../api/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { LoadingState, ErrorState } from '../components/AsyncState.jsx';
@@ -24,9 +24,37 @@ function initials(name = '') {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || '··';
 }
 
+/**
+ * Applicant status → display chip. Lets the employer table read a
+ * withdrawn / rejected / hired application correctly instead of
+ * painting every status with the same "active" pill. Candidates can
+ * withdraw from their dashboard, so `withdrawn` must surface here.
+ */
+const APPLICANT_STATUS = {
+  applied:      { cls: 'pill-applied',     label: 'Applied' },
+  reviewing:    { cls: 'pill-review',      label: 'Under Review' },
+  under_review: { cls: 'pill-review',      label: 'Under Review' },
+  shortlisted:  { cls: 'pill-shortlisted', label: 'Shortlisted' },
+  interview:    { cls: 'pill-interview',   label: 'Interview' },
+  offered:      { cls: 'pill-accepted',    label: 'Offered' },
+  hired:        { cls: 'pill-accepted',    label: 'Hired' },
+  accepted:     { cls: 'pill-accepted',    label: 'Accepted' },
+  rejected:     { cls: 'pill-rejected',    label: 'Rejected' },
+  withdrawn:    { cls: 'pill-rejected',    label: 'Withdrawn' },
+};
+
+function applicantStatus(status) {
+  return APPLICANT_STATUS[String(status || '').toLowerCase()]
+    || { cls: 'pill-active', label: status || 'Applied' };
+}
+
+/** Terminal states the employer can no longer act on. */
+const TERMINAL_APPLICANT_STATUSES = new Set(['withdrawn', 'rejected', 'hired', 'accepted']);
+
 
 export default function DashboardCompany() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [jobs, setJobs] = useState([]);
   const [topApplicants, setTopApplicants] = useState([]);
@@ -215,6 +243,7 @@ export default function DashboardCompany() {
                       job={view}
                       featured={!!j.is_featured}
                       viewer="company"
+                      onManage={(target) => navigate(`/jobs/${target.id}`)}
                     />
                   );
                 })}
@@ -248,12 +277,24 @@ export default function DashboardCompany() {
                           </div>
                         </td>
                         <td><small>{a._jobTitle}</small></td>
-                        <td><span className="pill pill-active">{a.status}</span></td>
                         <td>
-                          <div className="row-actions">
-                            <button className="icon-btn success" type="button" disabled={busyId === a.id} onClick={() => moderate(a.id, 'shortlist')}>✓</button>
-                            <button className="icon-btn danger" type="button" disabled={busyId === a.id} onClick={() => moderate(a.id, 'reject')}>×</button>
-                          </div>
+                          {(() => { const s = applicantStatus(a.status); return (
+                            <span className={`pill ${s.cls}`} data-testid="applicant-status">{s.label}</span>
+                          ); })()}
+                        </td>
+                        <td>
+                          {/* Moderation is hidden once the application
+                              reaches a terminal state (withdrawn /
+                              rejected / hired) — you can't shortlist a
+                              candidate who already pulled out. */}
+                          {TERMINAL_APPLICANT_STATUSES.has(String(a.status || '').toLowerCase()) ? (
+                            <span className="muted" style={{ fontSize: 11 }}>—</span>
+                          ) : (
+                            <div className="row-actions">
+                              <button className="icon-btn success" type="button" disabled={busyId === a.id} onClick={() => moderate(a.id, 'shortlist')}>✓</button>
+                              <button className="icon-btn danger" type="button" disabled={busyId === a.id} onClick={() => moderate(a.id, 'reject')}>×</button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}

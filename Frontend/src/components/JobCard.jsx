@@ -124,21 +124,23 @@ function MatchBadge({ score }) {
 /**
  * Recommended-because checklist. Compact alternative to the old
  * reason-chip row. Renders up to 2 matched reasons (✓) then up to 1
- * missing skill (✖) — capped at 3 total rows so the slot height is
- * identical across every card in a grid row. The outer container is
- * always rendered (even when empty) so the reserved vertical slot is
- * never collapsed, keeping cards visually aligned even when one job
- * has no reasons and its sibling has five.
+ * missing skill (✖).
+ *
+ * Auto-height pass (May 2027): the container is no longer rendered at
+ * all when there are no reasons/missing skills to show. Previously we
+ * reserved a fixed 60px slot even when empty so every card in a row
+ * stayed the same height — but that reserved slot was the single
+ * biggest source of the "card looks empty" complaint. Cards now size
+ * to their content; an empty checklist simply collapses.
  */
 function WhyRecommended({ reasons = [], missing = [] }) {
   const positives = (reasons || []).filter(Boolean).slice(0, 2);
   const negatives = (missing || []).slice(0, 1);
-  const isEmpty = positives.length === 0 && negatives.length === 0;
+  if (positives.length === 0 && negatives.length === 0) return null;
   return (
     <ul
-      className={`why-list${isEmpty ? ' why-list-empty' : ''}`}
+      className="why-list"
       aria-label="Why we're recommending this role"
-      aria-hidden={isEmpty || undefined}
     >
       {positives.map((r, i) => (
         <li key={`p-${i}`} className="why-item why-item-yes">
@@ -230,6 +232,13 @@ export default function JobCard({
   applyingId = null,
   variant = 'grid',
   /**
+   * Company-side action. When supplied (and viewer==='company'),
+   * renders a single full-width CTA in place of the candidate Apply
+   * row — e.g. "View Applications" / "Manage Job". Receives the
+   * `job` view-model so the caller can navigate to the right place.
+   */
+  onManage,
+  /**
    * Who's looking at this card. Controls which decorations render:
    *
    *   'candidate' (default) — match badge, why-recommended
@@ -265,6 +274,19 @@ export default function JobCard({
   function openDetail() { navigate(`/jobs/${job.id}`); }
 
   const isRow = variant === 'row';
+  const isCompany = viewer === 'company';
+
+  // Meta-row content flags. The row is only rendered when at least
+  // one chip applies, so a sparse card no longer reserves an empty
+  // band (auto-height pass, May 2027).
+  const showDeadlineChip = job.deadline && !job.closingSoon;
+  const showApplicantsChip = Number.isFinite(job.applicationsCount);
+  const showViewsChip = Number.isFinite(job.viewsCount) && job.viewsCount > 0;
+  const hasMetaRow = !!(job.experience || job.type || showDeadlineChip || showApplicantsChip || showViewsChip);
+  const hasTags = (visibleSkills.length + extraSkills) > 0;
+  // Company CTA row replaces the candidate Apply row for employer
+  // viewers. Mutually exclusive with the Apply states below.
+  const showManageRow = isCompany && typeof onManage === 'function';
 
   return (
     <div className={`job-card-wrapper${isRow ? ' job-card-wrapper-row' : ''}`}>
@@ -356,49 +378,52 @@ export default function JobCard({
           */}
         {!isRow && <WhyRecommended reasons={reasons} missing={missing} />}
 
-        {/* Meta row — experience · type · deadline. Always rendered
-            (even when empty) so the slot height is reserved and every
-            card in the grid keeps the same vertical rhythm. Single
-            line, overflow-hidden so an extra chip can never push the
-            footer downward. */}
-        <div className="job-meta-row">
-          {job.experience && <span className="meta-chip" title={`Experience: ${job.experience}`}>{job.experience}</span>}
-          {job.type && <span className="meta-chip" title={`Job type: ${job.type}`}>{job.type}</span>}
-          {job.deadline && !job.closingSoon && (
-            <span
-              className={`meta-chip${job.isExpired ? ' meta-chip-warn' : ''}`}
-              title={job.deadlineRaw ? new Date(job.deadlineRaw).toLocaleString() : 'Apply deadline'}
-            >
-              {job.deadline}
-            </span>
-          )}
-          {/* Employer-side counters: applicants + views. Both opt-
-              in via toJobCardShape — candidate-side rendering
-              leaves them null so the chips never appear there. */}
-          {Number.isFinite(job.applicationsCount) && (
-            <span className="meta-chip meta-chip-applicants" title={`${job.applicationsCount} applicants`}>
-              {job.applicationsCount} {job.applicationsCount === 1 ? 'applicant' : 'applicants'}
-            </span>
-          )}
-          {Number.isFinite(job.viewsCount) && job.viewsCount > 0 && (
-            <span className="meta-chip" title={`${job.viewsCount} views`}>
-              {job.viewsCount} views
-            </span>
-          )}
-        </div>
+        {/* Meta row — experience · type · deadline · applicants ·
+            views. Auto-height: rendered only when at least one chip
+            applies, so a sparse card never reserves an empty band.
+            Single line, overflow-hidden so an extra chip can never
+            push the footer downward. */}
+        {hasMetaRow && (
+          <div className="job-meta-row">
+            {job.experience && <span className="meta-chip" title={`Experience: ${job.experience}`}>{job.experience}</span>}
+            {job.type && <span className="meta-chip" title={`Job type: ${job.type}`}>{job.type}</span>}
+            {showDeadlineChip && (
+              <span
+                className={`meta-chip${job.isExpired ? ' meta-chip-warn' : ''}`}
+                title={job.deadlineRaw ? new Date(job.deadlineRaw).toLocaleString() : 'Apply deadline'}
+              >
+                {job.deadline}
+              </span>
+            )}
+            {/* Employer-side counters: applicants + views. Both opt-
+                in via toJobCardShape — candidate-side rendering
+                leaves them null so the chips never appear there. */}
+            {showApplicantsChip && (
+              <span className="meta-chip meta-chip-applicants" title={`${job.applicationsCount} applicants`}>
+                {job.applicationsCount} {job.applicationsCount === 1 ? 'applicant' : 'applicants'}
+              </span>
+            )}
+            {showViewsChip && (
+              <span className="meta-chip" title={`${job.viewsCount} views`}>
+                {job.viewsCount} views
+              </span>
+            )}
+          </div>
+        )}
 
-        {/* Skills tags — fixed-height single line. If the chips would
-            wrap, the +N overflow pill at the end absorbs them. The
-            container is always rendered so the slot stays reserved
-            even when a job has no listed skills. */}
-        <div className="job-tags">
-          {visibleSkills.map((t) => (
-            <span key={t} className="job-tag" title={t}>{t}</span>
-          ))}
-          {extraSkills > 0 && (
-            <span className="job-tag job-tag-more" title="More skills required for this role">+{extraSkills}</span>
-          )}
-        </div>
+        {/* Skills tags — single line. If the chips would wrap, the
+            +N overflow pill at the end absorbs them. Auto-height:
+            rendered only when the job lists at least one skill. */}
+        {hasTags && (
+          <div className="job-tags">
+            {visibleSkills.map((t) => (
+              <span key={t} className="job-tag" title={t}>{t}</span>
+            ))}
+            {extraSkills > 0 && (
+              <span className="job-tag job-tag-more" title="More skills required for this role">+{extraSkills}</span>
+            )}
+          </div>
+        )}
 
         {/* spacer pushes footer + actions to the bottom of the card */}
         <div className="job-spacer" />
@@ -411,6 +436,26 @@ export default function JobCard({
         </div>
 
         {/*
+          * Company CTA row — employer viewers get a single full-width
+          * "View Applications" button instead of the candidate Apply
+          * row. Navigates via the caller-supplied `onManage`. Mutually
+          * exclusive with the candidate Apply states below.
+          */}
+        {showManageRow && (
+          <div className="job-actions-row">
+            <button
+              className="btn btn-outline btn-sm apply-btn apply-btn-manage"
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onManage(job); }}
+              data-testid="manage-job-button"
+              style={{ width: '100%' }}
+            >
+              View Applications
+            </button>
+          </div>
+        )}
+
+        {/*
           * Apply row.
           *
           * Three mutually-exclusive states. The whole row only renders
@@ -418,7 +463,7 @@ export default function JobCard({
           * which the parent gates on logged-in-candidate so guests,
           * employers, and admins never see the button.
           */}
-        {(applied || onApply) && (
+        {!showManageRow && (applied || onApply) && (
           <div className="job-actions-row">
             {applied ? (
               <button
