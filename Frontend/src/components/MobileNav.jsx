@@ -30,7 +30,6 @@ export default function MobileNav({
   primaryLinks,
   isAuthenticated,
   user,
-  favoritesCount = 0,
   dashboardLinks = [],
   onSignIn,
   onSignUp,
@@ -115,17 +114,12 @@ export default function MobileNav({
                   </NavLink>
                 </li>
               ))}
-              {isAuthenticated && user?.role === 'candidate' && (
-                <li>
-                  <Link
-                    to="/favorites"
-                    onClick={onClose}
-                    className="mobile-drawer-link"
-                  >
-                    Saved jobs <span className="mobile-drawer-badge">{favoritesCount}</span>
-                  </Link>
-                </li>
-              )}
+              {/*
+               * Favourites / Saved jobs intentionally NOT in the
+               * mobile drawer — candidates reach them through the
+               * Candidate Hub dashboard sidebar (♥ Favourites,
+               * ⌘ Saved Jobs rows), matching the desktop nav.
+               */}
               {/*
                * Role-specific dashboard links live below the
                * primary list. The dashboard surface itself owns

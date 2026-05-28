@@ -60,7 +60,6 @@ export default function CandidateDashboardLayout() {
           user={user}
           appsTotal={stats?.applications?.total ?? null}
           favoritesTotal={stats?.favorites?.total ?? null}
-          interviewsTotal={stats?.interviews?.total ?? null}
           onSignOut={handleSignOut}
         />
         <div className="dash-main dash-main-flush">

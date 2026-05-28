@@ -82,19 +82,30 @@ export default function App() {
         {/* Candidate-only flows */}
         <Route element={<ProtectedRoute roles={['candidate']} />}>
           {/*
+           * Standalone candidate pages — render with ONLY the
+           * global top header/navbar (no dashboard sidebar).
+           * Profile + Preferences live here because they're
+           * full-page editors reached from the header / inline
+           * CTAs, not from the dashboard sidebar. Keeping them
+           * standalone gives the form room to breathe and
+           * matches the design brief (no left rail on these
+           * pages).
+           */}
+          <Route path="/profile" element={<Profile />} />
+          <Route path="/profile/review" element={<ReviewProfile />} />
+          <Route path="/preferences" element={<Preferences />} />
+
+          {/*
            * Candidate dashboard SHELL — sidebar + main column.
            * Every page nested under it renders inside the same
            * shell so the sidebar never disappears when the
-           * candidate clicks a tab (Favourites, Saved jobs,
-           * Profile, Preferences). The standalone
-           * DashboardCandidate page provides its OWN sidebar
-           * (also via CandidateDashSidebar) so the overview's
-           * existing layout stays unchanged.
+           * candidate clicks a tab (Favourites, Saved Jobs,
+           * Applications, …). The standalone DashboardCandidate
+           * page provides its OWN sidebar (also via
+           * CandidateDashSidebar) so the overview's existing
+           * layout stays unchanged.
            */}
           <Route element={<CandidateDashboardLayout />}>
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/profile/review" element={<ReviewProfile />} />
-            <Route path="/preferences" element={<Preferences />} />
             <Route path="/favorites" element={<Favorites />} />
             <Route path="/saved-jobs" element={<SavedJobs />} />
             {/*

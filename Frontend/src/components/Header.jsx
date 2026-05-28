@@ -6,7 +6,8 @@
  * caller's role:
  *
  *   - Anonymous:      Home, Jobs, Companies, Candidates, For Employers
- *   - Candidate:      + My Profile, Preferences, Favorites
+ *   - Candidate:      + Candidate Hub dropdown (Favourites lives in the
+ *                      dashboard sidebar, not in the header)
  *   - Employer:       + Company Profile, Job Postings
  *   - Admin/SuperAdm: + Admin Console
  *
@@ -26,7 +27,6 @@ import Logo from './Logo.jsx';
 import DashboardDropdown from './DashboardDropdown.jsx';
 import MobileNav from './MobileNav.jsx';
 import { useAuthModal } from '../context/AuthModalContext.jsx';
-import { useFavorites } from '../context/FavoritesContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { publicApi } from '../api/index.js';
 
@@ -58,7 +58,6 @@ function dashboardLinksFor(role) {
 
 export default function Header() {
   const { openAuth } = useAuthModal();
-  const { count } = useFavorites();
   const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -99,19 +98,13 @@ export default function Header() {
           </ul>
         </nav>
         <div className="nav-actions nav-actions-desktop">
-          {isAuthenticated && user?.role === 'candidate' && (
-            <button
-              className="dash-trigger"
-              onClick={() => navigate('/favorites')}
-              title="Saved jobs"
-              style={{ padding: '8px 12px' }}
-            >
-              <svg viewBox="0 0 24 24" fill="currentColor" style={{ width: 16, height: 16, color: 'var(--coral)' }}>
-                <path d="M12.1 18.55 12 18.65l-.11-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.86C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3" />
-              </svg>
-              <span style={{ fontFamily: "'Geist Mono',monospace", fontSize: 11, color: 'var(--coral)', fontWeight: 600 }}>{count}</span>
-            </button>
-          )}
+          {/*
+           * Favourites is reached from the candidate dashboard
+           * sidebar (♥ Favourites row), not from the top header
+           * — the heart button was removed so the header reads
+           * as marketplace navigation rather than a personal
+           * shortcut bar.
+           */}
           {isAuthenticated && <DashboardDropdown role={user?.role} />}
           {isAuthenticated ? (
             <>
@@ -135,7 +128,6 @@ export default function Header() {
           primaryLinks={primaryLinks}
           isAuthenticated={isAuthenticated}
           user={user}
-          favoritesCount={count}
           dashboardLinks={isAuthenticated ? dashboardLinksFor(user?.role) : []}
           onSignIn={() => openAuth('signin')}
           onSignUp={() => openAuth('signup')}

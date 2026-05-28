@@ -81,7 +81,6 @@ export default function CandidateDashSidebar({
   user,
   appsTotal,
   favoritesTotal,
-  interviewsTotal,
   onSignOut,
 }) {
   return (
@@ -94,38 +93,30 @@ export default function CandidateDashSidebar({
         </div>
       </div>
       <ul className="dash-nav">
+        {/*
+         * Sidebar items match the candidate-dashboard spec exactly:
+         * Overview, Job Applications, Saved Jobs, Favourites,
+         * Messages, Notifications, Settings, Logout. Profile and
+         * Preferences are intentionally NOT in the sidebar — they
+         * live as standalone pages reached from the top header /
+         * inline CTAs so the sidebar stays focused on the
+         * day-to-day hiring workflow.
+         */}
         <NavRow to="/dashboard/candidate" icon="●" label="Overview" />
         <NavRow
           to="/dashboard/candidate/applications"
           icon="▤"
-          label="My Applications"
+          label="Job Applications"
           badge={appsTotal}
         />
+        <NavRow to="/saved-jobs" icon="⌘" label="Saved Jobs" />
         <NavRow to="/favorites" icon="♥" label="Favourites" badge={favoritesTotal} />
-        <NavRow to="/saved-jobs" icon="⌘" label="Saved for Later" />
-        {/*
-         * Job Matches / Edit Profile / Job Preferences were
-         * removed from this sidebar (May 2026) — matching jobs
-         * are shown automatically on the dashboard, Edit Profile
-         * lives in the top-header "My Profile" menu, and Job
-         * Preferences has its own top-level menu entry. The
-         * underlying routes (/jobs, /profile, /preferences)
-         * stay live so deep-links and the alternate entry
-         * points keep working.
-         */}
         <NavRow to="/dashboard/candidate/messages" icon="✉" label="Messages" />
         <NavRow to="/dashboard/candidate/notifications" icon="◉" label="Notifications" />
-        <li>
-          <a>
-            <span className="ic" aria-hidden="true">☎</span> Interviews
-            {interviewsTotal != null && <span className="badge">{interviewsTotal}</span>}
-          </a>
-        </li>
-        <div className="dash-nav-section">Account</div>
         <NavRow to="/dashboard/candidate/settings" icon="⚙" label="Settings" />
         <li>
           <a onClick={onSignOut} style={{ cursor: 'pointer' }} data-testid="candidate-sidebar-signout">
-            <span className="ic" aria-hidden="true">⤓</span> Sign out
+            <span className="ic" aria-hidden="true">⤓</span> Logout
           </a>
         </li>
       </ul>

@@ -169,7 +169,6 @@ export default function DashboardCandidate() {
           user={user}
           appsTotal={appsTotal}
           favoritesTotal={favoritesTotal}
-          interviewsTotal={interviewsTotal}
           onSignOut={logout}
         />
 
