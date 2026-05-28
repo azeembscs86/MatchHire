@@ -20,7 +20,7 @@
  * page-level `useState` calls track values that participate in
  * cross-section logic (ranked priorities, salary range, deal list).
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ALL_PRIORITIES } from '../data/priorities.js';
 import { candidatesApi } from '../api/index.js';
@@ -124,6 +124,12 @@ function MatchScoreRange({ value, onChange }) {
 
 export default function Preferences() {
   const [activeSection, setActiveSection] = useState('priorities');
+  // When the user clicks a tab we kick off a programmatic smooth
+  // scroll. The scroll listener should NOT keep flipping the active
+  // tab as the browser animates past intermediate sections — it
+  // would flicker. This ref holds a unix-ms deadline; the listener
+  // bails while `Date.now() < scrollLockUntilRef.current`.
+  const scrollLockUntilRef = useRef(0);
   const [rankedIds, setRankedIds] = useState(['wlb', 'comp', 'growth', 'remote', 'tech']);
   const [minSal, setMinSal] = useState(150);
   const [tgtSal, setTgtSal] = useState(200);
@@ -282,34 +288,80 @@ export default function Preferences() {
   /*
    * Sidebar auto-active on scroll.
    * --------------------------------
-   * IntersectionObserver watches each #pref-* section. The section
-   * whose top is currently inside the [10%, 50%] band of the
-   * viewport wins — this avoids flicker when two short sections
-   * stack inside the same viewport. Throttled by the observer
-   * itself; no scroll handler needed.
+   * Anchor-line approach: the section whose box straddles a fixed
+   * line near the top of the viewport (just under the sticky
+   * header) is the one the user is reading. We walk the section
+   * list in document order and pick the last one whose top has
+   * scrolled past the anchor line — that's the section currently
+   * occupying the reading zone.
+   *
+   * Previous implementation used IntersectionObserver and picked
+   * the section with the SMALLEST `boundingClientRect.top` among
+   * intersecting entries — i.e. the section the user had scrolled
+   * past the most. That left the wrong tab highlighted as the
+   * reader moved onto the next section. The fix is a deterministic
+   * anchor-line test plus rAF-throttled scroll/resize handling
+   * (the observer-only path also misses ticks when no section's
+   * intersection ratio changes, e.g. scrolling slowly within a
+   * single tall section).
    */
   useEffect(() => {
     const sections = SECTIONS
-      .map((s) => document.getElementById('pref-' + s.id))
-      .filter(Boolean);
+      .map((s) => ({ id: s.id, el: document.getElementById('pref-' + s.id) }))
+      .filter((s) => s.el);
     if (sections.length === 0) return undefined;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        // Pick the entry closest to the top of the active band.
-        const visible = entries.filter((e) => e.isIntersecting);
-        if (visible.length === 0) return;
-        const top = visible.reduce(
-          (best, e) => (e.boundingClientRect.top < best.boundingClientRect.top ? e : best),
-          visible[0]
-        );
-        const id = top.target.id.replace(/^pref-/, '');
-        setActiveSection((prev) => (prev === id ? prev : id));
-      },
-      // ~10% from top to ~50% from bottom — generous active band.
-      { rootMargin: '-10% 0px -50% 0px', threshold: 0.01 }
-    );
-    sections.forEach((s) => observer.observe(s));
-    return () => observer.disconnect();
+
+    // The anchor line sits ~20% from the top of the viewport,
+    // clear of any sticky header / save bar. A section is
+    // "active" when its top has crossed (or is just above) this
+    // line and its bottom is still below it.
+    function anchorY() {
+      return Math.max(96, window.innerHeight * 0.2);
+    }
+
+    function recompute() {
+      // Skip while a click-driven smooth-scroll is in flight; the
+      // tab the user clicked is the authoritative one until the
+      // animation settles.
+      if (Date.now() < scrollLockUntilRef.current) return;
+      const anchor = anchorY();
+      // Floor: if no section's top has reached the anchor yet
+      // (e.g. user is still scrolled to the top above the first
+      // section), the first section is active.
+      let bestId = sections[0].id;
+      for (const s of sections) {
+        const rect = s.el.getBoundingClientRect();
+        if (rect.top - anchor <= 0) {
+          bestId = s.id;
+        } else {
+          // Sections are in document order — once we pass the
+          // anchor line going forward, no later section can be
+          // the active one yet. Bail early.
+          break;
+        }
+      }
+      setActiveSection((prev) => (prev === bestId ? prev : bestId));
+    }
+
+    let rafPending = false;
+    function onScrollOrResize() {
+      if (rafPending) return;
+      rafPending = true;
+      requestAnimationFrame(() => {
+        rafPending = false;
+        recompute();
+      });
+    }
+
+    // Initial sync — covers the deep-link case where the page
+    // loads scrolled to an anchor.
+    recompute();
+    window.addEventListener('scroll', onScrollOrResize, { passive: true });
+    window.addEventListener('resize', onScrollOrResize, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScrollOrResize);
+      window.removeEventListener('resize', onScrollOrResize);
+    };
     // Re-run only when the page is finished loading (sections exist).
   }, [loading]);
 
@@ -425,6 +477,11 @@ export default function Preferences() {
 
   const scrollPref = (id) => {
     setActiveSection(id);
+    // Lock the scroll listener for ~700ms — long enough for the
+    // browser's smooth-scroll animation to settle on the target
+    // section without the listener flipping the active tab to
+    // each section it crosses on the way there.
+    scrollLockUntilRef.current = Date.now() + 700;
     const el = document.getElementById('pref-' + id);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
@@ -460,7 +517,11 @@ export default function Preferences() {
           <ul className="pref-side-nav">
             {SECTIONS.map((s) => (
               <li key={s.id}>
-                <a className={activeSection === s.id ? 'active' : ''} onClick={() => scrollPref(s.id)}>
+                <a
+                  data-testid={`pref-tab-${s.id}`}
+                  className={activeSection === s.id ? 'active' : ''}
+                  onClick={() => scrollPref(s.id)}
+                >
                   <span>{s.n}</span> {s.label}
                 </a>
               </li>
