@@ -818,4 +818,26 @@ git push
 
 ---
 
-*End of document. Append the next prompt as Step 49.*
+### Step 49
+**Date:** 2026-05-29
+**Module:** Home page
+**Purpose:** Personalised, role-aware homepage. Candidates see skill-ranked job + company recommendations and career resources; employers see a hiring snapshot; guests see a marketplace overview with trending skills and salary explorer.
+**Prompt Command (verbatim, abbreviated):**
+> Step 1: Home Page Improvements. Add personalized AI homepage for logged-in candidates (recommended jobs/companies, trending skills, live hiring stats, salary explorer preview, career resources). For logged-out users keep public marketing homepage. For logged-in companies show hiring-related content instead of candidate-only recommendations. Do not replace existing homepage functionality.
+**Expected Output:** New `home.service` helpers (`liveStats`, `trendingSkills`, `salaryExplorer`, `recommendedCompaniesFromMatches`, `employerSummary`); new `career-resources.service.js` (AI-swappable); `GET /api/v1/home` payload extended with `liveStats`, `trendingSkills`, `salaryExplorer`, `careerResources`, `recommendedCompanies`, `employer`; new React components (LiveStatsBand, TrendingSkillsRow, RecommendedCompaniesBlock, SalaryExplorerBlock, CareerResourcesBlock, EmployerHomeSummary); CSS additions using existing design tokens; Swagger updated; QA: home API tests cover guest, candidate, employer paths.
+**Status:** Completed
+**Commit:** *(this commit)*
+**Verification:**
+  - `vite build` clean.
+  - `qa/api/home.test.js`: **4/4 passed** (guest base, Step-1 blocks, candidate path, employer hiring snapshot).
+  - Full Playwright suite: **94/94 passed** (no regression).
+  - Live `/home` payload validated against MySQL — multi-currency salary preview correctly picks dominant currency per label (USA → USD, Pakistan → PKR, India → INR, Germany → EUR).
+**Notes:**
+  - **No database migrations.** All new blocks aggregate from existing tables (`jobs`, `applications`, `companies`, `job_categories`, `users`).
+  - The legacy `hero` block is preserved alongside the new `liveStats` block so any external consumer of the older shape keeps working.
+  - `career-resources.service.js` returns curated static content today. Its function signature accepts `{ skills, role }` so a future AI call can replace the body without touching the route, payload shape, or frontend renderer.
+  - Cache: guest payload is still cached in Redis 15min keyed `home:payload:guest`; bust with `DEL matchhire:home:payload:guest` when iterating locally.
+
+---
+
+*End of document. Append the next prompt as Step 50.*

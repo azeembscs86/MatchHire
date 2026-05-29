@@ -161,6 +161,265 @@ function AISuggestionPanel({ suggestions, profileCompletion, name }) {
   );
 }
 
+/**
+ * LiveStatsBand
+ * -------------
+ * Four marketplace-momentum cards rendered as a stat strip below the
+ * hero: Jobs Posted Today · Active Companies · Active Candidates ·
+ * Successful Applications. Replaces nothing — sits below the hero in
+ * its own block so the existing hero-stats triplet is unaffected.
+ */
+function LiveStatsBand({ liveStats }) {
+  if (!liveStats) return null;
+  const items = [
+    { num: liveStats.jobsToday, lbl: 'Jobs posted today', tone: 'coral' },
+    { num: liveStats.activeCompanies, lbl: 'Active companies', tone: 'sage' },
+    { num: liveStats.activeCandidates, lbl: 'Active candidates', tone: 'plum' },
+    { num: liveStats.successfulApplications, lbl: 'Successful hires', tone: 'gold' },
+  ];
+  return (
+    <section className="block live-stats-block">
+      <div className="container">
+        <div className="live-stats-grid">
+          {items.map((s) => (
+            <div key={s.lbl} className={`live-stat live-stat-${s.tone}`}>
+              <span className="live-stat-num">{fmt(s.num)}</span>
+              <span className="live-stat-lbl">{s.lbl}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * TrendingSkillsRow
+ * -----------------
+ * Chip cloud derived from the open-job pool's most-frequent skills
+ * (30-day window). Each chip deep-links to the jobs page with that
+ * skill pre-filtered, so a visitor can drill into a trending area in
+ * one click.
+ */
+function TrendingSkillsRow({ skills }) {
+  if (!Array.isArray(skills) || skills.length === 0) return null;
+  return (
+    <section className="block trending-skills-block">
+      <div className="container">
+        <div className="section-head">
+          <div>
+            <span className="eyebrow" style={{ display: 'block', marginBottom: 14 }}>▲ Trending right now</span>
+            <h2 className="display">Skills companies are <span className="ital" style={{ fontStyle: 'italic', color: 'var(--coral)' }}>hiring</span>.</h2>
+          </div>
+          <Link to="/jobs" className="section-link">Explore all jobs →</Link>
+        </div>
+        <div className="trending-chips">
+          {skills.slice(0, 14).map((s) => (
+            <Link
+              key={s.slug}
+              to={`/jobs?keyword=${encodeURIComponent(s.name)}`}
+              className="trending-chip"
+              title={`${s.count} open role${s.count === 1 ? '' : 's'}`}
+            >
+              <span className="trending-chip-name">{s.name}</span>
+              <span className="trending-chip-count">{fmt(s.count)}</span>
+            </Link>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * RecommendedCompaniesBlock
+ * -------------------------
+ * Only rendered for logged-in candidates. The payload's
+ * `recommendedCompanies` is derived from the candidate's own
+ * scored-match set, so each company surfaced here has at least one
+ * job the candidate is qualified for. Heading copy makes that
+ * personalised origin explicit so candidates trust the surface.
+ */
+function RecommendedCompaniesBlock({ companies, isCandidate }) {
+  if (!isCandidate || !Array.isArray(companies) || companies.length === 0) return null;
+  return (
+    <section className="block">
+      <div className="container">
+        <div className="section-head">
+          <div>
+            <span className="eyebrow" style={{ display: 'block', marginBottom: 14 }}>★ Recommended companies</span>
+            <h2 className="display">Companies that <span className="ital" style={{ fontStyle: 'italic', color: 'var(--coral)' }}>fit your skills</span>.</h2>
+          </div>
+          <Link to="/companies" className="section-link">All companies →</Link>
+        </div>
+        <div className="co-grid">
+          {companies.slice(0, 6).map((c) => <CompanyCard key={c.id} company={c} />)}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * SalaryExplorerBlock
+ * -------------------
+ * Three side-by-side tables — top roles, top countries, experience
+ * levels — each showing average salary across the open-jobs pool.
+ * Lightweight preview pointing at the future dedicated /salary route.
+ */
+function SalaryExplorerBlock({ salary }) {
+  if (!salary) return null;
+  const slices = [
+    { key: 'byRole',       label: 'By role',       items: salary.byRole },
+    { key: 'byCountry',    label: 'By country',    items: salary.byCountry },
+    { key: 'byExperience', label: 'By experience', items: salary.byExperience },
+  ];
+  const total = slices.reduce((s, sl) => s + (sl.items?.length || 0), 0);
+  if (total === 0) return null;
+  // Symbol map for the currencies actually present in our catalogue.
+  // Anything not in the map falls back to "<code> 123K" so the row
+  // is still legible.
+  const CUR_SYMBOL = { USD: '$', EUR: '€', GBP: '£', INR: '₹', PKR: '₨', AED: 'AED ', SGD: 'S$', AUD: 'A$' };
+  const formatRange = (s) => {
+    if (s.avgSalary == null && s.minSalary == null && s.maxSalary == null) return '—';
+    if (s.avgSalary == null) return '—';
+    const k = Math.round(Number(s.avgSalary) / 1000);
+    const sym = CUR_SYMBOL[s.currency] != null ? CUR_SYMBOL[s.currency] : `${s.currency} `;
+    return `${sym}${k}K avg`;
+  };
+  return (
+    <section className="block salary-explorer-block">
+      <div className="container">
+        <div className="section-head">
+          <div>
+            <span className="eyebrow" style={{ display: 'block', marginBottom: 14 }}>◆ Salary explorer</span>
+            <h2 className="display">What roles <span className="ital" style={{ fontStyle: 'italic', color: 'var(--coral)' }}>actually pay</span>.</h2>
+          </div>
+          <Link to="/jobs" className="section-link">Browse paying roles →</Link>
+        </div>
+        <div className="salary-grid">
+          {slices.map((slice) => (
+            <div key={slice.key} className="salary-card">
+              <div className="salary-card-head">{slice.label}</div>
+              {(slice.items || []).length === 0 ? (
+                <div className="salary-card-empty">—</div>
+              ) : (
+                <ul className="salary-card-list">
+                  {slice.items.slice(0, 6).map((it) => (
+                    <li key={`${slice.key}-${it.label}`} className="salary-card-row">
+                      <span className="salary-card-label" title={it.label}>{it.label || '—'}</span>
+                      <span className="salary-card-value">{formatRange(it)}</span>
+                      <span className="salary-card-count">{fmt(it.jobs)} jobs</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * CareerResourcesBlock
+ * --------------------
+ * Three column-cards of curated career content (resume tips, interview
+ * prep, skill growth). Static-content service today; structured so a
+ * future AI generator can swap the body without touching the frontend.
+ */
+function CareerResourcesBlock({ resources }) {
+  if (!resources) return null;
+  const columns = [
+    { key: 'resumeTips',    label: 'Resume tips',           items: resources.resumeTips },
+    { key: 'interviewPrep', label: 'Interview preparation', items: resources.interviewPrep },
+    { key: 'skillGrowth',   label: 'Skill growth',          items: resources.skillGrowth },
+  ];
+  const total = columns.reduce((s, c) => s + (c.items?.length || 0), 0);
+  if (total === 0) return null;
+  return (
+    <section className="block career-resources-block">
+      <div className="container">
+        <div className="section-head">
+          <div>
+            <span className="eyebrow" style={{ display: 'block', marginBottom: 14 }}>✦ Career resources</span>
+            <h2 className="display">Sharpen your <span className="ital" style={{ fontStyle: 'italic', color: 'var(--coral)' }}>edge</span>.</h2>
+          </div>
+        </div>
+        <div className="career-grid">
+          {columns.map((col) => (
+            <div key={col.key} className="career-col">
+              <div className="career-col-head">{col.label}</div>
+              <ul className="career-col-list">
+                {(col.items || []).map((it) => (
+                  <li key={it.id} className="career-item">
+                    <span className="career-item-icon" aria-hidden="true">{it.icon}</span>
+                    <div>
+                      <div className="career-item-title">{it.title}</div>
+                      <div className="career-item-body">{it.body}</div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * EmployerHomeSummary
+ * -------------------
+ * Logged-in employer view: replaces the candidate-only AI suggestion
+ * block with a hiring snapshot (open jobs, applications this week,
+ * shortlisted, interviews, hires) plus a "Post new job" CTA. Sits in
+ * the same vertical slot as the candidate AISuggestionPanel so the
+ * page rhythm stays unchanged across roles.
+ */
+function EmployerHomeSummary({ employer, name }) {
+  if (!employer) return null;
+  const stats = [
+    { num: employer.openJobs,             lbl: 'Open jobs' },
+    { num: employer.applicationsThisWeek, lbl: 'Apps this week' },
+    { num: employer.shortlisted,          lbl: 'Shortlisted' },
+    { num: employer.interviews,           lbl: 'Interviews' },
+    { num: employer.hires,                lbl: 'Hires' },
+  ];
+  return (
+    <section className="block" style={{ paddingTop: 48 }}>
+      <div className="container">
+        <div className="employer-summary-card">
+          <div>
+            <span className="eyebrow" style={{ display: 'block', marginBottom: 14, color: 'rgba(245,240,230,.6)' }}>◆ Hiring snapshot</span>
+            <h2 className="display" style={{ fontSize: 'clamp(26px,3.5vw,36px)', marginBottom: 14, lineHeight: 1.1 }}>
+              {name ? `${name}, your hiring at a glance.` : 'Your hiring at a glance.'}
+            </h2>
+            <p style={{ fontSize: 15, color: 'rgba(245,240,230,.78)', marginBottom: 22, lineHeight: 1.55, maxWidth: 540 }}>
+              {employer.companyName ? `${employer.companyName} — ` : ''}
+              jump into the dashboard to review applicants, schedule interviews, or post a new role.
+            </p>
+            <div className="employer-summary-actions">
+              <Link to="/dashboard/company" className="btn btn-coral">Open dashboard →</Link>
+              <Link to="/candidates" className="btn btn-ghost-inverse">Talent search →</Link>
+            </div>
+          </div>
+          <div className="employer-summary-stats">
+            {stats.map((s) => (
+              <div key={s.lbl} className="employer-summary-stat">
+                <span className="employer-summary-num">{fmt(s.num)}</span>
+                <span className="employer-summary-lbl">{s.lbl}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function CtaBand({ block, tone = 'light' }) {
   if (!block) return null;
   const isDark = tone === 'dark';
@@ -250,6 +509,13 @@ export default function Home() {
   }
 
   const hero = payload?.hero || { openJobs: null, companies: null, candidates: null };
+  const liveStats = payload?.liveStats || null;
+  const trendingSkills = payload?.trendingSkills || [];
+  const salaryExplorer = payload?.salaryExplorer || null;
+  const careerResources = payload?.careerResources || null;
+  const recommendedCompanies = payload?.recommendedCompanies || [];
+  const employer = payload?.employer || null;
+  const isEmployer = payload?.viewer?.role === 'employer';
   const categories = payload?.categories || [];
   const topCompanies = payload?.topCompanies || [];
   // Defence-in-depth: backend already excludes expired jobs from these
@@ -341,6 +607,9 @@ export default function Home() {
         </div>
       </div>
 
+      {/* Live hiring statistics — visible to everyone (guests, candidates, employers). */}
+      <LiveStatsBand liveStats={liveStats} />
+
       {/* Skill rail (only meaningful when authed). */}
       <div className="rec-bar">
         <div className="container rec-bar-inner">
@@ -416,12 +685,28 @@ export default function Home() {
         </div>
       </section>
 
-      {/* AI suggestion panel — only when authenticated. */}
+      {/* AI suggestion panel — only when authenticated as a candidate. */}
       {isCandidate && <AISuggestionPanel
         suggestions={aiSuggestions}
         profileCompletion={profileCompletion}
         name={payload?.viewer?.name?.split(' ')?.[0]}
       />}
+
+      {/*
+       * Employer view replaces the candidate-only AI panel above with
+       * a hiring snapshot — kept in the same vertical slot so the
+       * page rhythm is identical across roles.
+       */}
+      {isEmployer && <EmployerHomeSummary
+        employer={employer}
+        name={payload?.viewer?.name?.split(' ')?.[0]}
+      />}
+
+      {/* Trending skills — visible to everyone; drives discovery from a fresh visit. */}
+      <TrendingSkillsRow skills={trendingSkills} />
+
+      {/* Candidate-personalised "Recommended companies for your skills". */}
+      <RecommendedCompaniesBlock companies={recommendedCompanies} isCandidate={isCandidate} />
 
       {/* Latest matched jobs rail — auth-aware. */}
       {isCandidate && latestMatched.length > 0 && (
@@ -488,6 +773,15 @@ export default function Home() {
             )}
         </div>
       </section>
+
+      {/* Salary explorer — useful to every viewer (guests evaluating
+          worth, candidates pricing themselves, employers benchmarking). */}
+      <SalaryExplorerBlock salary={salaryExplorer} />
+
+      {/* Career resources — surfaced for candidate flow + guests. We
+          intentionally don't render this for employers (they have a
+          different content scope). */}
+      {!isEmployer && <CareerResourcesBlock resources={careerResources} />}
 
       {/* Two CTA bands — one for employers, one for candidates. */}
       <CtaBand block={cta?.forEmployers} tone="dark" />

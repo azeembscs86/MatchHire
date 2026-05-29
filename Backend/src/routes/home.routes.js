@@ -33,10 +33,30 @@ const pubV = require('../validators/public.validator');
  *     tags: [Home]
  *     summary: Homepage payload (auth-aware)
  *     description: |
- *       Returns the full homepage aggregate: hero stats, featured
- *       categories, top companies, latest jobs, and — for authenticated
- *       candidates — recommendedJobs, latestMatchedJobs, and an
- *       aiSuggestions block (career, profile, recommended job titles).
+ *       Returns the full homepage aggregate. The payload is auth-aware:
+ *
+ *       **Common to every viewer**
+ *         - `hero` (legacy, kept for back-compat): openJobs, companies, candidates
+ *         - `liveStats`: jobsToday, openJobs, activeCompanies, activeCandidates, successfulApplications
+ *         - `categories`: featured job categories with open-job counts
+ *         - `topCompanies`: featured + fallback fill
+ *         - `recommendedCompanies`: candidate-personalised for logged-in candidates,
+ *            otherwise falls back to `topCompanies`
+ *         - `trendingSkills`: top skills across the active job pool (30-day window)
+ *         - `salaryExplorer`: `{ byRole, byCountry, byExperience }` salary aggregates
+ *         - `careerResources`: curated `{ resumeTips, interviewPrep, skillGrowth }` (candidate flow)
+ *         - `latestJobs`: latest open jobs
+ *         - `cta`: the two homepage call-to-action bands
+ *
+ *       **Logged-in candidate only**
+ *         - `recommendedJobs`: scored + ranked
+ *         - `latestMatchedJobs`: latest jobs re-scored for the candidate
+ *         - `aiSuggestions`: career / profile / recommended-titles hints
+ *
+ *       **Logged-in employer only**
+ *         - `employer`: openJobs, applicationsThisWeek, shortlisted, interviews, hires
+ *         - Candidate-only blocks (`recommendedJobs`, `latestMatchedJobs`,
+ *           `aiSuggestions`) are intentionally empty / null for employers.
  *
  *       Guests receive a cached payload (15 min TTL). Authenticated
  *       payloads are computed per-request because they're per-user.
@@ -52,6 +72,36 @@ const pubV = require('../validators/public.validator');
  *               Data:
  *                 viewer: { authenticated: true, role: 'candidate', name: 'David Kim', profileCompletion: 85 }
  *                 hero: { openJobs: 240, companies: 220, candidates: 220 }
+ *                 liveStats:
+ *                   jobsToday: 14
+ *                   openJobs: 240
+ *                   activeCompanies: 220
+ *                   activeCandidates: 220
+ *                   successfulApplications: 78
+ *                 trendingSkills:
+ *                   - { name: 'React', slug: 'react', count: 84 }
+ *                   - { name: 'Node.js', slug: 'node.js', count: 71 }
+ *                 salaryExplorer:
+ *                   byRole:
+ *                     - { label: 'Software Development', jobs: 38, avgSalary: 145000, minSalary: 70000, maxSalary: 240000, currency: 'USD' }
+ *                   byCountry:
+ *                     - { label: 'United States', jobs: 92, avgSalary: 155000, minSalary: 85000, maxSalary: 280000, currency: 'USD' }
+ *                   byExperience:
+ *                     - { label: 'senior', jobs: 64, avgSalary: 170000, minSalary: 110000, maxSalary: 250000, currency: 'USD' }
+ *                 careerResources:
+ *                   resumeTips: [ { id: 'rt-quantify', icon: '◆', title: 'Quantify every bullet', body: '...' } ]
+ *                   interviewPrep: [ { id: 'ip-system', icon: '◇', title: 'System design rehearsal', body: '...' } ]
+ *                   skillGrowth: [ { id: 'sg-ship', icon: '★', title: 'Ship one small thing weekly', body: '...' } ]
+ *                 recommendedCompanies:
+ *                   - { id: 1, name: 'Systems Limited', open_jobs: 7, top_match_score: 88 }
+ *                 employer:
+ *                   hasCompany: true
+ *                   companyName: 'Acme Inc.'
+ *                   openJobs: 5
+ *                   applicationsThisWeek: 24
+ *                   shortlisted: 6
+ *                   interviews: 3
+ *                   hires: 1
  *                 categories:
  *                   - { id: 1, name: 'Software Development', slug: 'software-development', open_jobs: 38 }
  *                 topCompanies:
