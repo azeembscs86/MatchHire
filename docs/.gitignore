@@ -1,0 +1,4 @@
+# Intermediate render artefact produced by render-prompts-pdf.js.
+# The script writes this HTML next to the PDF for visual inspection
+# during styling tweaks; the canonical sources are the .md and .pdf.
+*.rendered.html
