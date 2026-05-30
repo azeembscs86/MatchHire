@@ -861,4 +861,25 @@ git push
 
 ---
 
-*End of document. Append the next prompt as Step 51.*
+### Step 51
+**Date:** 2026-05-30
+**Module:** UI/UX (Job card consistency)
+**Purpose:** Standardise every job card across the project so cards in the same grid row have identical dimensions and the Apply button lines up perfectly. Restore the equal-height contract that was reversed in Step 48 in favour of an auto-height pass.
+**Prompt Command (verbatim, abbreviated):**
+> Standardize all Job Cards. Every card must have same width, height, spacing, alignment. Equal-height grid rows. Reserved title (max 2 lines), description (max 2–3 lines), skills section, footer. Apply / Applied / Manage / View Applications all line up. Refactor to one reusable BaseJobCard + CandidateJobCard + CompanyJobCard wrappers. Do NOT change matching logic, application flow, APIs, database, or any other functionality.
+**Expected Output:**
+  - **Single shared component preserved** — confirmed `components/JobCard.jsx` is the only job-card design; all 11 importers (Home, Jobs, JobDetail, Favorites, SavedJobs, DashboardCandidate, DashboardCompany, CompanyDetail, CandidateApplications, MatchingJobsCarousel, JobCard itself) already use it.
+  - **New thin wrappers** for role-explicit usage: `CandidateJobCard.jsx` and `CompanyJobCard.jsx` pre-bind the `viewer` prop. `DashboardCompany.jsx` migrated to `CompanyJobCard` as the first canonical caller.
+  - **CSS restored** to the equal-height contract: `.jobs-grid` back to `align-items:stretch` + `> *{height:100%}`, `.card-shell` back to `min-height:340px;height:100%`, reserved min-heights on `.job-title` (48px), `.job-summary` (36px), `.trust-row` (22px), `.job-meta-row` (22px), `.why-list` (60px), `.job-tags` (22px). Mobile breakpoints already collapse the floor.
+  - **JobCard.jsx restored to always-render** the meta-row, tags, why-list and summary slots (the May-2027 conditional-render branches removed). `WhyRecommended` is `aria-hidden` when empty; the description paragraph emits a single space so the 36px slot is reserved even on jobs with no body copy.
+  - **QA test rewritten**: `qa/e2e/ui/job-card-layout.spec.js` swaps the blank-band tolerance check for the equal-row-heights assertion (the contract introduced in Step 38, then dropped in Step 48, is back).
+**Status:** Completed
+**Commit:** *(this commit)*
+**Notes:**
+  - **Supersedes Step 48's auto-height contract.** Step 48 was the explicit response to "remove large blank areas"; this step reverses that decision in favour of "every card identical size, Apply button aligned". Both instructions were the user's at different points — the equal-height contract now wins.
+  - **No changes to logic, APIs, or DB.** This is pure UI/UX layout. Every callsite continues to fetch + render identically; only the visual rendering rules changed.
+  - The hero mini-cards on Home (`.hero-card`) and the row-style Withdrawn Applications cards (`.withdrawn-card`) are intentionally NOT JobCards — they're separate surfaces (hero collage tiles and table-style record rows respectively) and don't participate in the job-card grid contract.
+
+---
+
+*End of document. Append the next prompt as Step 52.*

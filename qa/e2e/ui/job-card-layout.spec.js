@@ -27,57 +27,42 @@ const ui = require('../../helpers/ui-validation.helper');
 const { attachFindings } = require('../../helpers/report.helper');
 
 test.describe('@ui Job card layout consistency', () => {
-  // Auto-height redesign (May 2027): cards are no longer stretched to
-  // a uniform row height — they size to their content so a sparse card
-  // collapses instead of opening a blank band above the footer. The
-  // contract under test is therefore "no large blank band at the
-  // bottom of any card", NOT "all cards equal height". We measure the
-  // gap between the card's last child (its action/footer row) and the
-  // card's own bottom edge; anything beyond the card's padding plus a
-  // tolerance means a reserved-but-empty slot has crept back in.
-  test('cards size to content with no blank band above the footer', async ({ page }, testInfo) => {
+  // Equal-height redesign (May 2030, supersedes May-2027 auto-height):
+  // every card in a row must be the same height so Apply Now buttons
+  // line up across the grid. CSS reserves min-heights on title /
+  // summary / trust / meta / why-list / tags slots and the grid uses
+  // `align-items:stretch` + `height:100%`, so any drift here means a
+  // reserved slot was accidentally removed.
+  test('every card in a row has equal height', async ({ page }, testInfo) => {
     const consoleTracker = consoleMonitor.attach(page);
     const api = apiMonitor.attach(page);
 
     await page.goto('/jobs');
     const cards = page.getByTestId('job-card');
     await expect(cards.first()).toBeVisible({ timeout: 15_000 });
+    // Wait for at least 4 cards so we have meaningful rows to
+    // compare. Public /jobs returns 24 per page; 4 is a low floor
+    // that doesn't slow the test.
     await expect(cards.nth(3)).toBeVisible({ timeout: 10_000 });
 
-    // For the first 6 cards, compute the gap between the bottom of
-    // the last rendered child and the card's bottom edge.
-    const TOLERANCE_PX = 28; // card padding-bottom (14px) + slack
-    const gaps = [];
-    const count = Math.min(6, await cards.count());
-    for (let i = 0; i < count; i++) {
-      const gap = await cards.nth(i).evaluate((card) => {
-        const last = card.lastElementChild;
-        if (!last) return 0;
-        const cardBox = card.getBoundingClientRect();
-        const lastBox = last.getBoundingClientRect();
-        return Math.round(cardBox.bottom - lastBox.bottom);
-      });
-      gaps.push({ idx: i, gap });
-    }
-    const offenders = gaps.filter((g) => g.gap > TOLERANCE_PX);
-
+    const result = await ui.checkEqualRowHeights(cards, 4);
     await attachFindings(testInfo, {
       consoleErrors: consoleTracker.getErrors(),
       apiFailures: api.getFailures(),
-      uiIssues: offenders.length === 0 ? [] : [{
-        kind: 'blank-band',
-        detail: `Cards with a blank band below their content (>${TOLERANCE_PX}px): ${JSON.stringify(offenders)}`,
+      uiIssues: result.ok ? [] : [{
+        kind: 'uneven-heights',
+        detail: `Card heights drift across rows: ${JSON.stringify(result.violations)}`,
       }],
-      suggestedFixes: offenders.length === 0 ? [] : [
-        'Confirm .jobs-grid uses align-items:start (not stretch) and .card-shell has no min-height/height:100%.',
-        'Check empty sections (why-list, meta-row, tags) are conditionally rendered, not reserved.',
+      suggestedFixes: result.ok ? [] : [
+        'Verify .jobs-grid uses align-items:stretch and .card-shell carries height:100%.',
+        'Check the reserved slots on .job-title / .job-summary / .trust-row / .job-meta-row / .why-list / .job-tags still set min-height.',
       ],
     });
 
     expect(
-      offenders.length,
-      `cards have a blank band below content: ${JSON.stringify(gaps, null, 2)}`
-    ).toBe(0);
+      result.ok,
+      `card heights uneven: ${JSON.stringify(result.violations, null, 2)}`
+    ).toBe(true);
   });
 
   test('Jobs page has no horizontal overflow at desktop width', async ({ page }) => {

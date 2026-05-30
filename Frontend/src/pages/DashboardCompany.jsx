@@ -17,7 +17,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { employersApi } from '../api/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { LoadingState, ErrorState } from '../components/AsyncState.jsx';
-import JobCard from '../components/JobCard.jsx';
+import CompanyJobCard from '../components/CompanyJobCard.jsx';
 import { toJobCardShape } from '../api/adapters.js';
 
 function initials(name = '') {
@@ -243,11 +243,10 @@ export default function DashboardCompany() {
                   });
                   if (!view) return null;
                   return (
-                    <JobCard
+                    <CompanyJobCard
                       key={j.id}
                       job={view}
                       featured={!!j.is_featured}
-                      viewer="company"
                       onManage={(target) => navigate(`/jobs/${target.id}`)}
                     />
                   );

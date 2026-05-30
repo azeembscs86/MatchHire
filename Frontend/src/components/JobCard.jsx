@@ -124,23 +124,24 @@ function MatchBadge({ score }) {
 /**
  * Recommended-because checklist. Compact alternative to the old
  * reason-chip row. Renders up to 2 matched reasons (✓) then up to 1
- * missing skill (✖).
+ * missing skill (✖) — capped at 3 total rows so the slot height is
+ * identical across every card in a grid row.
  *
- * Auto-height pass (May 2027): the container is no longer rendered at
- * all when there are no reasons/missing skills to show. Previously we
- * reserved a fixed 60px slot even when empty so every card in a row
- * stayed the same height — but that reserved slot was the single
- * biggest source of the "card looks empty" complaint. Cards now size
- * to their content; an empty checklist simply collapses.
+ * Equal-height pass (May 2030, supersedes May-2027 auto-height): the
+ * container is ALWAYS rendered. The CSS reserves a 60px slot so a
+ * card with zero reasons stays vertically aligned with a card that
+ * has three. When there's nothing to show, the element is marked
+ * `aria-hidden` so screen readers skip the empty space.
  */
 function WhyRecommended({ reasons = [], missing = [] }) {
   const positives = (reasons || []).filter(Boolean).slice(0, 2);
   const negatives = (missing || []).slice(0, 1);
-  if (positives.length === 0 && negatives.length === 0) return null;
+  const isEmpty = positives.length === 0 && negatives.length === 0;
   return (
     <ul
-      className="why-list"
+      className={`why-list${isEmpty ? ' why-list-empty' : ''}`}
       aria-label="Why we're recommending this role"
+      aria-hidden={isEmpty || undefined}
     >
       {positives.map((r, i) => (
         <li key={`p-${i}`} className="why-item why-item-yes">
@@ -276,14 +277,13 @@ export default function JobCard({
   const isRow = variant === 'row';
   const isCompany = viewer === 'company';
 
-  // Meta-row content flags. The row is only rendered when at least
-  // one chip applies, so a sparse card no longer reserves an empty
-  // band (auto-height pass, May 2027).
+  // Per-chip visibility flags. The meta-row container itself is
+  // always rendered (CSS reserves a 22px slot — equal-height pass,
+  // May 2030) so a card with zero meta chips still aligns vertically
+  // with a sibling that has four.
   const showDeadlineChip = job.deadline && !job.closingSoon;
   const showApplicantsChip = Number.isFinite(job.applicationsCount);
   const showViewsChip = Number.isFinite(job.viewsCount) && job.viewsCount > 0;
-  const hasMetaRow = !!(job.experience || job.type || showDeadlineChip || showApplicantsChip || showViewsChip);
-  const hasTags = (visibleSkills.length + extraSkills) > 0;
   // Company CTA row replaces the candidate Apply row for employer
   // viewers. Mutually exclusive with the Apply states below.
   const showManageRow = isCompany && typeof onManage === 'function';
@@ -348,13 +348,19 @@ export default function JobCard({
         <div className="job-title text-clamp-2" title={job.title}>{job.title}</div>
 
         {/*
-         * Short description preview — 2-line clamped excerpt that
-         * fills the previously-empty middle of the card with
-         * useful context. The CSS slot has a min-height so cards
-         * with no description still align with cards that do.
+         * Description preview — 2-line clamped excerpt that fills
+         * the middle of the card with useful context. Always
+         * rendered on the grid variant so the 36px CSS slot is
+         * reserved on every card; when no description is available
+         * we emit an aria-hidden placeholder so screen readers
+         * don't announce the empty slot.
          */}
-        {!isRow && job.summary && (
-          <p className="job-summary text-clamp-2" title={job.summary}>{job.summary}</p>
+        {!isRow && (
+          <p
+            className="job-summary text-clamp-2"
+            title={job.summary || undefined}
+            aria-hidden={job.summary ? undefined : 'true'}
+          >{job.summary || ' '}</p>
         )}
 
         {/* Trust badges row — only renders when at least one badge applies. */}
@@ -379,51 +385,48 @@ export default function JobCard({
         {!isRow && <WhyRecommended reasons={reasons} missing={missing} />}
 
         {/* Meta row — experience · type · deadline · applicants ·
-            views. Auto-height: rendered only when at least one chip
-            applies, so a sparse card never reserves an empty band.
-            Single line, overflow-hidden so an extra chip can never
-            push the footer downward. */}
-        {hasMetaRow && (
-          <div className="job-meta-row">
-            {job.experience && <span className="meta-chip" title={`Experience: ${job.experience}`}>{job.experience}</span>}
-            {job.type && <span className="meta-chip" title={`Job type: ${job.type}`}>{job.type}</span>}
-            {showDeadlineChip && (
-              <span
-                className={`meta-chip${job.isExpired ? ' meta-chip-warn' : ''}`}
-                title={job.deadlineRaw ? new Date(job.deadlineRaw).toLocaleString() : 'Apply deadline'}
-              >
-                {job.deadline}
-              </span>
-            )}
-            {/* Employer-side counters: applicants + views. Both opt-
-                in via toJobCardShape — candidate-side rendering
-                leaves them null so the chips never appear there. */}
-            {showApplicantsChip && (
-              <span className="meta-chip meta-chip-applicants" title={`${job.applicationsCount} applicants`}>
-                {job.applicationsCount} {job.applicationsCount === 1 ? 'applicant' : 'applicants'}
-              </span>
-            )}
-            {showViewsChip && (
-              <span className="meta-chip" title={`${job.viewsCount} views`}>
-                {job.viewsCount} views
-              </span>
-            )}
-          </div>
-        )}
+            views. Always rendered so the slot height is reserved
+            and every card in the grid keeps the same vertical
+            rhythm. Single line, overflow-hidden so an extra chip
+            can never push the footer downward. */}
+        <div className="job-meta-row">
+          {job.experience && <span className="meta-chip" title={`Experience: ${job.experience}`}>{job.experience}</span>}
+          {job.type && <span className="meta-chip" title={`Job type: ${job.type}`}>{job.type}</span>}
+          {showDeadlineChip && (
+            <span
+              className={`meta-chip${job.isExpired ? ' meta-chip-warn' : ''}`}
+              title={job.deadlineRaw ? new Date(job.deadlineRaw).toLocaleString() : 'Apply deadline'}
+            >
+              {job.deadline}
+            </span>
+          )}
+          {/* Employer-side counters: applicants + views. Both opt-
+              in via toJobCardShape — candidate-side rendering
+              leaves them null so the chips never appear there. */}
+          {showApplicantsChip && (
+            <span className="meta-chip meta-chip-applicants" title={`${job.applicationsCount} applicants`}>
+              {job.applicationsCount} {job.applicationsCount === 1 ? 'applicant' : 'applicants'}
+            </span>
+          )}
+          {showViewsChip && (
+            <span className="meta-chip" title={`${job.viewsCount} views`}>
+              {job.viewsCount} views
+            </span>
+          )}
+        </div>
 
-        {/* Skills tags — single line. If the chips would wrap, the
-            +N overflow pill at the end absorbs them. Auto-height:
-            rendered only when the job lists at least one skill. */}
-        {hasTags && (
-          <div className="job-tags">
-            {visibleSkills.map((t) => (
-              <span key={t} className="job-tag" title={t}>{t}</span>
-            ))}
-            {extraSkills > 0 && (
-              <span className="job-tag job-tag-more" title="More skills required for this role">+{extraSkills}</span>
-            )}
-          </div>
-        )}
+        {/* Skills tags — fixed-height single line. If the chips
+            would wrap, the +N overflow pill at the end absorbs
+            them. The container is always rendered so the slot
+            stays reserved even when a job has no listed skills. */}
+        <div className="job-tags">
+          {visibleSkills.map((t) => (
+            <span key={t} className="job-tag" title={t}>{t}</span>
+          ))}
+          {extraSkills > 0 && (
+            <span className="job-tag job-tag-more" title="More skills required for this role">+{extraSkills}</span>
+          )}
+        </div>
 
         {/* spacer pushes footer + actions to the bottom of the card */}
         <div className="job-spacer" />
