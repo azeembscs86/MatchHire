@@ -29,6 +29,18 @@ import JobCard from '../components/JobCard.jsx';
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.jsx';
 import { candidatesApi } from '../api/index.js';
 import { toJobCardShape } from '../api/adapters.js';
+import { parseRejectionReason } from '../data/rejection-reasons.js';
+
+/** Format the date the employer rejected an application. The
+ * underlying column is `updated_at` because we don't (yet) store a
+ * dedicated `rejected_at` — the status flip is the most recent
+ * change on a rejected row, so updated_at is the correct proxy. */
+function formatRejectedDate(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
 
 /**
  * Application status → display chip. Mirrors the candidate
@@ -41,7 +53,9 @@ const STATUS_BADGE = {
   reviewing:    { cls: 'pill-review',      label: 'Under Review' },
   under_review: { cls: 'pill-review',      label: 'Under Review' },
   shortlisted:  { cls: 'pill-shortlisted', label: 'Shortlisted' },
-  interview:    { cls: 'pill-interview',   label: 'Interview' },
+  // Unified candidate-side label across the project — matches the
+  // overview page and the dashboard sidebar copy.
+  interview:    { cls: 'pill-interview',   label: 'Interview Scheduled' },
   offered:      { cls: 'pill-accepted',    label: 'Accepted' },
   hired:        { cls: 'pill-accepted',    label: 'Accepted' },
   accepted:     { cls: 'pill-accepted',    label: 'Accepted' },
@@ -62,18 +76,30 @@ function statusBadge(status) {
 // `exclude_statuses` filter on /candidates/applications/list.
 
 /**
- * Count helpers so the four summary cards stay readable. The
- * dashboard stats endpoint returns a flat `by_status` map; we
- * group it into the user-facing buckets the brief asked for.
+ * Roll the flat `by_status` map from /candidates/dashboard/stats
+ * into the six summary buckets shown above the list:
+ *
+ *   total       — every application row excluding withdrawals (the
+ *                 Withdrawn tab has its own surface + count)
+ *   review      — `reviewing` + `under_review`
+ *   shortlisted — `shortlisted`
+ *   interview   — `interview` (rendered as "Interview Scheduled")
+ *   accepted    — `accepted` + `offered` + `hired`
+ *   rejected    — `rejected`
+ *
+ * Withdrawn rows are deliberately not counted in this page's `total`
+ * because the active-pipeline list itself excludes them.
  */
 function rollupStats(stats) {
   const by = stats?.applications?.by_status || {};
-  const total = stats?.applications?.total ?? 0;
   const review = (by.reviewing || 0) + (by.under_review || 0);
   const shortlisted = by.shortlisted || 0;
-  const decided = (by.rejected || 0) + (by.accepted || 0)
-    + (by.offered || 0) + (by.hired || 0) + (by.withdrawn || 0);
-  return { total, review, shortlisted, decided };
+  const interview = by.interview || 0;
+  const accepted = (by.accepted || 0) + (by.offered || 0) + (by.hired || 0);
+  const rejected = by.rejected || 0;
+  const applied = by.applied || 0;
+  const total = applied + review + shortlisted + interview + accepted + rejected;
+  return { total, review, shortlisted, interview, accepted, rejected };
 }
 
 export default function CandidateApplications() {
@@ -133,16 +159,19 @@ export default function CandidateApplications() {
 
       <div className="container" style={{ padding: '40px 0 80px' }}>
         {/*
-         * Per-tab summary cards. The brief's required quartet:
-         * Total / Under Review / Shortlisted / Rejected+Accepted.
-         * Render 0 when no data so the row stays visible even
-         * before any application exists.
+         * Six summary cards covering every stage of the active
+         * pipeline (withdrawn rows have their own dedicated tab so
+         * they're not counted here). Numbers come from the same
+         * `/candidates/dashboard/stats` endpoint as the sidebar
+         * badge, rolled into the user-facing buckets by
+         * `rollupStats` above. Each card renders even when the
+         * count is 0 so the row stays visible from day one.
          */}
-        <div className="fav-summary" data-testid="applications-summary">
+        <div className="applications-summary" data-testid="applications-summary">
           <div className="fav-stat coral">
             <div className="fav-stat-icon">▤</div>
             <div className="fav-stat-value">{roll.total}</div>
-            <div className="fav-stat-label">Total Applied</div>
+            <div className="fav-stat-label">Total Applications</div>
           </div>
           <div className="fav-stat">
             <div className="fav-stat-icon">⌕</div>
@@ -155,9 +184,19 @@ export default function CandidateApplications() {
             <div className="fav-stat-label">Shortlisted</div>
           </div>
           <div className="fav-stat">
+            <div className="fav-stat-icon">☎</div>
+            <div className="fav-stat-value">{roll.interview}</div>
+            <div className="fav-stat-label">Interview Scheduled</div>
+          </div>
+          <div className="fav-stat">
             <div className="fav-stat-icon">✓</div>
-            <div className="fav-stat-value">{roll.decided}</div>
-            <div className="fav-stat-label">Decided</div>
+            <div className="fav-stat-value">{roll.accepted}</div>
+            <div className="fav-stat-label">Accepted</div>
+          </div>
+          <div className="fav-stat">
+            <div className="fav-stat-icon">✕</div>
+            <div className="fav-stat-value">{roll.rejected}</div>
+            <div className="fav-stat-label">Rejected</div>
           </div>
         </div>
 
@@ -204,6 +243,14 @@ export default function CandidateApplications() {
               });
               if (!view) return null;
               const badge = statusBadge(row.status);
+              const isRejected = String(row.status || '').toLowerCase() === 'rejected';
+              // Decode the canonical rejection reason + improvement
+              // suggestions for the rejected-application feedback
+              // panel. Returns null for non-rejected rows or rejected
+              // rows where the employer hasn't supplied a reason yet
+              // (pre-validator legacy rows).
+              const rejectionMeta = isRejected ? parseRejectionReason(row.rejection_reason) : null;
+              const rejectedDate = isRejected ? formatRejectedDate(row.updated_at) : null;
               return (
                 <div key={row.id} className="application-card-wrap">
                   <div className="application-status-row">
@@ -223,6 +270,33 @@ export default function CandidateApplications() {
                    * (open the job to withdraw). This keeps the list
                    * surface focused on browsing active applications.
                    */}
+                  {isRejected && (
+                    <div
+                      className="rejection-feedback"
+                      data-testid="rejection-feedback"
+                      aria-label="Rejection feedback"
+                    >
+                      <div className="rejection-feedback-head">
+                        <span className="rejection-feedback-label">Reason</span>
+                        <span className="rejection-feedback-value">
+                          {rejectionMeta?.label || 'Not specified'}
+                        </span>
+                        {rejectedDate && (
+                          <span className="rejection-feedback-date">· {rejectedDate}</span>
+                        )}
+                      </div>
+                      {rejectionMeta && rejectionMeta.suggestions.length > 0 && (
+                        <div className="rejection-feedback-body">
+                          <div className="rejection-feedback-title">Suggested improvements</div>
+                          <ul className="rejection-feedback-list">
+                            {rejectionMeta.suggestions.map((s, i) => (
+                              <li key={i}>{s}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}

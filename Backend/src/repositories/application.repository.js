@@ -79,7 +79,13 @@ async function listForCandidate(candidate_user_id, { page = 1, limit = 10, statu
   // row carries both `j.id` (preferred by toJobCardShape) and
   // `job_id` (legacy alias) so neither call site needs changing.
   const rows = await db.query(
+    // a.rejection_reason — surfaced to the candidate so the
+    // rejected-application card can render the canonical reason
+    // plus improvement suggestions. Stored shape on that column:
+    // the canonical key (e.g. "skills_mismatch") OR
+    // "other:<custom text>" — the frontend parses both forms.
     `SELECT a.id, a.status, a.applied_at, a.updated_at, a.expected_salary,
+            a.rejection_reason,
             j.id AS job_id, j.id AS j_id,
             j.title AS job_title, j.location AS job_location,
             j.city, j.country, j.is_remote, j.work_mode, j.is_global_remote,

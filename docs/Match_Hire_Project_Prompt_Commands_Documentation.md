@@ -934,4 +934,33 @@ git push
 
 ---
 
-*End of document. Append the next prompt as Step 54.*
+### Step 54
+**Date:** 2026-05-31
+**Module:** Application workflow + Rejection feedback
+**Purpose:** Tighten the candidate-side application surface (rename, 6-card summary, live withdrawn count, mandatory rejection reasons with candidate-visible feedback + improvement suggestions).
+**Prompt Command (verbatim, abbreviated):**
+> Rename "Job Applications" → "My Applications" everywhere. Add 6 summary cards (Total / Under Review / Shortlisted / Interview Scheduled / Accepted / Rejected) with auto-updating counts. Withdrawn tab gets a live count badge in the sidebar; withdraw button stays off the list. Add `Interview Scheduled` status label. Make rejection reason mandatory (canonical list + "Other" with custom text). Display rejection reason + tailored improvement suggestions on the rejected card. Don't break apply / save / favourite / withdraw / dashboard logic.
+**Expected Output:**
+  - **Backend:**
+    - `Backend/src/validators/employer.validator.js`: `rejectionReason` is now `{ reason: Joi.valid(<canonical keys>).required(), custom_reason: required when reason === 'other' }`. New `REJECTION_REASON_KEYS` export keeps frontend + backend in sync.
+    - `Backend/src/controllers/employer.controller.js#rejectApplication`: composes the stored value — canonical key for the listed reasons, `other:<custom text>` for the free-text branch — so a future schema change isn't needed.
+    - `Backend/src/repositories/application.repository.js#listForCandidate`: SELECT now includes `a.rejection_reason` so the candidate sees the reason on rejected rows.
+  - **Frontend:**
+    - **Rename** "Job Applications" → "My Applications" in `CandidateDashSidebar.jsx`, `DashboardCandidate.jsx` (recent-apps header), and `CandidateWithdrawn.jsx` (empty-state copy).
+    - **Sidebar:** new `withdrawnTotal` badge wired from `stats.applications.by_status.withdrawn`. The active `appsTotal` badge now excludes withdrawn rows (matches the list's `exclude_statuses` contract) so the sidebar and the page agree.
+    - **6 summary cards** on `CandidateApplications.jsx`: Total / Under Review / Shortlisted / Interview Scheduled / Accepted / Rejected. `rollupStats` rewrites the by-status map into the new buckets (`interview` → Interview Scheduled, `accepted+offered+hired` → Accepted). New `.applications-summary` CSS grid collapses 6 → 3 → 2 → 1 across breakpoints.
+    - **Label unification**: `interview` is rendered as "Interview Scheduled" on the Applications page status badge to match the overview page.
+    - **Rejection feedback** on each rejected row: a coral-tinted panel below the JobCard shows the canonical reason label + the rejected-date + a tailored list of improvement suggestions. New `Frontend/src/data/rejection-reasons.js` owns the canonical list (key + label + 3 suggestions) and a `parseRejectionReason` decoder that handles both the canonical-key and `other:<text>` storage shapes (plus legacy free-text rows).
+  - **QA:** new `qa/api/candidates.test.js` block "Employer reject-application contract" — proves the validator rejects empty / non-canonical / missing-custom_reason payloads and accepts valid canonical + valid "other" submissions. 8/8 candidates API tests pass; full API suite 23/23.
+**Status:** Completed
+**Commit:** *(this commit)*
+**Notes:**
+  - **No DB migrations.** The `rejection_reason` column already exists at VARCHAR(500); the storage shape change (key vs free text) is convention-only.
+  - **Withdraw button stays off the My Applications list** — that was set in Step 50 and remains the rule. The withdraw flow lives on the Job Detail page.
+  - **The "Interview Scheduled" status** uses the existing `interview` enum value — no migration. Display copy is unified across the candidate dashboard.
+  - **Improvement suggestions are static + reason-keyed today.** Each canonical key carries 3 hand-curated suggestions in `data/rejection-reasons.js`; a future AI generator can swap the suggestions array on a per-candidate basis without changing the parse layer.
+  - **Counts auto-update**: `CandidateApplications.jsx`, `DashboardCandidate.jsx`, and `CandidateDashboardLayout.jsx` all fetch `/candidates/dashboard/stats` on mount; the sidebar badge + summary cards both consume the same shape, so any successful apply / withdraw refetch propagates everywhere.
+
+---
+
+*End of document. Append the next prompt as Step 55.*

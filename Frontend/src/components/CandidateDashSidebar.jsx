@@ -81,6 +81,7 @@ export default function CandidateDashSidebar({
   user,
   appsTotal,
   favoritesTotal,
+  withdrawnTotal,
   onSignOut,
 }) {
   return (
@@ -95,31 +96,41 @@ export default function CandidateDashSidebar({
       <ul className="dash-nav">
         {/*
          * Sidebar items match the candidate-dashboard spec exactly:
-         * Overview, Job Applications, Saved Jobs, Favourites,
-         * Messages, Notifications, Settings, Logout. Profile and
-         * Preferences are intentionally NOT in the sidebar — they
-         * live as standalone pages reached from the top header /
-         * inline CTAs so the sidebar stays focused on the
-         * day-to-day hiring workflow.
+         * Overview, My Applications, Saved Jobs, Favourites,
+         * Withdrawn Applications, Messages, Notifications, Settings,
+         * Logout. Profile and Preferences are intentionally NOT in
+         * the sidebar — they live as standalone pages reached from
+         * the top header / inline CTAs.
+         *
+         * Counter logic: the applications badge reflects the ACTIVE
+         * pipeline (withdrawn rows excluded server-side via the
+         * Applications page filter). The withdrawn badge counts the
+         * terminal-pull-out rows separately so a candidate sees
+         * both totals at a glance.
          */}
         <NavRow to="/dashboard/candidate" icon="●" label="Overview" />
         <NavRow
           to="/dashboard/candidate/applications"
           icon="▤"
-          label="Job Applications"
+          label="My Applications"
           badge={appsTotal}
         />
         <NavRow to="/saved-jobs" icon="⌘" label="Saved Jobs" />
         <NavRow to="/favorites" icon="♥" label="Favourites" badge={favoritesTotal} />
         {/*
-         * Withdrawn Applications is a sibling tab to Job Applications.
+         * Withdrawn Applications is a sibling tab to My Applications.
          * Active applications live in the main Applications tab;
          * withdrawals get their own surface so the active pipeline
          * stays uncluttered and the candidate keeps a permanent
          * record of every withdrawal (with Reapply / View Job
          * affordances).
          */}
-        <NavRow to="/dashboard/candidate/withdrawn" icon="↶" label="Withdrawn Applications" />
+        <NavRow
+          to="/dashboard/candidate/withdrawn"
+          icon="↶"
+          label="Withdrawn Applications"
+          badge={withdrawnTotal}
+        />
         <NavRow to="/dashboard/candidate/messages" icon="✉" label="Messages" />
         <NavRow to="/dashboard/candidate/notifications" icon="◉" label="Notifications" />
         <NavRow to="/dashboard/candidate/settings" icon="⚙" label="Settings" />

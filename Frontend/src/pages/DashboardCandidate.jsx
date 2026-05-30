@@ -126,7 +126,11 @@ export default function DashboardCandidate() {
     return () => { cancelled = true; };
   }, [user?.id]);
 
-  const appsTotal = stats?.applications?.total ?? 0;
+  // Active applications = total minus withdrawn. Matches the rollup
+  // used by the dashboard layout's sidebar so the overview and the
+  // sub-routes show the same number.
+  const withdrawnTotal = stats?.applications?.by_status?.withdrawn ?? 0;
+  const appsTotal = Math.max(0, (stats?.applications?.total ?? 0) - withdrawnTotal);
   const favoritesTotal = stats?.favorites?.total ?? 0;
   const interviewsTotal = stats?.interviews?.total ?? 0;
   const profileStrength = stats?.profile_strength ?? 0;
@@ -169,6 +173,7 @@ export default function DashboardCandidate() {
           user={user}
           appsTotal={appsTotal}
           favoritesTotal={favoritesTotal}
+          withdrawnTotal={withdrawnTotal}
           onSignOut={logout}
         />
 
@@ -248,7 +253,7 @@ export default function DashboardCandidate() {
           <div className="dash-row split">
             <div className="dash-panel">
               <div className="dash-panel-head">
-                <h3>Job Applications</h3>
+                <h3>My Applications</h3>
                 <Link to="/applications">See all {appsTotal} →</Link>
               </div>
               {apps.length === 0 ? (

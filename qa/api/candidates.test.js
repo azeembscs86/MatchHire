@@ -100,6 +100,41 @@ describe('Candidate-side APIs', () => {
   });
 });
 
+describe('Employer reject-application contract', () => {
+  test('Reason is mandatory and must come from the canonical list', async () => {
+    const { token } = await login('COMPANY');
+    const client = newClient(token);
+
+    // Hit a guaranteed-not-found application id — the validator runs
+    // BEFORE the not-found / ownership checks, so a 4xx here proves
+    // the validator rejected the body. The ?id=9999999 means we
+    // never mutate any real application row.
+    const url = '/employers/applications/9999999/reject';
+
+    // Empty body — must fail validation (reason is now required).
+    const empty = await client.post(url, {});
+    expect([400, 422]).toContain(empty.status);
+
+    // Free-text "Spam" — not a canonical key — must fail validation.
+    const bad = await client.post(url, { reason: 'Spam' });
+    expect([400, 422]).toContain(bad.status);
+
+    // `reason: 'other'` without `custom_reason` — must fail.
+    const otherEmpty = await client.post(url, { reason: 'other' });
+    expect([400, 422]).toContain(otherEmpty.status);
+
+    // Valid canonical reason → validator passes; route falls through
+    // to the not-found check and returns 404 (or 403 if the employer
+    // doesn't own the job — but with id=9999999 we expect 404).
+    const valid = await client.post(url, { reason: 'skills_mismatch' });
+    expect([403, 404]).toContain(valid.status);
+
+    // Valid "other" branch with custom_reason → also passes validation.
+    const validOther = await client.post(url, { reason: 'other', custom_reason: 'Found a better fit internally.' });
+    expect([403, 404]).toContain(validOther.status);
+  });
+});
+
 describe('Employer-side recommended candidates', () => {
   test('Requires an employer token; candidates get 4xx', async () => {
     const { token: candidateToken } = await login('CANDIDATE');

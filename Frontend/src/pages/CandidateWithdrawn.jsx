@@ -87,7 +87,7 @@ export default function CandidateWithdrawn() {
         ) : records.length === 0 ? (
           <EmptyState
             title="No withdrawn applications"
-            message="When you withdraw an application it'll appear here. Active applications live in the Job Applications tab."
+            message="When you withdraw an application it'll appear here. Active applications live in the My Applications tab."
           >
             <Link to="/dashboard/candidate/applications" className="btn btn-coral" style={{ marginTop: 12 }}>
               View active applications →

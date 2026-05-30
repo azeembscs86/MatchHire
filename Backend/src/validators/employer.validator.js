@@ -88,9 +88,37 @@ const applicantListFilters = Joi.object({
   limit: Joi.number().integer().min(1).max(100).default(10),
 }).unknown(false);
 
-/** Body for POST /employers/applications/:applicationId/reject (reason only). */
+/**
+ * Body for POST /employers/applications/:applicationId/reject.
+ *
+ * The employer MUST pick a reason from the canonical list — free-text
+ * rejection is not allowed except via the explicit "other" key, which
+ * then requires a `custom_reason` payload. This is what the candidate
+ * sees on the rejected-application card and what drives the
+ * client-side improvement suggestions.
+ *
+ * Canonical reason keys are duplicated on the frontend (see
+ * `Frontend/src/data/rejection-reasons.js`) and must stay in sync.
+ */
+const REJECTION_REASON_KEYS = [
+  'skills_mismatch',
+  'insufficient_experience',
+  'education_mismatch',
+  'salary_mismatch',
+  'position_filled',
+  'location_mismatch',
+  'incomplete_profile',
+  'incomplete_application',
+  'poor_interview',
+  'other',
+];
 const rejectionReason = Joi.object({
-  reason: Joi.string().max(500).allow('', null),
+  reason: Joi.string().valid(...REJECTION_REASON_KEYS).required(),
+  custom_reason: Joi.string().max(500).when('reason', {
+    is: 'other',
+    then: Joi.required(),
+    otherwise: Joi.optional().allow('', null),
+  }),
 }).unknown(false);
 
 module.exports = {
@@ -100,5 +128,6 @@ module.exports = {
   interviewCreate,
   jobListFilters,
   applicantListFilters,
+  REJECTION_REASON_KEYS,
   rejectionReason,
 };

@@ -58,8 +58,20 @@ export default function CandidateDashboardLayout() {
       <div className="dash-layout">
         <CandidateDashSidebar
           user={user}
-          appsTotal={stats?.applications?.total ?? null}
+          /*
+           * Apps badge is the active-pipeline total (everything EXCEPT
+           * withdrawn). Withdrawn rows have their own badge below.
+           * Both numbers come from the same `/candidates/dashboard/stats`
+           * by_status map; the layout owns the rollup so every tab
+           * mounted under it sees a consistent count.
+           */
+          appsTotal={(() => {
+            const total = stats?.applications?.total ?? null;
+            const withdrawn = stats?.applications?.by_status?.withdrawn ?? 0;
+            return total == null ? null : Math.max(0, total - withdrawn);
+          })()}
           favoritesTotal={stats?.favorites?.total ?? null}
+          withdrawnTotal={stats?.applications?.by_status?.withdrawn ?? null}
           onSignOut={handleSignOut}
         />
         <div className="dash-main dash-main-flush">

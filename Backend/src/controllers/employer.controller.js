@@ -75,9 +75,30 @@ exports.shortlistApplication = async (req, res) => {
   return response.success(res, data, 'Application shortlisted');
 };
 
-/** Reject an application; optional `reason` stored for the audit trail. */
+/**
+ * Reject an application with a mandatory canonical reason.
+ *
+ * The validator has already enforced that:
+ *   - `reason` is one of REJECTION_REASON_KEYS
+ *   - `custom_reason` is present when `reason === 'other'`
+ *
+ * Persistence format on `applications.rejection_reason` (VARCHAR(500)):
+ *   - Canonical keys → stored as the key itself, e.g. "skills_mismatch"
+ *   - "other" branch → stored as "other:<custom text>" so the
+ *     candidate-supplied text survives without a schema change.
+ *
+ * The candidate-side renderer (CandidateApplications.jsx) parses this
+ * format, looks up the human-readable label for canonical keys, and
+ * surfaces the custom text verbatim for "other". Improvement
+ * suggestions are derived from the canonical key on the frontend.
+ */
 exports.rejectApplication = async (req, res) => {
-  const data = await service.rejectApplication(req.user.id, Number(req.params.applicationId), req.body?.reason);
+  const reasonKey = String(req.body?.reason || '').trim();
+  const customReason = String(req.body?.custom_reason || '').trim();
+  const stored = reasonKey === 'other' && customReason
+    ? `other:${customReason}`
+    : reasonKey;
+  const data = await service.rejectApplication(req.user.id, Number(req.params.applicationId), stored);
   return response.success(res, data, 'Application rejected');
 };
 

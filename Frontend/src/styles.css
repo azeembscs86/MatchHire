@@ -2817,3 +2817,72 @@
   .jobs-search-field:last-of-type{border-bottom:0}
   .jobs-search-submit{grid-column:1}
 }
+
+/* =============================================================================
+ * My Applications page — summary grid + rejection feedback
+ * ===========================================================================*/
+
+/*
+ * Six-card summary row above the active-applications list. Reuses the
+ * existing `.fav-stat` card chrome so the look matches Favourites +
+ * Saved Jobs summary strips. Six columns at desktop, three at tablet,
+ * two at narrow tablet, one on mobile — same collapse curve as
+ * `.fav-summary` but tuned for six items.
+ */
+.applications-summary{
+  display:grid;
+  grid-template-columns:repeat(6, minmax(0, 1fr));
+  gap:14px;margin-bottom:32px;
+}
+@media (max-width:1180px){
+  .applications-summary{grid-template-columns:repeat(3, minmax(0, 1fr))}
+}
+@media (max-width:768px){
+  .applications-summary{grid-template-columns:repeat(2, minmax(0, 1fr))}
+}
+@media (max-width:480px){
+  .applications-summary{grid-template-columns:1fr}
+}
+
+/*
+ * Rejection feedback panel — rendered below the JobCard whenever a
+ * row's status is `rejected`. Shows the canonical reason (decoded by
+ * `data/rejection-reasons.parseRejectionReason`) plus a short list of
+ * concrete improvement suggestions tailored to the reason. Uses a
+ * soft coral tint so it reads as feedback, not failure.
+ */
+.rejection-feedback{
+  margin-top:12px;
+  background:rgba(232,93,60,.06);
+  border:1px solid rgba(232,93,60,.18);
+  border-left:3px solid var(--coral);
+  border-radius:12px;
+  padding:14px 16px;
+}
+.rejection-feedback-head{
+  display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;
+  font-size:12px;color:var(--ink-soft);
+}
+.rejection-feedback-label{
+  font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted-2);font-weight:600;
+}
+.rejection-feedback-value{
+  font-family:'Fraunces',serif;font-size:14px;font-weight:600;
+  color:var(--coral-deep,#C73E1D);letter-spacing:-.005em;
+}
+.rejection-feedback-date{font-size:11px;color:var(--muted)}
+.rejection-feedback-body{
+  margin-top:10px;padding-top:10px;
+  border-top:1px solid rgba(232,93,60,.16);
+}
+.rejection-feedback-title{
+  font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted-2);font-weight:600;margin-bottom:6px;
+}
+.rejection-feedback-list{
+  margin:0;padding-left:18px;
+  display:flex;flex-direction:column;gap:4px;
+  font-size:12.5px;color:var(--ink-soft);line-height:1.45;
+}
+.rejection-feedback-list li::marker{color:var(--coral)}
