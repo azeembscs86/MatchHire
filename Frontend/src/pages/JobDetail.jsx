@@ -121,6 +121,17 @@ export default function JobDetail() {
   const [actionMessage, setActionMessage] = useState(null);
   const [hasApplied, setHasApplied] = useState(false);
   const [applicationStatus, setApplicationStatus] = useState(null);
+  // The candidate's own application id on this job (when one exists).
+  // Needed for the withdraw flow — the API is keyed by application id,
+  // not job id. Populated by the /jobs/:id payload's
+  // `application_id` decoration; nulled out after a successful
+  // withdrawal so the UI returns to its Apply-Now state.
+  const [applicationId, setApplicationId] = useState(null);
+  // Withdraw confirmation modal state. Open/close is driven by the
+  // candidate clicking "Withdraw" on the action bar; `withdrawing`
+  // guards the confirm button while the request is in flight.
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
   // Per-card applying state for the "Recommended for you" rail at the
   // bottom of the page. Tracked separately from the hero `applying`
   // flag so the hero button doesn't show a spinner while the rail
@@ -148,6 +159,7 @@ export default function JobDetail() {
         setJob(detail);
         setHasApplied(!!detail?.is_applied);
         setApplicationStatus(detail?.application_status || null);
+        setApplicationId(detail?.application_id ?? null);
         // Similar-jobs rail is candidate-facing — drop any expired
         // postings client-side as a backstop. The hero/detail above
         // can still render an expired anchor job (with the "no longer
@@ -182,6 +194,10 @@ export default function JobDetail() {
       const result = await candidatesApi.validateAndApply(job.id, {});
       setHasApplied(true);
       setApplicationStatus('applied');
+      // The validate-and-apply response carries the new application id
+      // when the application is created. Capture it so the Withdraw
+      // button on this page works without a page reload.
+      if (result?.application_id != null) setApplicationId(result.application_id);
       setActionMessage({
         ok: true,
         text: `Application submitted${result?.match_score != null ? ` · ${result.match_score}% match` : ''}.`,
@@ -200,6 +216,49 @@ export default function JobDetail() {
       }
     } finally {
       setApplying(false);
+    }
+  }
+
+  /**
+   * Statuses from which a candidate may still withdraw — mirrors the
+   * backend's WITHDRAWABLE_STATUSES exactly, so the button only
+   * appears when the API will actually honour it.
+   */
+  const WITHDRAWABLE_STATUSES = new Set([
+    'applied', 'reviewing', 'under_review', 'shortlisted', 'interview', 'offered',
+  ]);
+  const canWithdraw = hasApplied
+    && applicationId != null
+    && WITHDRAWABLE_STATUSES.has(String(applicationStatus || '').toLowerCase());
+
+  async function handleWithdraw() {
+    if (!canWithdraw || withdrawing) return;
+    setWithdrawing(true);
+    setActionMessage(null);
+    try {
+      await candidatesApi.applications.withdraw(applicationId);
+      // After withdrawal the job becomes re-applyable: the backend
+      // surfaces it again on every list (Home, Jobs, Recommended,
+      // Similar, Matching) and the Apply button on this page must
+      // come back. We flip `hasApplied` to false so the existing
+      // render logic naturally falls through to the Apply Now state.
+      setHasApplied(false);
+      setApplicationStatus('withdrawn');
+      // Keep `applicationId` populated so the surface can still
+      // reference the withdrawn record if needed; the Apply button
+      // doesn't read it.
+      setActionMessage({
+        ok: true,
+        text: 'Application withdrawn. The job is back in your feed if you change your mind.',
+      });
+      setWithdrawOpen(false);
+    } catch (err) {
+      setActionMessage({
+        ok: false,
+        text: err?.message || 'Could not withdraw application. Please try again.',
+      });
+    } finally {
+      setWithdrawing(false);
     }
   }
 
@@ -311,15 +370,37 @@ export default function JobDetail() {
           {/* ACTION BAR — Apply / Save / Favourite */}
           <div className="jd-actions">
             {hasApplied ? (
-              <button
-                className="btn btn-coral apply-btn apply-btn-applied"
-                disabled
-                aria-disabled="true"
-                type="button"
-                style={{ minWidth: 180 }}
-              >
-                ✓ Applied
-              </button>
+              <>
+                <button
+                  className="btn btn-coral apply-btn apply-btn-applied"
+                  disabled
+                  aria-disabled="true"
+                  type="button"
+                  style={{ minWidth: 180 }}
+                >
+                  ✓ Applied
+                </button>
+                {/*
+                 * Withdraw is rendered next to the Applied pill so the
+                 * candidate can pull out of an active application
+                 * straight from the job detail. The button is only
+                 * shown when the application is still in a withdrawable
+                 * pipeline state — terminal statuses (hired, accepted)
+                 * hide it. Confirmation modal is the same lightweight
+                 * `.confirm-card` pattern used elsewhere.
+                 */}
+                {canWithdraw && (
+                  <button
+                    type="button"
+                    className="btn btn-outline jd-withdraw-btn"
+                    onClick={() => setWithdrawOpen(true)}
+                    data-testid="jd-withdraw-button"
+                    title="Withdraw your application from this job"
+                  >
+                    Withdraw application
+                  </button>
+                )}
+              </>
             ) : isExpired ? (
               <button
                 className="btn btn-coral apply-btn apply-btn-expired"
@@ -524,6 +605,52 @@ export default function JobDetail() {
         </div>
 
       </div>
+
+      {/*
+       * Withdraw confirmation modal. Same lightweight single-column
+       * `.confirm-card` pattern used elsewhere in the app; the modal
+       * is rendered as a sibling to the main content so it overlays
+       * cleanly regardless of scroll position.
+       */}
+      {withdrawOpen && (
+        <div
+          className="confirm-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="jd-withdraw-title"
+          onClick={() => { if (!withdrawing) setWithdrawOpen(false); }}
+        >
+          <div className="confirm-card" onClick={(e) => e.stopPropagation()}>
+            <h3 id="jd-withdraw-title" className="confirm-title">Withdraw application?</h3>
+            <p className="confirm-body">
+              You're about to withdraw your application for{' '}
+              <strong>{job.title}</strong>
+              {job.company_name ? <> at <strong>{job.company_name}</strong></> : null}.
+              The job will reappear in your feed so you can apply again later if you change your mind.
+            </p>
+            <div className="confirm-actions">
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => setWithdrawOpen(false)}
+                disabled={withdrawing}
+              >
+                Keep application
+              </button>
+              <button
+                type="button"
+                className="btn btn-coral"
+                data-testid="jd-withdraw-confirm"
+                onClick={handleWithdraw}
+                disabled={withdrawing}
+                aria-busy={withdrawing}
+              >
+                {withdrawing ? 'Withdrawing…' : 'Yes, withdraw'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

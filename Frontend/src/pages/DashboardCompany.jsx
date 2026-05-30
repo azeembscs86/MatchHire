@@ -25,10 +25,13 @@ function initials(name = '') {
 }
 
 /**
- * Applicant status → display chip. Lets the employer table read a
- * withdrawn / rejected / hired application correctly instead of
- * painting every status with the same "active" pill. Candidates can
- * withdraw from their dashboard, so `withdrawn` must surface here.
+ * Applicant status → display chip. Withdrawn applications are NOT
+ * surfaced on the company dashboard (the backend's
+ * `listApplicantsForJob` + `statsForCompany` both exclude them by
+ * default); the row stays present in the database for the
+ * candidate's own withdrawn tab and for audit reporting. Should a
+ * withdrawn row ever slip through (e.g. an admin-only view), we
+ * still map it gracefully here.
  */
 const APPLICANT_STATUS = {
   applied:      { cls: 'pill-applied',     label: 'Applied' },
@@ -40,7 +43,6 @@ const APPLICANT_STATUS = {
   hired:        { cls: 'pill-accepted',    label: 'Hired' },
   accepted:     { cls: 'pill-accepted',    label: 'Accepted' },
   rejected:     { cls: 'pill-rejected',    label: 'Rejected' },
-  withdrawn:    { cls: 'pill-rejected',    label: 'Withdrawn' },
 };
 
 function applicantStatus(status) {
@@ -48,8 +50,11 @@ function applicantStatus(status) {
     || { cls: 'pill-active', label: status || 'Applied' };
 }
 
-/** Terminal states the employer can no longer act on. */
-const TERMINAL_APPLICANT_STATUSES = new Set(['withdrawn', 'rejected', 'hired', 'accepted']);
+/**
+ * Terminal states the employer can no longer act on. `withdrawn` is
+ * intentionally omitted — the employer never sees those rows.
+ */
+const TERMINAL_APPLICANT_STATUSES = new Set(['rejected', 'hired', 'accepted']);
 
 
 export default function DashboardCompany() {

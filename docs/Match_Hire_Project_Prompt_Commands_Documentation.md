@@ -840,4 +840,25 @@ git push
 
 ---
 
-*End of document. Append the next prompt as Step 50.*
+### Step 50
+**Date:** 2026-05-30
+**Module:** Application flow + Search UX
+**Purpose:** Step 2 of the multi-step plan. Tighten the candidate application lifecycle (applied jobs disappear from listings; withdrawn jobs reappear), give withdrawals their own dashboard tab, hide withdrawals from employers, and replace the cluttered Jobs filter sidebar header with a modern unified search bar.
+**Prompt Command (verbatim, abbreviated):**
+> 1. Applied jobs visibility: filter all job listing APIs by candidate id; exclude active statuses (Applied, Under Review, Shortlisted, Accepted). 2. Job Applications tab hides withdrawn + removes withdraw button. 3. New "Withdrawn Applications" sidebar tab with View Job / Reapply. 4. Withdraw flow from Job Detail page, not the list, with confirmation modal. 5. After withdraw the job reappears in every list. 6. Company dashboard never shows withdrawn applications. 7. Modern search bar — Job Title / Skills / Company / Location, autosuggest, recent searches, clear buttons, no internal scrollbars. Do not break Apply/Save/Favourite/Job Detail/dashboards.
+**Expected Output:**
+  - **Backend:** new shared SQL fragment `notHasActiveApplicationFragment()` filters `status NOT IN ('withdrawn','rejected')` — applied threads through `listPublic`, `listLocationBased`, `recommendedForUser`, `similarJobs`. `application.repository.listForCandidate` accepts `statuses[]` + `exclude_statuses[]`. `listApplicantsForJob` and `statsForCompany` hide withdrawn rows from employers by default. `home.service.employerSummary` excludes withdrawn from weekly counts. `public.service.getJob` semantically redefines `is_applied` to mean "active application only" so withdrawals re-enable Apply Now. New `company` filter on `/jobs` (validated in both `home.validator` and `public.validator`).
+  - **Frontend:** new `CandidateWithdrawn.jsx` page + `/dashboard/candidate/withdrawn` route + sidebar entry. `CandidateApplications.jsx` fetches with `exclude_statuses:['withdrawn']` and drops in-list withdraw button + modal. `JobDetail.jsx` owns the withdraw confirmation modal and re-enables Apply Now after withdrawal. `DashboardCompany.jsx` drops the `withdrawn` status mapping and tightens its terminal-status set. `Jobs.jsx` gains a modern top search bar (4 fields, skill autocomplete via `/skills?search=`, recent-search chips persisted in localStorage, per-field clear buttons, search icon) + the sidebar loses its duplicate Keyword/Skills/Location groups and its internal scrollbar.
+  - **Swagger:** `/candidates/applications/list` description rewritten with three filter-shape examples (active-tab, withdrawn-tab, single-status).
+  - **QA:** new candidate API tests (statuses + exclude_statuses + bad-value 4xx); new jobs API test (`company` filter narrows by name substring). Full Playwright suite continues to pass.
+**Status:** Completed
+**Commit:** *(this commit)*
+**Notes:**
+  - **No database migrations.** Every change is a filter / projection on existing columns.
+  - The `is_applied` semantic change is a deliberate breaking nuance: it now means "active application", not "any application history". The `application_id` and `application_status` fields stay populated so the UI can still surface "previously withdrawn" copy if desired.
+  - **Supersedes the withdraw-from-list affordance shipped in Step 44.** Step 44's in-list withdraw button + modal moved to JobDetail; Step 44's company-dashboard `withdrawn` pill mapping is also intentionally removed (employers should not see withdrawn rows at all).
+  - Cache: guest payload on `/home` and per-route job lists may need a Redis flush after upgrading so the new `liveStats`/`is_applied` shapes are not served from stale cache (`DEL matchhire:home:payload:guest`).
+
+---
+
+*End of document. Append the next prompt as Step 51.*

@@ -53,6 +53,39 @@ describe('Candidate-side APIs', () => {
     expect(missing.status).toBe(404);
   });
 
+  test('POST /candidates/applications/list honours statuses + exclude_statuses', async () => {
+    const { token } = await login('CANDIDATE');
+    const client = newClient(token);
+
+    // Active list — `exclude_statuses: ['withdrawn']` must never
+    // return a withdrawn row.
+    const active = await client.post('/candidates/applications/list', {
+      page: 1, limit: 100, exclude_statuses: ['withdrawn'],
+    });
+    expect(active.status).toBe(200);
+    const activeRows = active.data?.Data?.records || [];
+    for (const r of activeRows) {
+      expect(String(r.status).toLowerCase()).not.toBe('withdrawn');
+    }
+
+    // Withdrawn tab — `statuses: ['withdrawn']` must return only
+    // withdrawn rows (empty array is acceptable — seed-dependent).
+    const withdrawn = await client.post('/candidates/applications/list', {
+      page: 1, limit: 100, statuses: ['withdrawn'],
+    });
+    expect(withdrawn.status).toBe(200);
+    const withdrawnRows = withdrawn.data?.Data?.records || [];
+    for (const r of withdrawnRows) {
+      expect(String(r.status).toLowerCase()).toBe('withdrawn');
+    }
+
+    // Reject obviously bad status values (the validator's enum guard).
+    const bad = await client.post('/candidates/applications/list', {
+      statuses: ['not-a-real-status'],
+    });
+    expect([400, 422]).toContain(bad.status);
+  });
+
   test('POST /candidates/:id/message blocks inappropriate content', async () => {
     const { token } = await login('CANDIDATE');
     // Pick any other candidate id — we send banned content so the

@@ -349,8 +349,13 @@ async function employerSummary(viewerUserId) {
       [companyId]
     ).catch(() => ({ n: 0 })),
     db.queryOne(
+      // Withdrawn applications are excluded from every employer-facing
+      // count — the employer's snapshot reflects the active hiring
+      // pipeline only.
       `SELECT COUNT(*) AS n FROM applications
-        WHERE company_id = ? AND applied_at >= (NOW() - INTERVAL 7 DAY)`,
+        WHERE company_id = ?
+          AND applied_at >= (NOW() - INTERVAL 7 DAY)
+          AND status <> 'withdrawn'`,
       [companyId]
     ).catch(() => ({ n: 0 })),
     db.queryOne(

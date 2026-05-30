@@ -17,11 +17,11 @@
  *   - authed, no skills on file -> "Please add your skills to see..."
  *   - authed, profileIncomplete -> "Complete your profile and add..."
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import JobCard from '../components/JobCard.jsx';
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.jsx';
-import { homeApi, candidatesApi } from '../api/index.js';
+import { homeApi, candidatesApi, skillsApi } from '../api/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { toJobCardShape } from '../api/adapters.js';
 
@@ -180,7 +180,8 @@ const SORTS_GUEST = [
 ];
 
 const DEFAULT_FILTERS = {
-  keyword: '', location: '', skills: '', job_type: '', experience_level: '',
+  keyword: '', location: '', skills: '', company: '',
+  job_type: '', experience_level: '',
   work_mode: '', salary_min: undefined, salary_max: undefined,
   posted_within: 0, match_threshold: 40, sort: 'best_match',
 };
@@ -203,6 +204,7 @@ function filtersFromSearchParams(params, isCandidate) {
     keyword: params.get('keyword') || '',
     skills: params.get('skills') || '',
     location: params.get('location') || '',
+    company: params.get('company') || '',
     work_mode: params.get('work_mode') || '',
     job_type: params.get('job_type') || '',
     experience_level: params.get('experience_level') || '',
@@ -227,6 +229,111 @@ function filtersFromSearchParams(params, isCandidate) {
  * surfaces.
  */
 
+/* ---------- Modern search bar --------------------------------------------- */
+
+/**
+ * Persistent recent-searches helper. We store the last few committed
+ * keyword searches in localStorage so a returning candidate sees a
+ * "Recent" row under the bar. Capped at 5 entries; oldest is dropped
+ * on overflow. The shape is intentionally flat (just the keyword
+ * string) — recent searches are a UX hint, not a query replay surface.
+ */
+const RECENT_KEY = 'mh.jobs.recentSearches';
+const RECENT_MAX = 5;
+function loadRecent() {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(RECENT_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.slice(0, RECENT_MAX) : [];
+  } catch {
+    return [];
+  }
+}
+function saveRecent(list) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, RECENT_MAX)));
+  } catch { /* quota / privacy mode — non-fatal */ }
+}
+function pushRecent(value) {
+  const v = String(value || '').trim();
+  if (!v) return loadRecent();
+  const prev = loadRecent();
+  const next = [v, ...prev.filter((x) => x.toLowerCase() !== v.toLowerCase())].slice(0, RECENT_MAX);
+  saveRecent(next);
+  return next;
+}
+
+/**
+ * Tiny search-icon button. Pure presentation — the form submits via
+ * its own onSubmit so the icon button is the visible affordance, not
+ * the active control.
+ */
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" width="16" height="16" aria-hidden="true">
+      <circle cx="11" cy="11" r="7" />
+      <path d="m21 21-4.3-4.3" />
+    </svg>
+  );
+}
+
+/**
+ * Single search field with built-in clear button and (optional)
+ * autocomplete dropdown. The dropdown is rendered as a portal-style
+ * absolute element under the field; clicks outside close it via the
+ * effect on `.jobs-search-bar`.
+ */
+function SearchField({
+  label, name, value, onChange, onSubmit, placeholder,
+  suggestions = [], onSuggestionPick, onFocus, focused,
+}) {
+  return (
+    <div className={`jobs-search-field${focused ? ' is-focused' : ''}`}>
+      <label htmlFor={`jobs-search-${name}`}>{label}</label>
+      <div className="jobs-search-field-row">
+        <input
+          id={`jobs-search-${name}`}
+          type="text"
+          value={value}
+          placeholder={placeholder}
+          onChange={(e) => onChange(e.target.value)}
+          onFocus={onFocus}
+          onKeyDown={(e) => { if (e.key === 'Enter') onSubmit(); }}
+          autoComplete="off"
+          data-testid={`jobs-search-${name}`}
+        />
+        {value && (
+          <button
+            type="button"
+            className="jobs-search-clear"
+            onClick={() => onChange('')}
+            aria-label={`Clear ${label}`}
+            title={`Clear ${label}`}
+          >×</button>
+        )}
+      </div>
+      {focused && suggestions.length > 0 && (
+        <ul className="jobs-search-suggest" role="listbox" data-testid={`jobs-search-${name}-suggest`}>
+          {suggestions.map((s) => (
+            <li key={s.id || s.name || s}>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault() /* keep focus until pick fires */}
+                onClick={() => onSuggestionPick(s)}
+              >
+                {s.name || s.label || String(s)}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /* ---------- Page ----------------------------------------------------------- */
 
 export default function Jobs() {
@@ -244,6 +351,15 @@ export default function Jobs() {
   const [keywordInput, setKeywordInput] = useState(filters.keyword);
   const [skillsInput, setSkillsInput] = useState(filters.skills);
   const [locationInput, setLocationInput] = useState(filters.location);
+  const [companyInput, setCompanyInput] = useState(filters.company);
+
+  // Modern search bar state: which field is focused (drives the
+  // suggestion dropdown visibility), live skill suggestions from the
+  // catalogue, and the recent-searches stash.
+  const [focusedField, setFocusedField] = useState(null);
+  const [skillSuggestions, setSkillSuggestions] = useState([]);
+  const [recentSearches, setRecentSearches] = useState(() => loadRecent());
+  const searchBarRef = useRef(null);
 
   const [data, setData] = useState({ records: [], total: 0, profileIncomplete: false, message: null });
   const [loading, setLoading] = useState(true);
@@ -269,6 +385,7 @@ export default function Jobs() {
         filters.keyword === keywordInput
         && filters.skills === skillsInput
         && filters.location === locationInput
+        && filters.company === companyInput
       ) return;
       setPage(1);
       setFilters((prev) => ({
@@ -276,10 +393,11 @@ export default function Jobs() {
         keyword: keywordInput,
         skills: skillsInput,
         location: locationInput,
+        company: companyInput,
       }));
     }, 350);
     return () => clearTimeout(handle);
-  }, [keywordInput, skillsInput, locationInput, filters.keyword, filters.skills, filters.location]);
+  }, [keywordInput, skillsInput, locationInput, companyInput, filters.keyword, filters.skills, filters.location, filters.company]);
 
   /*
    * URL sync. Every change to `filters` writes a fresh search-params
@@ -293,6 +411,7 @@ export default function Jobs() {
     if (filters.keyword) next.set('keyword', filters.keyword);
     if (filters.skills) next.set('skills', filters.skills);
     if (filters.location) next.set('location', filters.location);
+    if (filters.company) next.set('company', filters.company);
     if (filters.work_mode) next.set('work_mode', filters.work_mode);
     if (filters.job_type) next.set('job_type', filters.job_type);
     if (filters.experience_level) next.set('experience_level', filters.experience_level);
@@ -306,6 +425,64 @@ export default function Jobs() {
     if (filters.sort && filters.sort !== defaultSort) next.set('sort', filters.sort);
     setSearchParams(next, { replace: true });
   }, [filters, isCandidate, setSearchParams]);
+
+  /*
+   * Skill suggestions for the Skills field. We re-query the catalogue
+   * (debounced at 200ms) every time `skillsInput` changes — fewer
+   * keystrokes than the main filter debounce so the dropdown feels
+   * live. Anything short (< 1 char) clears the list to avoid
+   * showing the entire skill catalogue.
+   */
+  useEffect(() => {
+    if (focusedField !== 'skills') return undefined;
+    const q = (skillsInput || '').trim();
+    if (q.length < 1) { setSkillSuggestions([]); return undefined; }
+    const handle = setTimeout(async () => {
+      try {
+        const rows = await skillsApi.search(q, 8);
+        const list = rows?.records || rows?.rows || rows || [];
+        setSkillSuggestions(Array.isArray(list) ? list.slice(0, 8) : []);
+      } catch {
+        setSkillSuggestions([]);
+      }
+    }, 200);
+    return () => clearTimeout(handle);
+  }, [skillsInput, focusedField]);
+
+  /*
+   * Outside-click → blur the focused field (closes the suggestion
+   * dropdown / recent-searches popover). Listens on the document and
+   * unwires on unmount.
+   */
+  useEffect(() => {
+    function onDocClick(e) {
+      if (!searchBarRef.current) return;
+      if (!searchBarRef.current.contains(e.target)) setFocusedField(null);
+    }
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, []);
+
+  /**
+   * Commit the current text inputs to filters immediately (instead of
+   * waiting for the 350ms debounce) and push the keyword onto the
+   * recent-searches stash. Wired to the search-bar's submit + the
+   * primary Search button.
+   */
+  function commitSearch() {
+    setPage(1);
+    setFilters((prev) => ({
+      ...prev,
+      keyword: keywordInput,
+      skills: skillsInput,
+      location: locationInput,
+      company: companyInput,
+    }));
+    if (keywordInput.trim()) {
+      setRecentSearches(pushRecent(keywordInput));
+    }
+    setFocusedField(null);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -322,6 +499,7 @@ export default function Jobs() {
           keyword: filters.keyword || undefined,
           location: filters.location || undefined,
           skills: filters.skills || undefined,
+          company: filters.company || undefined,
           job_type: filters.job_type || undefined,
           experience_level: filters.experience_level || undefined,
           work_mode: filters.work_mode || undefined,
@@ -394,6 +572,7 @@ export default function Jobs() {
     setKeywordInput('');
     setSkillsInput('');
     setLocationInput('');
+    setCompanyInput('');
     setFilters({ ...DEFAULT_FILTERS, sort: isCandidate ? 'best_match' : 'latest' });
   }
 
@@ -458,42 +637,115 @@ export default function Jobs() {
         </div>
       </div>
 
+      {/*
+       * Modern Jobs search bar — sits between the page hero and the
+       * browse layout. Four canonical fields (Job title, Skills,
+       * Company, Location) with a single primary Search button. Skill
+       * suggestions and recent searches live here too. The previous
+       * sidebar duplicates for keyword / skills / location were
+       * removed; the sidebar keeps only advanced filters (work mode,
+       * salary, posted-within, experience level, AI match minimum,
+       * sort). No internal scrollbars.
+       */}
+      <div className="container jobs-search-band">
+        <form
+          className="jobs-search-bar"
+          ref={searchBarRef}
+          onSubmit={(e) => { e.preventDefault(); commitSearch(); }}
+          role="search"
+        >
+          <SearchField
+            label="Job title"
+            name="title"
+            value={keywordInput}
+            onChange={setKeywordInput}
+            onSubmit={commitSearch}
+            placeholder="e.g. Senior Frontend Engineer"
+            onFocus={() => setFocusedField('title')}
+            focused={focusedField === 'title'}
+            suggestions={
+              focusedField === 'title' && !keywordInput && recentSearches.length > 0
+                ? recentSearches.map((s) => ({ id: `recent-${s}`, name: s }))
+                : []
+            }
+            onSuggestionPick={(s) => { setKeywordInput(s.name || s); setFocusedField(null); }}
+          />
+          <SearchField
+            label="Skills"
+            name="skills"
+            value={skillsInput}
+            onChange={setSkillsInput}
+            onSubmit={commitSearch}
+            placeholder="react, node.js, aws"
+            onFocus={() => setFocusedField('skills')}
+            focused={focusedField === 'skills'}
+            suggestions={focusedField === 'skills' ? skillSuggestions : []}
+            onSuggestionPick={(s) => {
+              // Append to existing comma-separated list, dedup case-insensitively.
+              const name = s.name || String(s);
+              const existing = skillsInput.split(',').map((x) => x.trim()).filter(Boolean);
+              if (!existing.some((x) => x.toLowerCase() === name.toLowerCase())) existing.push(name);
+              setSkillsInput(existing.join(', '));
+              setFocusedField(null);
+            }}
+          />
+          <SearchField
+            label="Company"
+            name="company"
+            value={companyInput}
+            onChange={setCompanyInput}
+            onSubmit={commitSearch}
+            placeholder="Company name"
+            onFocus={() => setFocusedField('company')}
+            focused={focusedField === 'company'}
+          />
+          <SearchField
+            label="Location"
+            name="location"
+            value={locationInput}
+            onChange={setLocationInput}
+            onSubmit={commitSearch}
+            placeholder="City or country"
+            onFocus={() => setFocusedField('location')}
+            focused={focusedField === 'location'}
+          />
+          <button
+            type="submit"
+            className="btn btn-coral jobs-search-submit"
+            data-testid="jobs-search-submit"
+            aria-label="Search jobs"
+          >
+            <SearchIcon /> Search
+          </button>
+        </form>
+        {recentSearches.length > 0 && (keywordInput === '' && focusedField !== 'title') && (
+          <div className="jobs-search-recent" aria-label="Recent searches">
+            <span className="jobs-search-recent-label">Recent:</span>
+            {recentSearches.map((s) => (
+              <button
+                key={s}
+                type="button"
+                className="jobs-search-recent-chip"
+                onClick={() => { setKeywordInput(s); commitSearch(); }}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="container browse-layout">
         <aside className="filters">
+          {/*
+           * Advanced filters only — Keyword / Skills / Company /
+           * Location moved to the search bar above. Work-mode pill
+           * row stays here as a quick chip filter that complements
+           * the location text input.
+           */}
           <div className="filter-group">
-            <h4>Keyword</h4>
-            <input
-              className="filter-input"
-              placeholder="Title, skill, or company"
-              value={keywordInput}
-              onChange={(e) => setKeywordInput(e.target.value)}
-            />
-          </div>
-          <div className="filter-group">
-            <h4>Skills</h4>
-            <input
-              className="filter-input"
-              placeholder="e.g. react, node.js"
-              value={skillsInput}
-              onChange={(e) => setSkillsInput(e.target.value)}
-            />
-            <small className="filter-help">Match any of the skills you list.</small>
-          </div>
-          <div className="filter-group">
-            <h4>Location</h4>
-            <input
-              className="filter-input"
-              placeholder="City or country"
-              value={locationInput}
-              onChange={(e) => setLocationInput(e.target.value)}
-            />
-            {/*
-              * Work-mode segmented pill — each pill is a distinct
-              * filter mapped onto the backend's `work_mode` ENUM
-              * (onsite/hybrid/remote). The "Any" pill clears the
-              * filter.
-              */}
-            <div className="seg-row" role="group" aria-label="Work mode" style={{ marginTop: 10 }}>
+            <h4>Work mode</h4>
+            <div className="seg-row" role="group" aria-label="Work mode">
               {WORK_MODES.map((m) => {
                 const active = (filters.work_mode || '') === m.value;
                 return (

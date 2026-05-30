@@ -20,6 +20,10 @@ const jobsQuery = Joi.object({
   keyword: Joi.string().max(200).allow('', null),
   category: Joi.alternatives(Joi.string().max(150), Joi.number().integer().positive()).allow('', null),
   location: Joi.string().max(190).allow('', null),
+  // Free-text company-name filter for the Jobs page search bar.
+  // `company_id` (exact id, used internally) is also accepted on this
+  // schema's siblings — see public.validator.jobsQuery.
+  company: Joi.string().max(190).allow('', null),
   skills: Joi.string().max(500).allow('', null),
   job_type: Joi.string().valid('full_time', 'part_time', 'contract', 'internship', 'temporary', 'freelance').allow('', null),
   experience_level: Joi.string().valid('entry', 'junior', 'mid', 'senior', 'lead', 'executive').allow('', null),

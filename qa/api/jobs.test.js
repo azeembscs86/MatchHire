@@ -62,4 +62,21 @@ describe('Jobs API', () => {
     const recs = r.data?.Data?.records || [];
     for (const j of recs) expect(j.work_mode).toBe('remote');
   });
+
+  test('GET /jobs?company=<name> narrows by company-name substring', async () => {
+    // Pick a company that's present in the catalogue from the
+    // unfiltered set, then filter on a prefix of its name.
+    const recs = res.data?.Data?.records || [];
+    expect(recs.length).toBeGreaterThan(0);
+    const anchor = recs.find((j) => j.company_name && j.company_name.length >= 3);
+    if (!anchor) return; // seed-dependent — skip if no usable anchor.
+    const needle = anchor.company_name.slice(0, 3);
+    const r = await newClient().get('/jobs', { params: { company: needle, limit: 25 } });
+    expect(r.status).toBe(200);
+    const filtered = r.data?.Data?.records || [];
+    expect(filtered.length).toBeGreaterThan(0);
+    for (const j of filtered) {
+      expect(String(j.company_name).toLowerCase()).toContain(needle.toLowerCase());
+    }
+  });
 });

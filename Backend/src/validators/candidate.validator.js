@@ -174,9 +174,22 @@ const applyToJob = Joi.object({
   resume_url: Joi.string().uri().max(500).allow('', null),
 });
 
-/** Shared body schema for POST list endpoints (applications, favorites). */
+/**
+ * Shared body schema for POST list endpoints (applications, favorites).
+ *
+ * Accepts the legacy single-`status` filter alongside `statuses` (inclusion
+ * set) and `exclude_statuses` (exclusion set). The repository honours the
+ * first non-empty one; specifying multiple is allowed but only the
+ * highest-priority filter is applied — see `listForCandidate`.
+ */
+const APPLICATION_STATUS_VALUES = [
+  'applied', 'reviewing', 'under_review', 'shortlisted', 'interview',
+  'offered', 'hired', 'accepted', 'rejected', 'withdrawn',
+];
 const listFilters = Joi.object({
   status: Joi.string().max(40).allow('', null),
+  statuses: Joi.array().items(Joi.string().valid(...APPLICATION_STATUS_VALUES)).single().max(10),
+  exclude_statuses: Joi.array().items(Joi.string().valid(...APPLICATION_STATUS_VALUES)).single().max(10),
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(10),
 }).unknown(false);

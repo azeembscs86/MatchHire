@@ -30,6 +30,8 @@ const jobsQuery = Joi.object({
   keyword: Joi.string().max(200).allow('', null),
   category: Joi.alternatives(Joi.string().max(150), Joi.number().integer().positive()).allow('', null),
   location: Joi.string().max(190).allow('', null),
+  // Free-text company-name filter used by the Jobs page search bar.
+  company: Joi.string().max(190).allow('', null),
   job_type: Joi.string().valid('full_time', 'part_time', 'contract', 'internship', 'temporary', 'freelance').allow('', null),
   experience_level: Joi.string().valid('entry', 'junior', 'mid', 'senior', 'lead', 'executive').allow('', null),
   salary_min: Joi.number().min(0).allow(null),

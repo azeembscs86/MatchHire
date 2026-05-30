@@ -43,10 +43,24 @@ async function findByJobAndCandidate(job_id, candidate_user_id) {
   );
 }
 
-async function listForCandidate(candidate_user_id, { page = 1, limit = 10, status }) {
+async function listForCandidate(candidate_user_id, { page = 1, limit = 10, status, statuses, exclude_statuses }) {
   const where = ['a.candidate_user_id = ?'];
   const params = [candidate_user_id];
-  if (status) { where.push('a.status = ?'); params.push(status); }
+  // Three filtering modes, in priority order:
+  //   1. `status`           — single value (legacy)
+  //   2. `statuses[]`       — inclusion set (e.g. just "withdrawn")
+  //   3. `exclude_statuses[]` — exclusion set (e.g. hide withdrawn)
+  // Only one is honoured per call — `status` wins if both supplied.
+  if (status) {
+    where.push('a.status = ?');
+    params.push(status);
+  } else if (Array.isArray(statuses) && statuses.length > 0) {
+    where.push(`a.status IN (${statuses.map(() => '?').join(',')})`);
+    params.push(...statuses);
+  } else if (Array.isArray(exclude_statuses) && exclude_statuses.length > 0) {
+    where.push(`a.status NOT IN (${exclude_statuses.map(() => '?').join(',')})`);
+    params.push(...exclude_statuses);
+  }
   const offset = (page - 1) * limit;
   // Pulls everything the candidate-side Applications page needs
   // to render a JobCard for each application — title + company +
@@ -89,10 +103,20 @@ async function listForCandidate(candidate_user_id, { page = 1, limit = 10, statu
   return { rows, total: Number(countRow?.total || 0) };
 }
 
-async function listApplicantsForJob(job_id, { page = 1, limit = 10, status }) {
+async function listApplicantsForJob(job_id, { page = 1, limit = 10, status, include_withdrawn = false }) {
   const where = ['a.job_id = ?'];
   const params = [job_id];
-  if (status) { where.push('a.status = ?'); params.push(status); }
+  if (status) {
+    where.push('a.status = ?');
+    params.push(status);
+  } else if (!include_withdrawn) {
+    // Withdrawn applications are hidden from the employer dashboard
+    // by default — once a candidate pulls out, the employer doesn't
+    // need to keep seeing them in the active pipeline. Set
+    // `include_withdrawn: true` in admin / audit contexts that need
+    // the full history.
+    where.push("a.status <> 'withdrawn'");
+  }
   const offset = (page - 1) * limit;
   const rows = await db.query(
     `SELECT a.id, a.status, a.applied_at, a.expected_salary, a.cover_letter, a.resume_url,
@@ -131,8 +155,14 @@ async function statsForCandidate(candidate_user_id) {
 }
 
 async function statsForCompany(company_id) {
+  // Employer-facing stats — withdrawn applications are explicitly
+  // excluded so the company dashboard, by-status chart, and any
+  // employer reports never surface them. Candidate-side stats keep
+  // every status; that breakdown is for the candidate's own history.
   const rows = await db.query(
-    `SELECT status, COUNT(*) AS count FROM applications WHERE company_id = ? GROUP BY status`,
+    `SELECT status, COUNT(*) AS count FROM applications
+      WHERE company_id = ? AND status <> 'withdrawn'
+      GROUP BY status`,
     [company_id]
   );
   const map = Object.fromEntries(rows.map((r) => [r.status, Number(r.count)]));

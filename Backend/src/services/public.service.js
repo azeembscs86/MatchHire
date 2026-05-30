@@ -60,12 +60,23 @@ async function getJob(id, viewerUserId = null) {
 
   // Decorate with the candidate's relationship to this job so the
   // detail page can render the right action state (Apply vs Already
-  // Applied) without a second round-trip. These flags are NEVER
-  // cached — they're per-viewer and cheap to compute.
+  // Applied vs Withdraw vs Reapply) without a second round-trip.
+  // These flags are NEVER cached — they're per-viewer and cheap to
+  // compute.
+  //
+  // Semantics of `is_applied` (Step-2 refinement):
+  //   - Only TRUE when the candidate's existing application is in an
+  //     ACTIVE status (anything other than `withdrawn` / `rejected`).
+  //   - After a candidate withdraws, the row still exists but
+  //     `is_applied` returns FALSE so the Apply button can come back
+  //     and the candidate can reapply. The `application_id` and
+  //     `application_status` fields stay populated so the UI can
+  //     still show "Previously withdrawn — Reapply" copy if desired.
   let viewer = {
     is_applied: false,
     is_favorited: false,
     is_saved_for_later: false,
+    application_id: null,
     application_status: null,
   };
   const deadline = job.application_deadline ? new Date(job.application_deadline).getTime() : null;
@@ -76,11 +87,14 @@ async function getJob(id, viewerUserId = null) {
       favRepo.exists(viewerUserId, id),
       savedJobRepo.exists(viewerUserId, id),
     ]);
+    const status = applied?.status ? String(applied.status).toLowerCase() : null;
+    const isActive = !!applied && status !== 'withdrawn' && status !== 'rejected';
     viewer = {
-      is_applied: !!applied,
+      is_applied: isActive,
       is_favorited: !!fav,
       is_saved_for_later: !!saved,
-      application_status: applied?.status || null,
+      application_id: applied?.id || null,
+      application_status: status,
     };
   }
   return { ...job, ...viewer, is_expired: isExpired };

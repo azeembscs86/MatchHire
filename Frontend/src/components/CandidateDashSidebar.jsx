@@ -111,6 +111,15 @@ export default function CandidateDashSidebar({
         />
         <NavRow to="/saved-jobs" icon="⌘" label="Saved Jobs" />
         <NavRow to="/favorites" icon="♥" label="Favourites" badge={favoritesTotal} />
+        {/*
+         * Withdrawn Applications is a sibling tab to Job Applications.
+         * Active applications live in the main Applications tab;
+         * withdrawals get their own surface so the active pipeline
+         * stays uncluttered and the candidate keeps a permanent
+         * record of every withdrawal (with Reapply / View Job
+         * affordances).
+         */}
+        <NavRow to="/dashboard/candidate/withdrawn" icon="↶" label="Withdrawn Applications" />
         <NavRow to="/dashboard/candidate/messages" icon="✉" label="Messages" />
         <NavRow to="/dashboard/candidate/notifications" icon="◉" label="Notifications" />
         <NavRow to="/dashboard/candidate/settings" icon="⚙" label="Settings" />

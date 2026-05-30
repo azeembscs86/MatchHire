@@ -620,13 +620,36 @@ router.post('/saved-jobs/:jobId/eligibility', validate(pubV.jobIdParam, 'params'
  *   post:
  *     tags: [Candidates]
  *     summary: List the candidate's own applications (paginated)
+ *     description: |
+ *       Returns the candidate's applications. Three mutually exclusive
+ *       filter shapes are accepted in the request body — the first
+ *       non-empty one wins:
+ *
+ *         - `status`           — single-status filter (legacy)
+ *         - `statuses[]`       — inclusion set (e.g. `['withdrawn']` for
+ *                                the Withdrawn Applications tab)
+ *         - `exclude_statuses[]` — exclusion set (e.g. `['withdrawn']`
+ *                                  for the active Applications tab)
+ *
+ *       Permitted status values: `applied`, `reviewing`, `under_review`,
+ *       `shortlisted`, `interview`, `offered`, `hired`, `accepted`,
+ *       `rejected`, `withdrawn`.
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
  *       required: false
  *       content:
  *         application/json:
  *           schema: { $ref: '#/components/schemas/ListFiltersBody' }
- *           example: { page: 1, limit: 10, status: "shortlisted" }
+ *           examples:
+ *             active-tab:
+ *               summary: Active applications (excludes withdrawn)
+ *               value: { page: 1, limit: 50, exclude_statuses: ["withdrawn"] }
+ *             withdrawn-tab:
+ *               summary: Withdrawn applications only
+ *               value: { page: 1, limit: 100, statuses: ["withdrawn"] }
+ *             single-status:
+ *               summary: Legacy single-status filter
+ *               value: { page: 1, limit: 10, status: "shortlisted" }
  *     responses:
  *       '200': { $ref: '#/components/responses/PaginatedList' }
  */

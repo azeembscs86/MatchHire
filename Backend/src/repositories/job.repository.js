@@ -45,6 +45,30 @@ function slugify(s) {
  *
  * Returns an array of WHERE-clause strings that callers join with ' AND '.
  */
+/**
+ * SQL fragment that excludes jobs the candidate has an ACTIVE
+ * application for — but leaves withdrawn / rejected applications
+ * eligible so the job re-appears in candidate-facing listings.
+ *
+ * Active = anything that isn't `withdrawn` or `rejected`. Once an
+ * application is in `applied / reviewing / shortlisted / interview /
+ * offered / hired / accepted`, we don't want the job to reappear on
+ * Home, Jobs, Search, Recommended, Similar, Matching, or the
+ * dashboard rail. After a candidate withdraws (status='withdrawn')
+ * or the employer rejects them (status='rejected'), the job becomes
+ * visible again so the candidate can reapply if they wish.
+ *
+ * Caller binds a single `?` (the candidate's user id).
+ */
+function notHasActiveApplicationFragment() {
+  return `NOT EXISTS (
+    SELECT 1 FROM applications a
+     WHERE a.job_id = j.id
+       AND a.candidate_user_id = ?
+       AND a.status NOT IN ('withdrawn', 'rejected')
+  )`;
+}
+
 function activeJobWhere() {
   return [
     "j.status = 'open'",
@@ -189,10 +213,7 @@ async function findSimilar(anchorJobId, { candidate_user_id, limit = 6 } = {}) {
   const whereParams = [anchorJobId];
 
   if (candidate_user_id) {
-    where.push(`NOT EXISTS (
-      SELECT 1 FROM applications a
-      WHERE a.job_id = j.id AND a.candidate_user_id = ?
-    )`);
+    where.push(notHasActiveApplicationFragment());
     whereParams.push(Number(candidate_user_id));
   }
 
@@ -307,7 +328,10 @@ async function listPublic(filters) {
   const {
     keyword, category, location, job_type, experience_level, salary_min, salary_max,
     remote, work_mode, skills, posted_within_days,
-    company_id, is_featured, page = 1, limit = 10, sort = 'latest',
+    // `company` is a free-text company-name filter (the new Jobs page
+    // search bar binds it to its dedicated "Company" field). `company_id`
+    // is the exact-id filter used internally — both can coexist.
+    company, company_id, is_featured, page = 1, limit = 10, sort = 'latest',
     // When a candidate is signed in, the route layer threads their user id
     // here so we can hide jobs they've already applied to. Guests pass
     // `undefined` and see the unfiltered list.
@@ -318,10 +342,7 @@ async function listPublic(filters) {
   const params = [];
 
   if (exclude_applied_for_user_id) {
-    where.push(`NOT EXISTS (
-      SELECT 1 FROM applications a
-      WHERE a.job_id = j.id AND a.candidate_user_id = ?
-    )`);
+    where.push(notHasActiveApplicationFragment());
     params.push(Number(exclude_applied_for_user_id));
   }
 
@@ -338,6 +359,13 @@ async function listPublic(filters) {
     where.push('(LOWER(j.location) LIKE ? OR LOWER(j.country) LIKE ? OR LOWER(j.city) LIKE ?)');
     const l = `%${String(location).toLowerCase()}%`;
     params.push(l, l, l);
+  }
+  if (company) {
+    // Dedicated company-name filter for the Jobs search bar. The existing
+    // `keyword` filter also matches company name (broad OR), so callers
+    // can use either; this gives the new search bar a precise field.
+    where.push('LOWER(c.name) LIKE ?');
+    params.push(`%${String(company).toLowerCase()}%`);
   }
   const skillsFilter = buildSkillsFilter(skills);
   if (skillsFilter) {
@@ -485,7 +513,7 @@ async function recommendedForUser(user_id, limit = 10) {
   // must never surface here.
   const where = [
     ...activeJobWhere(),
-    `NOT EXISTS (SELECT 1 FROM applications a WHERE a.job_id = j.id AND a.candidate_user_id = ?)`,
+    notHasActiveApplicationFragment(),
   ];
   let scoreParts = ['0'];
 
@@ -557,10 +585,7 @@ async function listLocationBased({
   const where = [...activeJobWhere()];
   const params = [];
   if (exclude_applied_for_user_id) {
-    where.push(`NOT EXISTS (
-      SELECT 1 FROM applications a
-      WHERE a.job_id = j.id AND a.candidate_user_id = ?
-    )`);
+    where.push(notHasActiveApplicationFragment());
     params.push(Number(exclude_applied_for_user_id));
   }
   if (role) { where.push('LOWER(j.title) LIKE ?'); params.push(`%${String(role).toLowerCase()}%`); }

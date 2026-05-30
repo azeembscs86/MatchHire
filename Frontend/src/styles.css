@@ -898,7 +898,11 @@
   .filters{
     position:sticky;top:80px;align-self:flex-start;
     background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:20px;
-    height:fit-content;max-height:calc(100vh - 100px);overflow-y:auto;
+    height:fit-content;
+    /* No max-height / overflow-y: the search bar now lives ABOVE the
+       browse-layout, so the sidebar carries only advanced filters
+       and fits naturally on every viewport without an internal
+       scrollbar. The whole sidebar scrolls with the page. */
   }
   .filter-group{padding-bottom:16px;margin-bottom:16px;border-bottom:1px solid var(--line-soft)}
   .filter-group:last-child{border-bottom:0;margin-bottom:0;padding-bottom:0}
@@ -2660,4 +2664,143 @@
 @media (max-width:520px){
   .employer-summary-stats{grid-template-columns:1fr 1fr}
   .employer-summary-num{font-size:20px}
+}
+
+/* =============================================================================
+ * Jobs page — modern search bar (Step 2)
+ * -----------------------------------------------------------------------------
+ * Four-field horizontal search (Job title / Skills / Company / Location)
+ * with a single primary Search button on the right. Each field has a
+ * built-in clear button and an absolute-positioned suggestion dropdown.
+ * Below the bar: recent-searches chip row. No internal scrollbars on
+ * any breakpoint.
+ * ===========================================================================*/
+.jobs-search-band{padding:24px 0 4px}
+.jobs-search-bar{
+  position:relative;
+  display:grid;
+  grid-template-columns:repeat(4, minmax(0, 1fr)) auto;
+  gap:0;
+  background:var(--paper);
+  border:1px solid var(--line);
+  border-radius:16px;
+  padding:6px;
+  box-shadow:0 8px 24px -18px rgba(14,17,22,.12);
+}
+.jobs-search-field{
+  position:relative;
+  display:flex;flex-direction:column;justify-content:center;
+  padding:8px 14px;
+  border-right:1px solid var(--line-soft);
+  min-width:0;
+}
+.jobs-search-field:last-of-type{border-right:0}
+.jobs-search-field label{
+  font-size:10.5px;color:var(--muted);font-weight:600;
+  letter-spacing:.06em;text-transform:uppercase;
+  margin-bottom:2px;
+}
+.jobs-search-field-row{display:flex;align-items:center;gap:6px}
+.jobs-search-field input{
+  border:0;outline:0;background:transparent;
+  font-size:14.5px;font-weight:500;color:var(--ink);
+  width:100%;min-width:0;padding:2px 0;
+}
+.jobs-search-field input::placeholder{color:var(--muted-2);font-weight:400}
+.jobs-search-field.is-focused{background:var(--bone-2);border-radius:10px}
+.jobs-search-clear{
+  flex:none;width:20px;height:20px;border-radius:50%;
+  background:transparent;color:var(--muted);
+  font-size:18px;line-height:1;cursor:pointer;
+  display:grid;place-items:center;padding:0;
+  transition:background .15s ease, color .15s ease;
+  border:0;
+}
+.jobs-search-clear:hover{background:var(--coral);color:#fff}
+.jobs-search-submit{
+  margin:4px;padding:10px 20px;border-radius:12px;
+  display:inline-flex;align-items:center;gap:8px;
+  font-weight:600;font-size:14px;
+  align-self:stretch;
+  white-space:nowrap;
+}
+.jobs-search-submit svg{flex:none}
+/* Suggestion dropdown — absolutely positioned under the field. */
+.jobs-search-suggest{
+  position:absolute;left:6px;right:6px;top:calc(100% + 4px);
+  z-index:20;list-style:none;margin:0;padding:6px;
+  background:var(--paper);
+  border:1px solid var(--line);border-radius:12px;
+  box-shadow:0 18px 40px -22px rgba(14,17,22,.32);
+  max-height:280px;overflow-y:auto;
+}
+.jobs-search-suggest li{margin:0}
+.jobs-search-suggest button{
+  width:100%;text-align:left;
+  background:transparent;border:0;
+  padding:8px 10px;border-radius:8px;
+  font-size:13.5px;color:var(--ink);cursor:pointer;
+  transition:background .12s ease, color .12s ease;
+}
+.jobs-search-suggest button:hover{background:var(--bone-2);color:var(--coral-deep)}
+
+/* Recent searches strip below the bar. */
+.jobs-search-recent{
+  margin-top:10px;display:flex;align-items:center;flex-wrap:wrap;gap:8px;
+  font-size:12.5px;color:var(--muted);
+}
+.jobs-search-recent-label{
+  font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+  font-size:10.5px;color:var(--muted-2);
+}
+.jobs-search-recent-chip{
+  background:var(--bone);border:1px solid var(--line);
+  padding:5px 11px;border-radius:100px;
+  font-size:12.5px;color:var(--ink-soft);cursor:pointer;
+  transition:background .15s ease, border-color .15s ease;
+}
+.jobs-search-recent-chip:hover{background:var(--coral);color:#fff;border-color:var(--coral)}
+
+/* Job Detail withdraw button — secondary CTA next to Applied pill. */
+.jd-withdraw-btn{margin-left:10px;padding:10px 18px;font-size:13.5px}
+
+/* Withdrawn Applications page — vertical list with meta + actions. */
+.withdrawn-list{display:flex;flex-direction:column;gap:14px;margin-top:14px}
+.withdrawn-card{
+  background:var(--paper);border:1px solid var(--line);border-radius:14px;
+  padding:18px 20px;
+  display:flex;flex-direction:column;gap:14px;
+}
+.withdrawn-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.withdrawn-card-title{min-width:0;flex:1}
+.withdrawn-card-link{
+  font-family:'Fraunces',serif;font-size:17px;font-weight:600;color:var(--ink);
+  letter-spacing:-.005em;text-decoration:none;
+}
+.withdrawn-card-link:hover{color:var(--coral-deep)}
+.withdrawn-card-co{font-size:12.5px;color:var(--muted);margin-top:4px}
+.withdrawn-meta{
+  display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:10px 18px;
+  margin:0;padding:10px 0;border-top:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft);
+}
+.withdrawn-meta div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.withdrawn-meta dt{font-size:10.5px;color:var(--muted-2);letter-spacing:.04em;text-transform:uppercase;font-weight:600}
+.withdrawn-meta dd{margin:0;font-size:13px;color:var(--ink);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.withdrawn-card-actions{display:flex;gap:10px;flex-wrap:wrap}
+
+/* Responsive — search bar collapses to 2-col, then 1-col. */
+@media (max-width:1024px){
+  .jobs-search-bar{grid-template-columns:repeat(2, minmax(0, 1fr));gap:0}
+  .jobs-search-field{border-right:0;border-bottom:1px solid var(--line-soft)}
+  .jobs-search-field:nth-last-of-type(-n+2){border-bottom:0}
+  .jobs-search-submit{grid-column:span 2;margin:6px}
+  .withdrawn-meta{grid-template-columns:repeat(2, minmax(0, 1fr))}
+}
+@media (max-width:520px){
+  .jobs-search-bar{grid-template-columns:1fr}
+  .jobs-search-field{border-bottom:1px solid var(--line-soft)}
+  .jobs-search-field:last-of-type{border-bottom:0}
+  .jobs-search-submit{grid-column:1}
+  .withdrawn-meta{grid-template-columns:1fr 1fr}
+  .withdrawn-card-head{flex-direction:column}
 }

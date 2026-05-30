@@ -216,12 +216,28 @@ exports.withdrawApplication = async (req, res) => {
   return response.success(res, data, 'Application withdrawn');
 };
 
-/** Paginated list of the candidate's own applications (optionally filtered by status). */
+/**
+ * Paginated list of the candidate's own applications.
+ *
+ * Filtering options on the request body (mutually exclusive — first
+ * non-empty wins):
+ *
+ *   - `status`            string — legacy single-status filter
+ *   - `statuses`          string[] — inclusion set; e.g. ['withdrawn']
+ *                          for the Withdrawn Applications tab
+ *   - `exclude_statuses`  string[] — exclusion set; e.g.
+ *                          ['withdrawn'] for the active Applications
+ *                          tab which hides withdrawals
+ */
 exports.listApplications = async (req, res) => {
   const page = req.body?.page || 1;
   const limit = req.body?.limit || 10;
   const { rows, total } = await service.listApplications(req.user.id, {
-    page, limit, status: req.body?.status,
+    page,
+    limit,
+    status: req.body?.status,
+    statuses: Array.isArray(req.body?.statuses) ? req.body.statuses : undefined,
+    exclude_statuses: Array.isArray(req.body?.exclude_statuses) ? req.body.exclude_statuses : undefined,
   });
   return response.list(res, rows, buildPagination(page, limit, total), 'Applications returned');
 };
