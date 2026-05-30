@@ -450,7 +450,17 @@ async function seedCandidates(conn, total = 240) {
     const country_id = byName[m.country] || byCode['US'];
     const profile_strength = 60 + ((m.idx * 7) % 35);
     const summary = `${m.role.title} with ${yrs}+ years of experience across ${m.role.skills.slice(0, 3).join(', ')}. Currently based in ${m.city}.`;
-    const education = `BS in Computer Science · ${pick(REAL_COMPANIES, m.idx + 4).split(' ')[0]} University · ${2010 + (m.idx % 12)}`;
+    // Education is intentionally NULL here: writing a synthesised
+    // "BS in Computer Science · X University · 20YY" string pollutes
+    // every seeded candidate's profile with content they never
+    // entered, and that fake row then surfaces on the candidate's
+    // own Profile page. Real candidates fill this in by typing
+    // (Profile.jsx) or by uploading a resume (resume parser). Leaving
+    // the seed value NULL means the textarea starts empty, the
+    // placeholder shows, and only what the candidate actually types
+    // gets saved. See `scripts/clear-seeded-education.js` for the
+    // one-off cleanup applied to existing seeded rows.
+    const education = null;
 
     profileRows.push([
       user_id,

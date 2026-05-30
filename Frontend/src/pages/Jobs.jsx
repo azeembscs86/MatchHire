@@ -148,12 +148,24 @@ const LEVELS = [
   { value: 'lead', label: 'Lead / Staff' },
 ];
 
+/*
+ * Salary filter bands.
+ *
+ * Display in PKR / month (the visitor's locale) while the values sent
+ * to the backend stay in the storage unit — annual figures in the
+ * same currency as the job rows. Most of the catalogue is stored
+ * annually, so a "PKR 50,000 – 100,000 / month" band sends
+ * `salary_min = 600,000` and `salary_max = 1,200,000` (× 12) and the
+ * repository's range comparison matches PKR-annual rows out of the
+ * box. Jobs stored in other currencies still fall back to numeric
+ * comparison; currency-aware filtering is a follow-up improvement.
+ */
 const SALARY_BANDS = [
-  { label: 'Any', min: undefined, max: undefined },
-  { label: '$50K – $80K', min: 50000, max: 80000 },
-  { label: '$80K – $120K', min: 80000, max: 120000 },
-  { label: '$120K – $180K', min: 120000, max: 180000 },
-  { label: '$180K+', min: 180000, max: undefined },
+  { label: 'Any',                            min: undefined, max: undefined },
+  { label: 'PKR 50,000 – 100,000 / month',   min: 600_000,    max: 1_200_000 },
+  { label: 'PKR 100,000 – 250,000 / month',  min: 1_200_000,  max: 3_000_000 },
+  { label: 'PKR 250,000 – 500,000 / month',  min: 3_000_000,  max: 6_000_000 },
+  { label: 'PKR 500,000+ / month',            min: 6_000_000,  max: undefined },
 ];
 
 /*

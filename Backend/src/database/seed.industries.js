@@ -636,15 +636,13 @@ async function seedCandidates(conn, skillIdByName, total = 220) {
     const salaryMax = m.profession.salaryMax - (m.idx % 5) * 1500;
     const profile_strength = 60 + ((m.idx * 11) % 35);
     const summary = `${m.profession.title} with ${yrs}+ years of professional experience in ${m.profession.dept.toLowerCase()} across ${m.profession.skills.slice(0, 3).join(', ')}. Currently based in ${m.loc.city}, ${m.loc.country}.`;
-    const education = m.profession.title.includes('Doctor') || m.profession.title.includes('Physician') || m.profession.title.includes('Nurse') || m.profession.title.includes('Pharmacist')
-      ? `MBBS / Bachelor of Medicine - ${m.loc.city} Medical College - ${2008 + (m.idx % 14)}`
-      : m.profession.title.includes('Lecturer') || m.profession.title.includes('Teacher')
-      ? `Masters in Education - ${m.loc.city} University - ${2010 + (m.idx % 12)}`
-      : m.profession.title.includes('Accountant')
-      ? `ACCA / Bachelor of Commerce - ${m.loc.city} School of Business - ${2012 + (m.idx % 10)}`
-      : m.profession.title.includes('Legal')
-      ? `LLB - ${m.loc.city} School of Law - ${2010 + (m.idx % 12)}`
-      : `Bachelor of Science in ${m.profession.dept} - ${m.loc.city} Institute of Technology - ${2012 + (m.idx % 10)}`;
+    // Education intentionally NULL — same rationale as seed.bulk.js:
+    // synthesised education strings polluted real candidates' Profile
+    // pages with content they never entered. Real candidates fill
+    // this in via the Profile textarea or the resume parser. See
+    // `scripts/clear-seeded-education.js` for the one-off cleanup
+    // applied to existing seeded rows.
+    const education = null;
     const experience = `${m.profession.title} at ${pick(Object.values(COMPANIES_BY_INDUSTRY)[m.idx % 22], m.idx + 1)} (${2018 + (m.idx % 6)} - present)`;
     profileRows.push([
       uid, m.profession.title, summary, m.profession.title, yrs,

@@ -913,4 +913,25 @@ git push
 
 ---
 
-*End of document. Append the next prompt as Step 53.*
+### Step 53
+**Date:** 2026-05-31
+**Module:** UI/UX + Seeded-data hygiene + Git safety
+**Purpose:** Localise the Jobs salary filter to PKR/month, stop the bulk seeds from polluting `candidate_profiles.education` with synthesised strings, collapse the empty `why-list` band on dashboard cards, and re-verify Git author identity.
+**Prompt Command (verbatim, abbreviated):**
+> 1. Jobs page salary range still shows USD "$". Switch to PKR/month (display only; do not change DB values). 2. Candidate education shows system/default data — must show only the logged-in user's saved education. 3. Dashboard job cards still have empty space below the Onsite/Remote/Hybrid chip; make them identical to Jobs-page cards. 4. Company view rules unchanged. 5. Verify git author is Azeem Akram and no Claude/Codex appears on contributors.
+**Expected Output:**
+  - **Salary filter** (`Frontend/src/pages/Jobs.jsx`): `SALARY_BANDS` rewritten — `$50K – $80K (year)` etc. replaced with `PKR 50,000 – 100,000 / month` etc. The numeric `min`/`max` sent to the API are the PKR-annual equivalents (× 12) so the existing repository range comparison continues to match PKR-annual rows out of the box.
+  - **Seed pollution removed**: `seed.bulk.js` and `seed.industries.js` now insert `NULL` into `candidate_profiles.education` instead of synthesised "BS in X · Y University · YYYY" strings. New utility `Backend/src/database/scripts/clear-seeded-education.js` clears existing seeded rows (dry-run by default, `--apply` to commit). 220 rows cleared from the dev DB on this run; idempotent.
+  - **Empty `why-list` slot collapsed** when the card carries no match content (`.why-list-empty { min-height:0; max-height:0; margin-bottom:0 }`). On Jobs page (matched cards) the 60px slot stays reserved; on the Applications / Saved / Favourites / Withdrawn surfaces (no match scoring) it collapses, removing the blank band the user reported below the work-mode chip.
+  - **Git safety re-checked**: local + global identity remain `Azeem Akram <azeembscs86@gmail.com>` from Step (git-author rewrite). No `Co-Authored-By:` trailers in this commit.
+**Status:** Completed
+**Commit:** *(this commit)*
+**Notes:**
+  - **No database migrations.** The cleanup is a one-off UPDATE via the new script; existing schema unchanged.
+  - **Salary filter caveat**: the filter is still currency-blind on the backend (raw numeric comparison against `salary_min`/`salary_max`). A PKR-monthly filter matches PKR-annual jobs cleanly via × 12, but USD-stored jobs won't match unless the candidate types matching numeric bounds in USD. Currency-aware filtering is a follow-up improvement, separate from this step.
+  - **Synthetic-pattern set** in `clear-seeded-education.js` is explicit (5 patterns from the two bulk seeds). Any future synthetic-education shape must be added to the `PATTERNS` array before the next bulk seed → cleanup cycle.
+  - **Supersedes nothing** — additive UI/UX + data-hygiene change.
+
+---
+
+*End of document. Append the next prompt as Step 54.*
