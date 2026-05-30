@@ -32,6 +32,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { employersApi } from '../api/index.js';
+import { formatSalary } from '../api/adapters.js';
 import JobCard from './JobCard.jsx';
 
 const LOGO_TONES = ['lg-1', 'lg-2', 'lg-3', 'lg-4', 'lg-5', 'lg-6', 'lg-7', 'lg-8'];
@@ -41,14 +42,9 @@ function toneFor(id) {
 }
 function firstLetter(s) { return (s || '·').trim()[0]?.toUpperCase() || '·'; }
 
-function formatSalary(min, max, currency = 'USD') {
-  if (!min && !max) return 'Competitive';
-  const sym = currency === 'USD' ? '$' : (currency + ' ');
-  const k = (n) => `${Math.round(Number(n) / 1000)}K`;
-  if (min && max) return `${sym}${k(min)}–${k(max)}`;
-  if (min) return `From ${sym}${k(min)}`;
-  return `Up to ${sym}${k(max)}`;
-}
+// Salary formatter — re-exported from `adapters.js` so this surface
+// matches the project-wide "PKR 500,000/month" format. The previous
+// local "K" shorthand is retired.
 
 function deadlineLabel(iso) {
   if (!iso) return null;
@@ -99,7 +95,7 @@ function toCardShape(r) {
     loc: [r.location, r.country, r.is_remote ? 'Remote' : null].filter(Boolean).join(' · ') || 'Remote',
     type: String(r.job_type || 'full_time').replace(/_/g, '-')
       .replace(/(^|-)([a-z])/g, (_m, p, c) => (p ? '-' : '') + c.toUpperCase()),
-    pay: formatSalary(r.salary_min, r.salary_max, r.salary_currency),
+    pay: formatSalary(r.salary_min, r.salary_max, r.salary_currency, r.salary_period),
     tags: splitTags(r.skills_tags).slice(0, 4),
     experience: r.experience_level
       ? r.experience_level.charAt(0).toUpperCase() + r.experience_level.slice(1) + '-level'

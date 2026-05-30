@@ -88,6 +88,10 @@ async function listForCandidate(candidate_user_id, { page = 1, limit = 10, statu
             j.application_deadline, j.skills_tags,
             j.published_at, j.created_at AS job_created_at,
             j.is_featured,
+            -- Include the description excerpt so the shared JobCard's
+            -- summary slot has real content on the candidate's
+            -- Applications + Withdrawn tabs (matches the Jobs page).
+            j.description,
             c.id AS company_id, c.name AS company_name, c.logo_url AS company_logo
      FROM applications a
      INNER JOIN jobs j ON j.id = a.job_id

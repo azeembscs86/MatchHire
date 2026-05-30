@@ -2782,29 +2782,14 @@
 /* Job Detail withdraw button — secondary CTA next to Applied pill. */
 .jd-withdraw-btn{margin-left:10px;padding:10px 18px;font-size:13.5px}
 
-/* Withdrawn Applications page — vertical list with meta + actions. */
-.withdrawn-list{display:flex;flex-direction:column;gap:14px;margin-top:14px}
-.withdrawn-card{
-  background:var(--paper);border:1px solid var(--line);border-radius:14px;
-  padding:18px 20px;
-  display:flex;flex-direction:column;gap:14px;
-}
-.withdrawn-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
-.withdrawn-card-title{min-width:0;flex:1}
-.withdrawn-card-link{
-  font-family:'Fraunces',serif;font-size:17px;font-weight:600;color:var(--ink);
-  letter-spacing:-.005em;text-decoration:none;
-}
-.withdrawn-card-link:hover{color:var(--coral-deep)}
-.withdrawn-card-co{font-size:12.5px;color:var(--muted);margin-top:4px}
-.withdrawn-meta{
-  display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:10px 18px;
-  margin:0;padding:10px 0;border-top:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft);
-}
-.withdrawn-meta div{display:flex;flex-direction:column;gap:2px;min-width:0}
-.withdrawn-meta dt{font-size:10.5px;color:var(--muted-2);letter-spacing:.04em;text-transform:uppercase;font-weight:600}
-.withdrawn-meta dd{margin:0;font-size:13px;color:var(--ink);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.withdrawn-card-actions{display:flex;gap:10px;flex-wrap:wrap}
+/*
+ * Withdrawn Applications page now renders through the shared
+ * `<JobCard />` inside a `.jobs-grid` (May 2031 unification), so the
+ * old `.withdrawn-card` / `.withdrawn-list` / `.withdrawn-meta`
+ * rule set has been retired. The Reapply CTA reuses the existing
+ * `.application-withdraw-btn` class shared with the active
+ * Applications tab to keep the action row consistent.
+ */
 
 /* Responsive — search bar collapses to 2-col, then 1-col. */
 @media (max-width:1024px){
@@ -2812,13 +2797,10 @@
   .jobs-search-field{border-right:0;border-bottom:1px solid var(--line-soft)}
   .jobs-search-field:nth-last-of-type(-n+2){border-bottom:0}
   .jobs-search-submit{grid-column:span 2;margin:6px}
-  .withdrawn-meta{grid-template-columns:repeat(2, minmax(0, 1fr))}
 }
 @media (max-width:520px){
   .jobs-search-bar{grid-template-columns:1fr}
   .jobs-search-field{border-bottom:1px solid var(--line-soft)}
   .jobs-search-field:last-of-type{border-bottom:0}
   .jobs-search-submit{grid-column:1}
-  .withdrawn-meta{grid-template-columns:1fr 1fr}
-  .withdrawn-card-head{flex-direction:column}
 }

@@ -200,6 +200,7 @@ export default function CandidateApplications() {
                 published_at: row.published_at,
                 created_at: row.job_created_at,
                 is_featured: row.is_featured,
+                description: row.description,
               });
               if (!view) return null;
               const badge = statusBadge(row.status);

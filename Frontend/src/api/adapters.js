@@ -32,13 +32,51 @@ function splitTags(s) {
   return String(s).split(',').map((t) => t.trim()).filter(Boolean);
 }
 
-function formatSalary(min, max, currency = 'USD') {
+/**
+ * Format a salary range for display. UI-only — the backend storage
+ * format (raw `salary_min`, `salary_max`, `salary_currency`,
+ * `salary_period`) is untouched.
+ *
+ * Display convention (May 2031 unification):
+ *   - Everything renders as MONTHLY. If the row already stores
+ *     monthly figures (`salary_period === 'month'`/`'monthly'`) we
+ *     use them as-is; otherwise we treat the values as annual and
+ *     divide by 12.
+ *   - Full thousands separators (no `120K` shorthand) so a candidate
+ *     reads "PKR 500,000/month" rather than guessing what 500K means.
+ *   - Currency symbol mapping: USD → "$", everything else uses the
+ *     ISO code prefix ("PKR 100,000/month", "EUR 8,500/month").
+ *   - Ranges share a single `/month` suffix.
+ *
+ * Examples:
+ *   formatSalary(120000, 180000, 'USD', 'year')   → "$10,000 – 15,000/month"
+ *   formatSalary(1200000, null, 'PKR', 'year')    → "From PKR 100,000/month"
+ *   formatSalary(8500, 12000, 'EUR', 'month')     → "EUR 8,500 – 12,000/month"
+ *   formatSalary(null, null, 'USD', 'year')       → "Competitive"
+ */
+function formatSalary(min, max, currency = 'USD', period = 'year') {
   if (!min && !max) return 'Competitive';
-  const sym = currency === 'USD' ? '$' : (currency + ' ');
-  const k = (n) => `${Math.round(Number(n) / 1000)}K`;
-  if (min && max) return `${sym}${k(min)}–${k(max)}`;
-  if (min) return `From ${sym}${k(min)}`;
-  return `Up to ${sym}${k(max)}`;
+  const sym = currency === 'USD' ? '$' : `${currency} `;
+  const isAlreadyMonthly = /^month/i.test(String(period || ''));
+  const toMonth = (n) => {
+    if (n == null) return null;
+    const num = Number(n);
+    if (!Number.isFinite(num)) return null;
+    const monthly = isAlreadyMonthly ? num : num / 12;
+    // Round to the nearest hundred so the figure reads cleanly
+    // (avoids "PKR 99,166.67/month"). Sub-1k values keep their
+    // unit to handle freelance hourly-but-tagged-yearly edge cases.
+    if (monthly >= 1000) return Math.round(monthly / 100) * 100;
+    return Math.round(monthly);
+  };
+  const fmt = (n) => Number(n).toLocaleString('en-US');
+  const monthMin = toMonth(min);
+  const monthMax = toMonth(max);
+  if (monthMin != null && monthMax != null) {
+    return `${sym}${fmt(monthMin)} – ${fmt(monthMax)}/month`;
+  }
+  if (monthMin != null) return `From ${sym}${fmt(monthMin)}/month`;
+  return `Up to ${sym}${fmt(monthMax)}/month`;
 }
 
 function relativeTime(iso) {
@@ -119,7 +157,7 @@ export function toJobCardShape(j) {
       .filter(Boolean)
       .join(' · ') || 'Remote',
     type: jobTypeLabel,
-    pay: formatSalary(j.salary_min, j.salary_max, j.salary_currency),
+    pay: formatSalary(j.salary_min, j.salary_max, j.salary_currency, j.salary_period),
     tags: splitTags(j.skills_tags).slice(0, 4),
     // Compact metadata used by the JobCard's secondary chip row, so every
     // critical field is visible without making the card taller:
@@ -241,4 +279,5 @@ export function toCandidateCardShape(c, idx = 0) {
   };
 }
 
+export { formatSalary };
 export const _internals = { toneFor, formatSalary, relativeTime, splitTags };

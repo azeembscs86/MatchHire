@@ -7,41 +7,22 @@
  * applications`) from terminal-pull-outs keeps each surface
  * focused.
  *
- * Each row shows: job title, company, location, salary, job type,
- * applied date, withdrawn date, and two affordances:
- *
- *   - **View job** — opens `/jobs/:id`. Always available.
- *   - **Reapply** — same `/jobs/:id` deep-link; the JobDetail page
- *      now resurfaces the Apply button once a candidate is in
- *      withdrawn / rejected state (the backend's active-application
- *      filter no longer treats those rows as "still applied").
- *
- * Empty state mirrors the active Applications tab's voice with a
- * link back to the Jobs feed.
+ * Card design unification (May 2031): this surface renders through
+ * the same shared `<JobCard />` as the Jobs page (via
+ * `toJobCardShape`) so the catalogue reads as one consistent
+ * grid. Above each card we emit a small meta row carrying the
+ * Withdrawn pill + applied / withdrawn timestamps. Below each
+ * card we offer "Reapply" — the backend's active-application
+ * filter no longer treats withdrawn rows as "still applied", so
+ * the job is back in candidate-facing listings and the Apply
+ * button on JobDetail is re-enabled.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.jsx';
+import JobCard from '../components/JobCard.jsx';
 import { candidatesApi } from '../api/index.js';
-
-/**
- * Format a salary range using the same conventions as the candidate-side
- * JobCard. Returns "$120K–180K", "From $90K", "Up to $200K", or
- * "Competitive" when nothing is set.
- */
-function formatSalary(min, max, currency = 'USD') {
-  if (!min && !max) return 'Competitive';
-  const sym = currency === 'USD' ? '$' : `${currency} `;
-  const k = (n) => `${Math.round(Number(n) / 1000)}K`;
-  if (min && max) return `${sym}${k(min)}–${k(max)}`;
-  if (min) return `From ${sym}${k(min)}`;
-  return `Up to ${sym}${k(max)}`;
-}
-
-function formatJobType(t) {
-  if (!t) return 'Onsite';
-  return String(t).replace(/_/g, '-').replace(/(^|-)([a-z])/g, (_m, p, c) => (p ? '-' : '') + c.toUpperCase());
-}
+import { toJobCardShape } from '../api/adapters.js';
 
 function formatDate(iso) {
   if (!iso) return '—';
@@ -113,45 +94,63 @@ export default function CandidateWithdrawn() {
             </Link>
           </EmptyState>
         ) : (
-          <div className="withdrawn-list" data-testid="withdrawn-applications-list">
+          <div className="jobs-grid" data-testid="withdrawn-applications-list">
             {records.map((row) => {
+              // Build the same JobCard view-model the Jobs page
+              // produces — keeping the data shape identical means
+              // the card design is identical too.
+              const view = toJobCardShape({
+                id: row.job_id ?? row.id,
+                title: row.job_title ?? row.title,
+                company_id: row.company_id,
+                company_name: row.company_name,
+                company_logo: row.company_logo,
+                location: row.job_location ?? row.location,
+                city: row.city,
+                country: row.country,
+                is_remote: row.is_remote,
+                work_mode: row.work_mode,
+                is_global_remote: row.is_global_remote,
+                job_type: row.job_type,
+                experience_level: row.experience_level,
+                salary_min: row.salary_min,
+                salary_max: row.salary_max,
+                salary_currency: row.salary_currency,
+                salary_period: row.salary_period,
+                application_deadline: row.application_deadline,
+                skills_tags: row.skills_tags,
+                published_at: row.published_at,
+                created_at: row.job_created_at,
+                is_featured: row.is_featured,
+                description: row.description,
+              });
+              if (!view) return null;
               const jobId = row.job_id ?? row.id;
-              const title = row.job_title ?? row.title ?? 'Job';
-              const company = row.company_name || 'Company';
-              const loc = [row.city, row.country].filter(Boolean).join(' · ')
-                || row.job_location || row.location || 'Remote';
-              const salary = formatSalary(row.salary_min, row.salary_max, row.salary_currency);
-              const jobType = formatJobType(row.job_type);
               return (
-                <div key={row.id} className="withdrawn-card" data-testid="withdrawn-application-row">
-                  <div className="withdrawn-card-head">
-                    <div className="withdrawn-card-title">
-                      <Link to={`/jobs/${jobId}`} className="withdrawn-card-link">
-                        {title}
-                      </Link>
-                      <div className="withdrawn-card-co">{company} · {loc}</div>
-                    </div>
+                <div key={row.id} className="application-card-wrap" data-testid="withdrawn-application-row">
+                  <div className="application-status-row">
                     <span className="pill pill-rejected" data-testid="withdrawn-status">Withdrawn</span>
+                    <span className="muted" style={{ fontSize: 11 }}>
+                      Applied {formatDate(row.applied_at)} · Withdrawn {formatDate(row.updated_at)}
+                    </span>
                   </div>
-                  <dl className="withdrawn-meta">
-                    <div><dt>Salary</dt><dd>{salary}</dd></div>
-                    <div><dt>Job type</dt><dd>{jobType}</dd></div>
-                    <div><dt>Applied</dt><dd>{formatDate(row.applied_at)}</dd></div>
-                    <div><dt>Withdrawn</dt><dd>{formatDate(row.updated_at)}</dd></div>
-                  </dl>
-                  <div className="withdrawn-card-actions">
-                    <Link to={`/jobs/${jobId}`} className="btn btn-outline btn-sm" data-testid="withdrawn-view-job">
-                      View job
-                    </Link>
-                    <Link
-                      to={`/jobs/${jobId}`}
-                      className="btn btn-coral btn-sm"
-                      data-testid="withdrawn-reapply"
-                      title="Reapply from the job detail page"
-                    >
-                      Reapply →
-                    </Link>
-                  </div>
+                  <JobCard
+                    job={view}
+                    featured={!!row.is_featured}
+                  />
+                  {/*
+                   * Reapply CTA below the card — keeps the card body
+                   * identical to every other surface and the action
+                   * row consistent with the Applications tab pattern.
+                   */}
+                  <Link
+                    to={`/jobs/${jobId}`}
+                    className="btn btn-coral btn-sm application-withdraw-btn"
+                    data-testid="withdrawn-reapply"
+                    title="Reopen the job to apply again"
+                  >
+                    Reapply →
+                  </Link>
                 </div>
               );
             })}

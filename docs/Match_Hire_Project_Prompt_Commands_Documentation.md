@@ -882,4 +882,35 @@ git push
 
 ---
 
-*End of document. Append the next prompt as Step 52.*
+### Step 52
+**Date:** 2026-05-31
+**Module:** UI/UX (Salary display + Dashboard card consistency)
+**Purpose:** Display every salary as a monthly figure with full locale formatting; render the Withdrawn Applications tab through the same shared `<JobCard />` used on the Jobs page so candidate-dashboard cards no longer look "empty or different".
+**Prompt Command (verbatim, abbreviated):**
+> Change salary display to monthly everywhere ("PKR 500,000/month", not "PKR 6,000,000/year"). Keep DB data intact — convert only for UI. If period is monthly, display directly; if annual, monthly = annual / 12. Apply across Home, Jobs, Search, Recommended, Similar, Saved, Favourites, Candidate Dashboard, Company Dashboard, Job Detail, Related Jobs. Use the same rich JobCard for Job Applications + Withdrawn Applications tabs.
+**Expected Output:**
+  - **Centralised salary formatter** in `Frontend/src/api/adapters.js`. New signature `formatSalary(min, max, currency, period)`:
+    - Honours `salary_period` (`'month'` / `'monthly'` → as-is; everything else → divide by 12).
+    - Locale thousands separators ("PKR 500,000", not "500K").
+    - Currency symbol mapping: USD → "$", every other ISO code prefixed (PKR, EUR, GBP, INR, AED, SGD, AUD).
+    - Range shape: `PKR 100,000 – 150,000/month`; single-sided: `From …` / `Up to …`; empty: `Competitive`.
+    - Exported so other surfaces import from `api/adapters.js` rather than maintaining local copies.
+  - **`toJobCardShape`** now passes `j.salary_period` into the formatter so candidate + employer cards both render monthly.
+  - **`components/MatchingJobsPanel.jsx`** + **`components/MatchingJobsCarousel.jsx`**: their local `formatSalary` copies (with "K / year" shorthand) deleted; they import from the central helper.
+  - **`pages/CandidateWithdrawn.jsx`** rewritten to render through `<JobCard />` inside a `.jobs-grid` — same design as the Jobs page. The previous custom `.withdrawn-card` row-style layout retired. The page now wraps each card in `.application-card-wrap` with a Withdrawn pill + Applied / Withdrawn dates above and a Reapply CTA below, matching the active Applications tab pattern.
+  - **`Backend/src/repositories/application.repository.js:listForCandidate`**: SELECT now includes `j.description` so the JobCard summary slot has real content on the candidate's Applications + Withdrawn tabs (same data shape the Jobs page already has).
+  - **`Frontend/src/styles.css`**: the retired `.withdrawn-card` / `.withdrawn-list` / `.withdrawn-meta` rule set removed (with its responsive overrides) — the new card design uses the existing `.jobs-grid` and `.application-card-wrap` rules.
+**Status:** Completed
+**Commit:** *(this commit)*
+**Verification:**
+  - Live API smoke against the dev DB confirms `PKR 32,000,000 / year → PKR 2,666,700 – 4,166,700/month` and `PKR 1,200,000 / year → From PKR 100,000/month` (matches the user's worked examples).
+  - `vite build` clean. Backend `require('./src/app')` clean.
+  - Full Playwright suite: see commit body.
+**Notes:**
+  - **No business-logic changes.** Salary storage, matching, application flow, search filters, and APIs are untouched. Candidate `preferences.salary_min` / `salary_max` continue to mean "annual" because that's how the data was entered; the change is purely display-side.
+  - The candidate Preferences page input field still asks for annual salary (no copy change needed since the user's spec applies only to *display* surfaces). If product later wants the input to also be monthly, the Onboarding wizard would need a copy change — not part of this step.
+  - **Supersedes Step 33's "K shorthand" salary format** that landed via the job-card UI redesign; both Step 33 and Step 47's "From $90K" / "Up to $200K" / "$120K–180K" forms are replaced with the full-locale monthly shape.
+
+---
+
+*End of document. Append the next prompt as Step 53.*

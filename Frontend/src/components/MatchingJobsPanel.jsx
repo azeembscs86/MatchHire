@@ -17,6 +17,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { employersApi } from '../api/index.js';
+import { formatSalary } from '../api/adapters.js';
 
 function tierFor(score) {
   if (score == null) return null;
@@ -25,13 +26,10 @@ function tierFor(score) {
   return { key: 'mod',    label: 'Potential match' };
 }
 
-function formatSalary(min, max, currency = 'USD', period = 'year') {
-  if (!min && !max) return 'Competitive';
-  const sym = currency === 'USD' ? '$' : `${currency} `;
-  const k = (n) => `${Math.round(Number(n) / 1000)}K`;
-  const range = min && max ? `${sym}${k(min)} – ${k(max)}` : (min ? `From ${sym}${k(min)}` : `Up to ${sym}${k(max)}`);
-  return `${range} / ${period}`;
-}
+// Salary formatter — delegate to the central helper in `adapters.js`
+// so this surface uses the same "PKR 500,000/month" format as every
+// job card across the project. (The previous local "K / year" shape
+// is now retired.)
 
 export default function MatchingJobsPanel({ candidateId, onContact }) {
   const [state, setState] = useState({ records: [], loading: true, error: null });
