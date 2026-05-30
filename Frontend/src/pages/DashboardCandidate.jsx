@@ -132,7 +132,10 @@ export default function DashboardCandidate() {
   const withdrawnTotal = stats?.applications?.by_status?.withdrawn ?? 0;
   const appsTotal = Math.max(0, (stats?.applications?.total ?? 0) - withdrawnTotal);
   const favoritesTotal = stats?.favorites?.total ?? 0;
-  const interviewsTotal = stats?.interviews?.total ?? 0;
+  // `interviewsTotal` previously fed the now-removed inline stat
+  // card. The interview count is read directly from
+  // `stats.applications.by_status.interview` on the summary cards
+  // above. `nextInterview` (below) still drives the hero copy.
   const profileStrength = stats?.profile_strength ?? 0;
   const nextInterview = (stats?.interviews?.upcoming || [])[0];
 
@@ -174,6 +177,8 @@ export default function DashboardCandidate() {
           appsTotal={appsTotal}
           favoritesTotal={favoritesTotal}
           withdrawnTotal={withdrawnTotal}
+          rejectedTotal={stats?.applications?.by_status?.rejected ?? 0}
+          profileStrength={profileStrength}
           onSignOut={logout}
         />
 
@@ -227,88 +232,75 @@ export default function DashboardCandidate() {
             </div>
           )}
 
-          <div className="stat-row">
-            <div className="stat-card dark">
-              <div className="stat-label" style={{ color: 'rgba(245,240,230,.6)' }}>Profile strength<div className="stat-icon">◉</div></div>
-              <div className="stat-value">{profileStrength}%</div>
-              <div className="stat-trend">Aim for 100%</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-label">Applications<div className="stat-icon">▤</div></div>
-              <div className="stat-value">{appsTotal}</div>
-              <div className="stat-trend">All-time</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-label">Saved jobs<div className="stat-icon">♥</div></div>
-              <div className="stat-value">{favoritesTotal}</div>
-              <div className="stat-trend">In favorites</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-label">Interviews<div className="stat-icon">☎</div></div>
-              <div className="stat-value">{interviewsTotal}</div>
-              <div className="stat-trend">{nextInterview ? `Next: ${nextInterview.company_name || 'TBA'}` : 'None scheduled'}</div>
-            </div>
+          {/*
+           * Six clickable summary cards (June 2031 redesign).
+           *
+           * Replaced the old four-card stat row + the inline
+           * "My Applications" list — both lived on the overview
+           * but duplicated content already available on the
+           * dedicated tabs. The overview is now a high-level
+           * dashboard with one summary tile per workflow surface;
+           * each tile navigates to the matching sidebar tab so a
+           * candidate can drill from the count into the list in
+           * one click.
+           *
+           * The shortlisted + interviews tiles deep-link via a
+           * `?status=…` query param so the My Applications page
+           * can scope the list when (later) it consumes that
+           * param. Today the route still opens the full list;
+           * the scope is a non-breaking UI enhancement reserved
+           * for a follow-up step.
+           *
+           * Profile strength moved to the sidebar widget — see
+           * `CandidateDashSidebar` — so a tile here isn't needed.
+           */}
+          <div className="overview-summary" data-testid="overview-summary">
+            <Link to="/dashboard/candidate/applications" className="overview-summary-card overview-summary-card-primary">
+              <div className="overview-summary-icon">▤</div>
+              <div className="overview-summary-value">{appsTotal}</div>
+              <div className="overview-summary-label">Applications</div>
+            </Link>
+            <Link to="/saved-jobs" className="overview-summary-card">
+              <div className="overview-summary-icon">⌘</div>
+              <div className="overview-summary-value">{stats?.saved_jobs?.total ?? 0}</div>
+              <div className="overview-summary-label">Saved Jobs</div>
+            </Link>
+            <Link
+              to="/dashboard/candidate/applications?status=shortlisted"
+              className="overview-summary-card"
+            >
+              <div className="overview-summary-icon">★</div>
+              <div className="overview-summary-value">{stats?.applications?.by_status?.shortlisted ?? 0}</div>
+              <div className="overview-summary-label">Shortlisted</div>
+            </Link>
+            <Link
+              to="/dashboard/candidate/applications?status=interview"
+              className="overview-summary-card"
+            >
+              <div className="overview-summary-icon">☎</div>
+              <div className="overview-summary-value">{stats?.applications?.by_status?.interview ?? 0}</div>
+              <div className="overview-summary-label">Interviews</div>
+            </Link>
+            <Link to="/dashboard/candidate/withdrawn" className="overview-summary-card">
+              <div className="overview-summary-icon">↶</div>
+              <div className="overview-summary-value">{withdrawnTotal}</div>
+              <div className="overview-summary-label">Withdrawn</div>
+            </Link>
+            <Link to="/dashboard/candidate/rejected" className="overview-summary-card">
+              <div className="overview-summary-icon">✕</div>
+              <div className="overview-summary-value">{stats?.applications?.by_status?.rejected ?? 0}</div>
+              <div className="overview-summary-label">Rejected</div>
+            </Link>
           </div>
 
-          <div className="dash-row split">
-            <div className="dash-panel">
-              <div className="dash-panel-head">
-                <h3>My Applications</h3>
-                <Link to="/applications">See all {appsTotal} →</Link>
-              </div>
-              {apps.length === 0 ? (
-                <div className="dash-empty">
-                  <div className="dash-empty-icon">▤</div>
-                  <h4>No applications yet</h4>
-                  <p>You haven't applied to any jobs so far. Browse open roles and apply to the ones that fit you best.</p>
-                  <Link to="/jobs" className="btn btn-coral">Browse jobs →</Link>
-                </div>
-              ) : (
-                <div className="app-rows">
-                  {apps.map((a) => {
-                    const pill = STATUS_PILL[a.status] || STATUS_PILL.applied;
-                    const location = a.job_location || (a.is_remote ? 'Remote' : '—');
-                    return (
-                      <div key={a.id} className="app-row">
-                        <div className={`mini-logo lg-${(Number(a.company_id || a.id) % 7) + 1}`}>
-                          {(a.company_name || '·')[0]}
-                        </div>
-                        <div className="app-row-main">
-                          <div className="app-row-title text-truncate" title={a.job_title || 'Role'}>
-                            {a.job_title || 'Role'}
-                          </div>
-                          <div className="app-row-sub">
-                            <span className="text-truncate" title={a.company_name}>{a.company_name || 'Company'}</span>
-                            <span>·</span>
-                            <span className="text-truncate" title={location}>{location}</span>
-                          </div>
-                          <div className="app-row-meta">
-                            <span title={a.applied_at ? new Date(a.applied_at).toLocaleString() : ''}>
-                              Applied {relative(a.applied_at)}
-                            </span>
-                            <span className={`pill ${pill.cls}`}>{pill.label}</span>
-                          </div>
-                        </div>
-                        <Link
-                          to={`/jobs/${a.job_id}`}
-                          className="btn btn-ghost btn-sm app-row-view"
-                          aria-label={`View details for ${a.job_title || 'role'}`}
-                        >
-                          View details
-                        </Link>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/*
-             * Profile health — drives off the real per-section
-             * breakdown from /candidates/profile-completion so the
-             * hints match what the candidate hasn't filled in yet,
-             * not a hard-coded list.
-             */}
+          {/*
+           * Profile completion hints stay on the overview because
+           * they actively drive the candidate's "next step". The
+           * standalone version (full-width) replaces the previous
+           * 50/50 split that paired it with the now-removed
+           * Applications list.
+           */}
+          <div className="dash-row" style={{ marginTop: 24 }}>
             <ProfileCompletionCard completion={completion} compact />
           </div>
 

@@ -563,20 +563,26 @@
     min-height:60px;max-height:60px;overflow:hidden;
   }
   /*
-   * Empty variant (May 2031 dashboard-empty-space fix): on surfaces
-   * where the candidate's match scores are NOT computed (Applications
-   * tab, Saved Jobs, Favourites, Withdrawn Applications), every
-   * card's `why-list` is empty. Reserving 60px there opens a visible
-   * blank band below the work-mode chip — the issue reported on the
-   * dashboard. We collapse the slot to zero height when empty so
-   * those cards size to their real content. Cards in the same grid
-   * are uniformly collapsed, so the equal-height row contract still
-   * holds within each page; only the *between-page* card heights
-   * drift, which is the right trade-off here.
+   * Empty variant — RESERVED (June 2031 dashboard-card-consistency
+   * fix, supersedes the May 2031 collapse).
+   *
+   * The May 2031 patch had collapsed `.why-list-empty` to zero
+   * height so the band below the work-mode chip disappeared on
+   * dashboard surfaces (Applications / Saved / Favourites /
+   * Withdrawn / Rejected) where match data isn't computed. That
+   * fixed the local empty-space complaint but introduced a 60px
+   * height difference vs Jobs page cards — and the user now
+   * explicitly wants "0 visual difference" between every
+   * candidate-facing card surface.
+   *
+   * Resolution: reserve the slot uniformly. Cards on every surface
+   * are equal-height. The slot is empty on dashboard surfaces but
+   * uniformly so — each grid still aligns its own rows cleanly.
+   * Adding match-score decoration to favourites/saved-jobs in the
+   * backend is the architectural follow-up that would also fill
+   * the slot with content; that's a separate change.
    */
-  .why-list-empty{
-    min-height:0;max-height:0;margin-bottom:0;
-  }
+  .why-list-empty{}
   .why-item{
     display:flex;align-items:flex-start;gap:7px;
     font-size:11.5px;line-height:1.35;color:var(--ink-soft);
@@ -1611,10 +1617,32 @@
     border-right:1px solid rgba(245,240,230,.05);position:sticky;top:65px;
     height:calc(100vh - 65px);overflow-y:auto;
   }
-  .dash-side-head{padding:0 12px 24px;border-bottom:1px solid rgba(245,240,230,.08);margin-bottom:18px}
+  .dash-side-head{padding:0 12px 20px;border-bottom:1px solid rgba(245,240,230,.08);margin-bottom:18px}
   .dash-side-role{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:rgba(245,240,230,.5);margin-bottom:6px}
   .dash-side-name{font-family:'Fraunces',serif;font-size:20px;font-weight:500;display:flex;align-items:center;gap:10px}
-  .dash-side-avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-size:14px}
+  .dash-side-identity{display:flex;flex-direction:column;min-width:0;flex:1}
+  .dash-side-fullname{font-family:'Fraunces',serif;font-size:20px;font-weight:500;letter-spacing:-.01em;line-height:1.1;color:var(--bone)}
+  .dash-side-title{font-family:'Geist',sans-serif;font-size:11px;font-weight:500;color:rgba(245,240,230,.55);margin-top:2px;letter-spacing:.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dash-side-avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-size:14px;flex-shrink:0}
+
+  /*
+   * Profile-strength widget in the sidebar header.
+   * Lifted from the inline overview stat card (June 2031) so the
+   * candidate's "next thing to do" hint is visible from every
+   * dashboard tab, not just the overview.
+   */
+  .dash-side-strength{margin-top:14px;display:flex;flex-direction:column;gap:6px}
+  .dash-side-strength-row{display:flex;align-items:baseline;justify-content:space-between}
+  .dash-side-strength-label{font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:rgba(245,240,230,.55);font-weight:600}
+  .dash-side-strength-value{font-family:'Fraunces',serif;font-size:16px;font-weight:600;color:var(--coral);letter-spacing:-.01em}
+  .dash-side-strength-bar{height:6px;border-radius:100px;background:rgba(245,240,230,.08);overflow:hidden}
+  .dash-side-strength-fill{height:100%;background:var(--coral);border-radius:100px;transition:width .35s ease}
+  .dash-side-strength-cta{
+    font-size:11.5px;color:rgba(245,240,230,.7);text-decoration:none;
+    margin-top:2px;display:inline-block;
+    transition:color .15s ease;
+  }
+  .dash-side-strength-cta:hover{color:var(--coral)}
   .dash-nav{list-style:none;display:flex;flex-direction:column;gap:2px}
   .dash-nav-section{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:rgba(245,240,230,.4);padding:18px 12px 8px;font-weight:600}
   .dash-nav a{
@@ -2886,3 +2914,65 @@
   font-size:12.5px;color:var(--ink-soft);line-height:1.45;
 }
 .rejection-feedback-list li::marker{color:var(--coral)}
+
+/* =============================================================================
+ * Candidate Overview — six clickable summary tiles
+ * -----------------------------------------------------------------------------
+ * Replaces the old `.stat-row` four-card layout. Each tile is an <a>
+ * (the JSX uses <Link>) navigating to the matching sidebar tab so a
+ * candidate drills from the count into the list in one click.
+ * Responsive: 6 columns at desktop, 3 at tablet, 2 at narrow tablet,
+ * 1 on mobile — same collapse curve as `.applications-summary`.
+ * ===========================================================================*/
+.overview-summary{
+  display:grid;
+  grid-template-columns:repeat(6, minmax(0, 1fr));
+  gap:14px;margin-bottom:24px;
+}
+.overview-summary-card{
+  background:var(--paper);
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:18px 18px 16px;
+  display:flex;flex-direction:column;gap:6px;
+  text-decoration:none;color:var(--ink);
+  transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  cursor:pointer;
+}
+.overview-summary-card:hover{
+  transform:translateY(-2px);
+  border-color:rgba(232,93,60,.32);
+  box-shadow:0 12px 28px -18px rgba(14,17,22,.18);
+}
+.overview-summary-card-primary{
+  background:var(--coral);color:#fff;border-color:var(--coral);
+}
+.overview-summary-card-primary:hover{
+  background:var(--coral-deep);border-color:var(--coral-deep);
+}
+.overview-summary-card-primary .overview-summary-label,
+.overview-summary-card-primary .overview-summary-icon{color:rgba(255,255,255,.85)}
+.overview-summary-icon{
+  width:30px;height:30px;border-radius:8px;
+  background:var(--bone-2);display:grid;place-items:center;
+  font-size:14px;color:var(--ink-soft);
+}
+.overview-summary-card-primary .overview-summary-icon{background:rgba(255,255,255,.16);color:#fff}
+.overview-summary-value{
+  font-family:'Fraunces',serif;font-size:30px;font-weight:600;
+  letter-spacing:-.02em;line-height:1;
+}
+.overview-summary-label{
+  font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted);font-weight:600;
+}
+@media (max-width:1180px){
+  .overview-summary{grid-template-columns:repeat(3, minmax(0, 1fr))}
+}
+@media (max-width:768px){
+  .overview-summary{grid-template-columns:repeat(2, minmax(0, 1fr))}
+}
+@media (max-width:480px){
+  .overview-summary{grid-template-columns:1fr}
+  .overview-summary-value{font-size:26px}
+}

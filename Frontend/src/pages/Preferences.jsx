@@ -305,64 +305,114 @@ export default function Preferences() {
    * intersection ratio changes, e.g. scrolling slowly within a
    * single tall section).
    */
+  /*
+   * Implementation (June 2031, supersedes the May 2031 anchor-line
+   * scroll-listener):
+   *
+   * IntersectionObserver is the API the user explicitly asked for
+   * here. We define a thin horizontal trigger band near the top of
+   * the viewport via `rootMargin: '-15% 0px -75% 0px'`. When a
+   * section's bounding box overlaps that 10%-of-viewport-tall band,
+   * `entry.isIntersecting` flips to true and we promote that section
+   * to active.
+   *
+   * Edge cases this design handles:
+   *
+   *   - **Scroll up + scroll down both work.** The band is a fixed
+   *     horizontal line; whichever section currently crosses it wins
+   *     regardless of scroll direction.
+   *   - **Slow scroll inside a single tall section.** No intersection
+   *     change fires, so the active tab stays put — correct behaviour.
+   *   - **Multiple sections briefly visible.** We sort the
+   *     intersecting set by section index (document order) and pick
+   *     the LAST one — i.e. the one furthest down the page that's
+   *     still in the band. That matches reading direction.
+   *   - **Above the first section / below the last.** When no entry
+   *     is intersecting, we fall back to scroll-position so the very
+   *     top of the page reads as "priorities" and the very bottom as
+   *     "alerts".
+   *
+   * Click handler `scrollPref` still stamps a 700 ms lock on
+   * `scrollLockUntilRef` so the smooth-scroll animation doesn't flip
+   * the active tab through every intermediate section on the way.
+   */
   useEffect(() => {
     const sections = SECTIONS
-      .map((s) => ({ id: s.id, el: document.getElementById('pref-' + s.id) }))
+      .map((s, idx) => ({ id: s.id, idx, el: document.getElementById('pref-' + s.id) }))
       .filter((s) => s.el);
     if (sections.length === 0) return undefined;
 
-    // The anchor line sits ~20% from the top of the viewport,
-    // clear of any sticky header / save bar. A section is
-    // "active" when its top has crossed (or is just above) this
-    // line and its bottom is still below it.
-    function anchorY() {
-      return Math.max(96, window.innerHeight * 0.2);
-    }
+    // Live record of which sections are currently intersecting the
+    // trigger band. Updated on every observer callback.
+    const intersecting = new Set();
 
-    function recompute() {
-      // Skip while a click-driven smooth-scroll is in flight; the
-      // tab the user clicked is the authoritative one until the
-      // animation settles.
+    function pickActive() {
+      // Honour the click-driven scroll-lock so a clicked tab stays
+      // authoritative through the smooth-scroll animation.
       if (Date.now() < scrollLockUntilRef.current) return;
-      const anchor = anchorY();
-      // Floor: if no section's top has reached the anchor yet
-      // (e.g. user is still scrolled to the top above the first
-      // section), the first section is active.
-      let bestId = sections[0].id;
-      for (const s of sections) {
-        const rect = s.el.getBoundingClientRect();
-        if (rect.top - anchor <= 0) {
-          bestId = s.id;
-        } else {
-          // Sections are in document order — once we pass the
-          // anchor line going forward, no later section can be
-          // the active one yet. Bail early.
-          break;
+
+      // Preferred path: the LAST intersecting section in document
+      // order — the one the reader has scrolled furthest into.
+      if (intersecting.size > 0) {
+        let chosen = null;
+        for (const s of sections) {
+          if (intersecting.has(s.id)) chosen = s.id;
         }
+        if (chosen) setActiveSection((prev) => (prev === chosen ? prev : chosen));
+        return;
       }
-      setActiveSection((prev) => (prev === bestId ? prev : bestId));
+
+      // Fallback (no section in the band): use scroll position.
+      // Scrolled to the very top → first section; scrolled past the
+      // last section's top → last section.
+      const first = sections[0];
+      const last = sections[sections.length - 1];
+      const firstTop = first.el.getBoundingClientRect().top;
+      const lastTop = last.el.getBoundingClientRect().top;
+      const trigger = window.innerHeight * 0.15;
+      let chosen = first.id;
+      if (lastTop <= trigger) chosen = last.id;
+      else if (firstTop > trigger) chosen = first.id;
+      setActiveSection((prev) => (prev === chosen ? prev : chosen));
     }
 
-    let rafPending = false;
-    function onScrollOrResize() {
-      if (rafPending) return;
-      rafPending = true;
-      requestAnimationFrame(() => {
-        rafPending = false;
-        recompute();
-      });
-    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          // entry.target.id is "pref-<key>" — strip the prefix to
+          // match our section keys.
+          const id = entry.target.id.replace(/^pref-/, '');
+          if (entry.isIntersecting) intersecting.add(id);
+          else intersecting.delete(id);
+        }
+        pickActive();
+      },
+      {
+        // ~10% trigger band starting 15% from the top of the
+        // viewport. Below any sticky header; tall enough to catch
+        // headings reliably; thin enough that only one section
+        // typically intersects at a time.
+        rootMargin: '-15% 0px -75% 0px',
+        threshold: 0,
+      }
+    );
 
-    // Initial sync — covers the deep-link case where the page
-    // loads scrolled to an anchor.
-    recompute();
-    window.addEventListener('scroll', onScrollOrResize, { passive: true });
-    window.addEventListener('resize', onScrollOrResize, { passive: true });
+    sections.forEach((s) => observer.observe(s.el));
+
+    // Window resize re-evaluates the fallback path so an orientation
+    // change near a section boundary still flips the active tab.
+    function onResize() { pickActive(); }
+    window.addEventListener('resize', onResize, { passive: true });
+
+    // Initial sync — covers deep-link / refreshed scroll positions
+    // where no intersection event has fired yet.
+    pickActive();
+
     return () => {
-      window.removeEventListener('scroll', onScrollOrResize);
-      window.removeEventListener('resize', onScrollOrResize);
+      observer.disconnect();
+      window.removeEventListener('resize', onResize);
     };
-    // Re-run only when the page is finished loading (sections exist).
+    // Re-run only when the page finishes loading (sections exist).
   }, [loading]);
 
   /*

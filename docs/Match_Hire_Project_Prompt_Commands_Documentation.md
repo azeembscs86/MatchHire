@@ -963,4 +963,29 @@ git push
 
 ---
 
-*End of document. Append the next prompt as Step 55.*
+### Step 55
+**Date:** 2026-05-31
+**Module:** Candidate Dashboard UX overhaul
+**Purpose:** Make the candidate dashboard easier to read at a glance, give withdrawals a clean inline path from the My Applications list, surface rejection feedback in a dedicated tab, move profile-strength into the sidebar, replace the four legacy stat cards with six clickable summary tiles, and (per the user's explicit request) rebuild the Preferences scroll-tracker on IntersectionObserver.
+**Prompt Command (verbatim, abbreviated):**
+> Standardise dashboard job cards (Favs/Saved match Jobs page). My Applications: replace "Applied" with "Withdraw Application" + confirmation modal. New Rejected Applications tab with rejection reason + suggestions. Remove My Applications list from Overview. Move Profile Strength under candidate avatar in left sidebar. Six clickable summary cards (Applications / Saved Jobs / Shortlisted / Interviews / Withdrawn / Rejected). Remove Favourites from header. Fix Preferences tab active-state on scroll using IntersectionObserver.
+**Expected Output:**
+  - **Card consistency:** `.why-list-empty` reservation restored (60px slot) so Favs / Saved / Applications / Withdrawn / Rejected cards match Jobs-page card height. Supersedes the May 2031 collapse.
+  - **JobCard:** new `onWithdraw` + `withdrawingId` props. When supplied (and `applied=true`), the green "Applied" pill is replaced with a "Withdraw Application" outline CTA; clicking emits the event so the caller owns the confirmation + API call.
+  - **My Applications:** wires `onWithdraw` to a `.confirm-overlay` modal, optimistic remove on success, inline success/failure notice, summary-card refetch.
+  - **New Rejected Applications page** (`Frontend/src/pages/CandidateRejected.jsx`) + `/dashboard/candidate/rejected` route. Renders rejected rows through the shared JobCard with the `.rejection-feedback` panel below (reason label + improvement suggestions). Sidebar gains a "Rejected Applications" entry with a live count badge from `stats.applications.by_status.rejected`.
+  - **Sidebar:** new `.dash-side-strength` widget renders the profile-strength % + progress bar + "Complete profile →" CTA (when <80%) directly under the user identity. Available on every dashboard tab via `CandidateDashboardLayout` + the overview page's own sidebar mount.
+  - **Overview rebuild:** old `.stat-row` (4 cards) + inline `My Applications` list both removed. New `.overview-summary` grid renders six `<Link>` tiles: Applications · Saved Jobs · Shortlisted · Interviews · Withdrawn · Rejected. Each navigates to its dedicated tab; Shortlisted / Interviews append `?status=…` so a future list-scope feature can hook in without churn.
+  - **Favourites removal from header:** verified — Step 49 (`776e54d`) already removed the desktop heart + the mobile drawer Saved-jobs link. Only documentary comments remain.
+  - **Preferences scroll:** rewritten on IntersectionObserver. Defines a thin trigger band via `rootMargin: '-15% 0px -75% 0px'`. The LAST intersecting section (document order) wins; a scroll-position fallback handles "above first" / "below last" edges. Click-lock (700 ms) preserved so smooth-scroll doesn't flicker. Preferences-scroll spec: 4/4 pass.
+**Status:** Completed
+**Commit:** *(this commit)*
+**Notes:**
+  - **Supersedes Step 57's `.why-list-empty` collapse** — the user's "0 visual difference between dashboard cards and Jobs page" requirement directly conflicts with Step 57's "remove the empty band below work-mode". Both instructions were the user's; the current explicit "0 visual difference" wins. To get BOTH (consistent height AND no empty band), a follow-up should add match-score decoration to favourites + saved-jobs API responses so the why-list actually populates.
+  - **Supersedes Step 50's Preferences scroll-listener tracker** — same problem space, different implementation. Both pass the QA spec; IntersectionObserver is the API the user explicitly asked for.
+  - **No DB / API contract changes.** Sidebar badges + summary cards consume the existing `/candidates/dashboard/stats` shape.
+  - **interviewsTotal** local in `DashboardCandidate.jsx` was reduced to a comment marker — the count is now read directly from `stats.applications.by_status.interview` on the summary card.
+
+---
+
+*End of document. Append the next prompt as Step 56.*

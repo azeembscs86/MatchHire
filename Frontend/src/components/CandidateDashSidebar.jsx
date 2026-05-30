@@ -16,7 +16,7 @@
  * badge; omit and the row stays clean.
  */
 import { useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 
 function initials(name = '') {
   return name
@@ -82,16 +82,49 @@ export default function CandidateDashSidebar({
   appsTotal,
   favoritesTotal,
   withdrawnTotal,
+  rejectedTotal,
+  /**
+   * Candidate's profile completion percentage (0–100). Rendered as a
+   * small progress widget directly under the user name so the
+   * sidebar carries the candidate's "next thing to do" hint at all
+   * times. Previously lived as a stat card in the overview content
+   * area — moving it here frees the dashboard for higher-density
+   * summary tiles.
+   */
+  profileStrength,
   onSignOut,
 }) {
+  // Round once so the % label, the bar width, and the prompt copy
+  // all agree. NaN / undefined collapses to null so the widget hides.
+  const strength = Number.isFinite(Number(profileStrength)) ? Math.round(Number(profileStrength)) : null;
   return (
     <aside className="dash-sidebar" data-testid="candidate-dash-sidebar">
       <div className="dash-side-head">
         <div className="dash-side-role">Candidate · Pro plan</div>
         <div className="dash-side-name">
           <DashAvatar user={user} />
-          {user?.full_name?.split(' ')[0] || 'You'}
+          <div className="dash-side-identity">
+            <div className="dash-side-fullname">{user?.full_name?.split(' ')[0] || 'You'}</div>
+            {user?.headline && <div className="dash-side-title">{user.headline}</div>}
+          </div>
         </div>
+        {strength != null && (
+          <div className="dash-side-strength" data-testid="sidebar-profile-strength">
+            <div className="dash-side-strength-row">
+              <span className="dash-side-strength-label">Profile strength</span>
+              <span className="dash-side-strength-value">{strength}%</span>
+            </div>
+            <div className="dash-side-strength-bar" aria-hidden="true">
+              <div
+                className="dash-side-strength-fill"
+                style={{ width: `${Math.max(4, Math.min(100, strength))}%` }}
+              />
+            </div>
+            {strength < 80 && (
+              <Link to="/profile" className="dash-side-strength-cta">Complete profile →</Link>
+            )}
+          </div>
+        )}
       </div>
       <ul className="dash-nav">
         {/*
@@ -130,6 +163,20 @@ export default function CandidateDashSidebar({
           icon="↶"
           label="Withdrawn Applications"
           badge={withdrawnTotal}
+        />
+        {/*
+         * Rejected Applications gets its own surface — employer-
+         * rejected rows live separately from withdrawals so the
+         * candidate can read the rejection reason + improvement
+         * suggestions in one place without scrolling past active
+         * applications. Badge reflects the live count from
+         * `stats.applications.by_status.rejected`.
+         */}
+        <NavRow
+          to="/dashboard/candidate/rejected"
+          icon="✕"
+          label="Rejected Applications"
+          badge={rejectedTotal}
         />
         <NavRow to="/dashboard/candidate/messages" icon="✉" label="Messages" />
         <NavRow to="/dashboard/candidate/notifications" icon="◉" label="Notifications" />

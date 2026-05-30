@@ -102,11 +102,27 @@ function rollupStats(stats) {
   return { total, review, shortlisted, interview, accepted, rejected };
 }
 
+/**
+ * Statuses from which a candidate may still withdraw — mirrors the
+ * backend's WITHDRAWABLE_STATUSES exactly so the Withdraw button on
+ * each card matches what the API will actually honour.
+ */
+const WITHDRAWABLE_STATUSES = new Set([
+  'applied', 'reviewing', 'under_review', 'shortlisted', 'interview', 'offered',
+]);
+
 export default function CandidateApplications() {
   const [records, setRecords] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Withdraw flow state. `withdrawTarget` holds the application row
+  // pending confirmation; `withdrawing` guards the confirm button
+  // while the request is in flight; `notice` surfaces success +
+  // failure inline. Mirrors the pattern used on JobDetail.
+  const [withdrawTarget, setWithdrawTarget] = useState(null);
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [notice, setNotice] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -135,6 +151,32 @@ export default function CandidateApplications() {
 
   useEffect(() => { load(); }, [load]);
 
+  /**
+   * Confirm-and-withdraw handler shared by the modal. Mirrors the
+   * JobDetail withdraw flow: optimistic remove from the visible list,
+   * inline success/failure notice, full re-fetch in the background so
+   * the summary cards refresh.
+   */
+  async function confirmWithdraw() {
+    if (!withdrawTarget) return;
+    setWithdrawing(true);
+    setNotice(null);
+    try {
+      await candidatesApi.applications.withdraw(withdrawTarget.id);
+      // The active list excludes withdrawn rows — drop it locally so
+      // the row disappears immediately rather than waiting on the
+      // re-fetch.
+      setRecords((prev) => prev.filter((r) => r.id !== withdrawTarget.id));
+      setNotice({ ok: true, text: 'Application withdrawn. It now lives in your Withdrawn Applications tab.' });
+      setWithdrawTarget(null);
+      load(); // refresh counts on the summary cards
+    } catch (err) {
+      setNotice({ ok: false, text: err?.message || 'Could not withdraw application. Please try again.' });
+    } finally {
+      setWithdrawing(false);
+    }
+  }
+
   const roll = rollupStats(stats);
 
   return (
@@ -158,6 +200,25 @@ export default function CandidateApplications() {
       </div>
 
       <div className="container" style={{ padding: '40px 0 80px' }}>
+        {notice && (
+          <div
+            role="status"
+            className="applications-notice"
+            data-testid="applications-notice"
+            style={{
+              margin: '0 0 18px',
+              padding: '12px 16px',
+              borderRadius: 12,
+              fontSize: 13,
+              background: notice.ok ? '#e6f4ea' : '#fde9e3',
+              color: notice.ok ? '#0f5132' : '#b3361b',
+              border: `1px solid ${notice.ok ? 'rgba(15,81,50,.2)' : 'rgba(179,54,27,.2)'}`,
+            }}
+          >
+            {notice.text}
+          </div>
+        )}
+
         {/*
          * Six summary cards covering every stage of the active
          * pipeline (withdrawn rows have their own dedicated tab so
@@ -259,10 +320,23 @@ export default function CandidateApplications() {
                       Applied {row.applied_at ? new Date(row.applied_at).toLocaleDateString() : '—'}
                     </span>
                   </div>
+                  {/*
+                   * Pass `onWithdraw` only when the application is in
+                   * a withdrawable pipeline state — terminal states
+                   * (rejected, hired/accepted) keep the green
+                   * "Applied" pill so the row reads as terminal.
+                   * Capturing the row's id in the closure is safer
+                   * than reading `job.id` because the JobCard view-
+                   * model carries the job_id, not the application_id.
+                   */}
                   <JobCard
                     job={view}
                     applied
                     featured={!!row.is_featured}
+                    onWithdraw={WITHDRAWABLE_STATUSES.has(String(row.status || '').toLowerCase())
+                      ? () => { setNotice(null); setWithdrawTarget(row); }
+                      : undefined}
+                    withdrawingId={withdrawing && withdrawTarget?.id === row.id ? view.id : null}
                   />
                   {/*
                    * No withdraw button on the Applications tab — the
@@ -303,6 +377,51 @@ export default function CandidateApplications() {
           </div>
         )}
       </div>
+
+      {/*
+       * Withdraw confirmation modal — same `.confirm-overlay` / `.confirm-card`
+       * pattern used on JobDetail. Clicking the backdrop (while not in flight)
+       * cancels; the explicit Cancel + Confirm buttons run the standard flow.
+       */}
+      {withdrawTarget && (
+        <div
+          className="confirm-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="withdraw-title"
+          onClick={() => { if (!withdrawing) setWithdrawTarget(null); }}
+        >
+          <div className="confirm-card" onClick={(e) => e.stopPropagation()}>
+            <h3 id="withdraw-title" className="confirm-title">Withdraw application?</h3>
+            <p className="confirm-body">
+              You're about to withdraw your application for{' '}
+              <strong>{withdrawTarget.job_title || withdrawTarget.title || 'this role'}</strong>
+              {withdrawTarget.company_name ? <> at <strong>{withdrawTarget.company_name}</strong></> : null}.
+              The job will reappear in your feed and the application will move to your Withdrawn Applications tab.
+            </p>
+            <div className="confirm-actions">
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => setWithdrawTarget(null)}
+                disabled={withdrawing}
+              >
+                Keep application
+              </button>
+              <button
+                type="button"
+                className="btn btn-coral"
+                data-testid="withdraw-confirm-button"
+                onClick={confirmWithdraw}
+                disabled={withdrawing}
+                aria-busy={withdrawing}
+              >
+                {withdrawing ? 'Withdrawing…' : 'Yes, withdraw'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

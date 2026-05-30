@@ -72,6 +72,8 @@ export default function CandidateDashboardLayout() {
           })()}
           favoritesTotal={stats?.favorites?.total ?? null}
           withdrawnTotal={stats?.applications?.by_status?.withdrawn ?? null}
+          rejectedTotal={stats?.applications?.by_status?.rejected ?? null}
+          profileStrength={stats?.profile_strength ?? null}
           onSignOut={handleSignOut}
         />
         <div className="dash-main dash-main-flush">

@@ -44,6 +44,7 @@ import DashboardAdmin from './pages/DashboardAdmin.jsx';
 import CandidateDashboardLayout from './components/CandidateDashboardLayout.jsx';
 import CandidateApplications from './pages/CandidateApplications.jsx';
 import CandidateWithdrawn from './pages/CandidateWithdrawn.jsx';
+import CandidateRejected from './pages/CandidateRejected.jsx';
 import CandidateMessages from './pages/dashboard/CandidateMessages.jsx';
 import CandidateNotifications from './pages/dashboard/CandidateNotifications.jsx';
 import CandidateSettings from './pages/dashboard/CandidateSettings.jsx';
@@ -119,6 +120,7 @@ export default function App() {
              */}
             <Route path="/dashboard/candidate/applications" element={<CandidateApplications />} />
             <Route path="/dashboard/candidate/withdrawn" element={<CandidateWithdrawn />} />
+            <Route path="/dashboard/candidate/rejected" element={<CandidateRejected />} />
             <Route path="/dashboard/candidate/messages" element={<CandidateMessages />} />
             <Route path="/dashboard/candidate/notifications" element={<CandidateNotifications />} />
             <Route path="/dashboard/candidate/settings" element={<CandidateSettings />} />

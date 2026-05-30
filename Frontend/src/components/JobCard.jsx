@@ -240,6 +240,20 @@ export default function JobCard({
    */
   onManage,
   /**
+   * Candidate-side withdraw action. When supplied (and `applied` is
+   * true), the green "Applied" disabled button is replaced with a
+   * "Withdraw Application" CTA. Receives the `job` view-model — the
+   * caller is responsible for confirmation (modal etc) and for
+   * calling the withdraw API. Used by the My Applications list to
+   * surface the withdraw action inline.
+   */
+  onWithdraw,
+  /**
+   * When equal to `job.id`, render the Withdraw button in its
+   * loading state. Mirrors `applyingId` for the Apply flow.
+   */
+  withdrawingId = null,
+  /**
    * Who's looking at this card. Controls which decorations render:
    *
    *   'candidate' (default) — match badge, why-recommended
@@ -468,7 +482,24 @@ export default function JobCard({
           */}
         {!showManageRow && (applied || onApply) && (
           <div className="job-actions-row">
-            {applied ? (
+            {applied && typeof onWithdraw === 'function' ? (
+              // My Applications list passes `onWithdraw` — replace the
+              // disabled "Applied" pill with an active Withdraw CTA so
+              // the candidate can pull out of the application without
+              // navigating to the Job Detail page first. Confirmation
+              // + API call live on the caller; we just emit the event.
+              <button
+                className="btn btn-outline btn-sm apply-btn apply-btn-withdraw"
+                type="button"
+                data-testid="withdraw-application-button"
+                disabled={withdrawingId === job.id}
+                aria-busy={withdrawingId === job.id}
+                onClick={(e) => { e.stopPropagation(); onWithdraw(job); }}
+                style={{ width: '100%' }}
+              >
+                {withdrawingId === job.id ? 'Withdrawing…' : 'Withdraw Application'}
+              </button>
+            ) : applied ? (
               <button
                 className="btn btn-coral btn-sm apply-btn apply-btn-applied"
                 type="button"
