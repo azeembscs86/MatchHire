@@ -77,11 +77,23 @@ async function list(user_id, { page = 1, limit = 10, include_expired = false } =
        AND (j.application_deadline IS NULL OR j.application_deadline > NOW())
        AND j.status = 'open' AND c.status = 'active'`;
 
+  // Select the same column set as `jobRepo.jobsListSelect()` so the
+  // shared frontend adapter (`toJobCardShape`) produces a view-model
+  // byte-for-byte identical to the Jobs page feed — description
+  // preview, status badge, work-mode chip, applicants/views counters,
+  // posted-date and salary period all light up on /saved-jobs without
+  // a second request. `sj.status` is aliased to `saved_status` so the
+  // bare `status` column reflects the job's own status (the canonical
+  // shape `toJobCardShape` expects).
   const rows = await db.query(
     `SELECT sj.id AS saved_id, sj.saved_at, sj.expires_at, sj.status AS saved_status,
-            j.id, j.title, j.slug, j.location, j.is_remote, j.job_type, j.experience_level,
-            j.salary_min, j.salary_max, j.salary_currency, j.skills_tags, j.is_featured,
-            j.application_deadline, j.status AS job_status,
+            j.id, j.title, j.slug, j.description,
+            j.job_type, j.experience_level,
+            j.location, j.city, j.country, j.is_remote, j.work_mode, j.is_global_remote,
+            j.salary_min, j.salary_max, j.salary_currency, j.salary_period,
+            j.skills_tags, j.application_deadline, j.status,
+            j.is_featured, j.views_count, j.applications_count,
+            j.published_at, j.created_at,
             c.id AS company_id, c.name AS company_name, c.logo_url AS company_logo
      FROM saved_jobs sj
      INNER JOIN jobs j ON j.id = sj.job_id AND j.deleted_at IS NULL

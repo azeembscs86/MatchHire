@@ -41,11 +41,21 @@ async function list(user_id, { page = 1, limit = 10 }) {
     AND c.status = 'active'
     AND (j.application_deadline IS NULL OR j.application_deadline > NOW())
   `;
+  // Select the same column set as `jobRepo.jobsListSelect()` so the
+  // shared frontend adapter (`toJobCardShape`) produces a view-model
+  // byte-for-byte identical to the Jobs page feed — description
+  // preview, status badge, work-mode chip, applicants/views counters,
+  // posted-date and salary period all light up on /favorites without
+  // a second request. See JobCard.jsx for the consumer contract.
   const rows = await db.query(
     `SELECT f.id AS favorite_id, f.created_at AS favorited_at,
-            j.id, j.title, j.slug, j.location, j.is_remote, j.job_type, j.experience_level,
-            j.salary_min, j.salary_max, j.salary_currency, j.skills_tags, j.is_featured,
-            j.application_deadline,
+            j.id, j.title, j.slug, j.description,
+            j.job_type, j.experience_level,
+            j.location, j.city, j.country, j.is_remote, j.work_mode, j.is_global_remote,
+            j.salary_min, j.salary_max, j.salary_currency, j.salary_period,
+            j.skills_tags, j.application_deadline, j.status,
+            j.is_featured, j.views_count, j.applications_count,
+            j.published_at, j.created_at,
             c.id AS company_id, c.name AS company_name, c.logo_url AS company_logo
      FROM favorites f
      INNER JOIN jobs j ON j.id = f.job_id
