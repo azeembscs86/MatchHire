@@ -297,11 +297,73 @@ function SearchIcon() {
  * autocomplete dropdown. The dropdown is rendered as a portal-style
  * absolute element under the field; clicks outside close it via the
  * effect on `.jobs-search-bar`.
+ *
+ * Keyboard model:
+ *   - ArrowDown / ArrowUp move the active highlight through the list
+ *     (wraps at both ends).
+ *   - Enter picks the active row when one is highlighted; otherwise it
+ *     falls through to `onSubmit` so the form still submits cleanly.
+ *   - Escape collapses the panel via `onClose` (the parent closes by
+ *     clearing `focusedField` — same path as the outside-click handler).
+ *
+ * `emptyHint` is a per-field opt-in: when provided and the user has
+ * typed something but no suggestions came back, we render the hint
+ * instead of an empty list (used for Skills → "No matching skills
+ * found"). Pure presentational widget; data fetching stays in the
+ * parent so multiple fields can share lookup logic.
  */
 function SearchField({
   label, name, value, onChange, onSubmit, placeholder,
-  suggestions = [], onSuggestionPick, onFocus, focused,
+  suggestions = [], onSuggestionPick, onFocus, onClose, focused,
+  emptyHint,
 }) {
+  const [active, setActive] = useState(-1);
+  const showList = focused && suggestions.length > 0;
+  const showEmpty = focused
+    && !!emptyHint
+    && value.trim().length > 0
+    && suggestions.length === 0;
+
+  // Reset the active index whenever the visible list changes (new
+  // query, blur/refocus). Without this an old highlight could land
+  // on a different row after the list rebuilds.
+  useEffect(() => { setActive(-1); }, [focused, suggestions.length]);
+
+  function handleKeyDown(e) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      onClose?.();
+      return;
+    }
+    if (showList) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setActive((i) => (i + 1 >= suggestions.length ? 0 : i + 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setActive((i) => (i <= 0 ? suggestions.length - 1 : i - 1));
+        return;
+      }
+      if (e.key === 'Enter' && active >= 0 && active < suggestions.length) {
+        e.preventDefault();
+        onSuggestionPick(suggestions[active]);
+        return;
+      }
+    }
+    if (e.key === 'Enter') onSubmit();
+  }
+
+  function handleClear() {
+    onChange('');
+    setActive(-1);
+    onClose?.();
+  }
+
+  const listboxId = `jobs-search-${name}-suggest`;
+  const activeId = active >= 0 ? `jobs-search-${name}-opt-${active}` : undefined;
+
   return (
     <div className={`jobs-search-field${focused ? ' is-focused' : ''}`}>
       <label htmlFor={`jobs-search-${name}`}>{label}</label>
@@ -313,27 +375,44 @@ function SearchField({
           placeholder={placeholder}
           onChange={(e) => onChange(e.target.value)}
           onFocus={onFocus}
-          onKeyDown={(e) => { if (e.key === 'Enter') onSubmit(); }}
+          onKeyDown={handleKeyDown}
           autoComplete="off"
+          role="combobox"
+          aria-expanded={showList}
+          aria-controls={showList ? listboxId : undefined}
+          aria-activedescendant={activeId}
+          aria-autocomplete="list"
           data-testid={`jobs-search-${name}`}
         />
         {value && (
           <button
             type="button"
             className="jobs-search-clear"
-            onClick={() => onChange('')}
+            onClick={handleClear}
             aria-label={`Clear ${label}`}
             title={`Clear ${label}`}
           >×</button>
         )}
       </div>
-      {focused && suggestions.length > 0 && (
-        <ul className="jobs-search-suggest" role="listbox" data-testid={`jobs-search-${name}-suggest`}>
-          {suggestions.map((s) => (
-            <li key={s.id || s.name || s}>
+      {showList && (
+        <ul
+          id={listboxId}
+          className="jobs-search-suggest"
+          role="listbox"
+          data-testid={listboxId}
+        >
+          {suggestions.map((s, i) => (
+            <li
+              key={s.id || s.name || s}
+              role="option"
+              id={`jobs-search-${name}-opt-${i}`}
+              aria-selected={active === i}
+            >
               <button
                 type="button"
+                className={active === i ? 'is-active' : undefined}
                 onMouseDown={(e) => e.preventDefault() /* keep focus until pick fires */}
+                onMouseEnter={() => setActive(i)}
                 onClick={() => onSuggestionPick(s)}
               >
                 {s.name || s.label || String(s)}
@@ -341,6 +420,15 @@ function SearchField({
             </li>
           ))}
         </ul>
+      )}
+      {showEmpty && (
+        <div
+          className="jobs-search-suggest-empty"
+          role="status"
+          data-testid={`jobs-search-${name}-empty`}
+        >
+          {emptyHint}
+        </div>
       )}
     </div>
   );
@@ -674,6 +762,7 @@ export default function Jobs() {
             onSubmit={commitSearch}
             placeholder="e.g. Senior Frontend Engineer"
             onFocus={() => setFocusedField('title')}
+            onClose={() => setFocusedField(null)}
             focused={focusedField === 'title'}
             suggestions={
               focusedField === 'title' && !keywordInput && recentSearches.length > 0
@@ -690,8 +779,10 @@ export default function Jobs() {
             onSubmit={commitSearch}
             placeholder="react, node.js, aws"
             onFocus={() => setFocusedField('skills')}
+            onClose={() => setFocusedField(null)}
             focused={focusedField === 'skills'}
             suggestions={focusedField === 'skills' ? skillSuggestions : []}
+            emptyHint="No matching skills found"
             onSuggestionPick={(s) => {
               // Append to existing comma-separated list, dedup case-insensitively.
               const name = s.name || String(s);
@@ -709,6 +800,7 @@ export default function Jobs() {
             onSubmit={commitSearch}
             placeholder="Company name"
             onFocus={() => setFocusedField('company')}
+            onClose={() => setFocusedField(null)}
             focused={focusedField === 'company'}
           />
           <SearchField
@@ -719,6 +811,7 @@ export default function Jobs() {
             onSubmit={commitSearch}
             placeholder="City or country"
             onFocus={() => setFocusedField('location')}
+            onClose={() => setFocusedField(null)}
             focused={focusedField === 'location'}
           />
           <button
