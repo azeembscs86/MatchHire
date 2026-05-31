@@ -22,6 +22,7 @@ const jobRepo = require('../repositories/job.repository');
 const appRepo = require('../repositories/application.repository');
 const cache = require('../cache/cache.helper');
 const AppError = require('../utils/AppError');
+const jobMatchService = require('./jobMatch.service');
 
 async function save(user_id, job_id) {
   const job = await jobRepo.findById(job_id);
@@ -56,8 +57,31 @@ async function remove(user_id, job_id) {
   return true;
 }
 
+/**
+ * List the candidate's saved-for-later jobs, decorated with the
+ * candidate's match data (June 2031 dashboard-card consistency fix).
+ *
+ * The shared JobCard renders its "Why we recommend this role"
+ * checklist whenever the row carries `match_score` + `reasons` +
+ * `missing`. The Jobs page smart-feed already supplies that triple;
+ * we now do the same for saved-jobs so candidate dashboard cards on
+ * /saved-jobs read identically to Jobs page cards.
+ *
+ * The decoration is best-effort: if the candidate context isn't
+ * loadable we return the raw rows unchanged.
+ */
 async function list(user_id, paging) {
-  return repo.list(user_id, paging);
+  const { rows, total } = await repo.list(user_id, paging);
+  try {
+    const candidate = await jobRepo.loadCandidateContext(user_id);
+    if (candidate && Array.isArray(rows) && rows.length > 0) {
+      // `filter: false` so saved-but-low-match jobs still appear —
+      // the candidate explicitly opted in by saving them.
+      const decorated = jobMatchService.rankJobs(rows, candidate, { filter: false });
+      return { rows: decorated, total };
+    }
+  } catch (_e) { /* fall through with un-decorated rows */ }
+  return { rows, total };
 }
 
 async function isSaved(user_id, job_id) {

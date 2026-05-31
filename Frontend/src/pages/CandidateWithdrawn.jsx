@@ -123,6 +123,13 @@ export default function CandidateWithdrawn() {
                 created_at: row.job_created_at,
                 is_featured: row.is_featured,
                 description: row.description,
+                // Live match decoration from the backend so the
+                // JobCard's "Why we recommend" slot populates on the
+                // Withdrawn tab too — keeps card heights consistent
+                // with the Jobs page.
+                match_score: row.match_score,
+                reasons: row.reasons,
+                missing: row.missing,
               });
               if (!view) return null;
               const jobId = row.job_id ?? row.id;

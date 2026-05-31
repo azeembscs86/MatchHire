@@ -988,4 +988,27 @@ git push
 
 ---
 
-*End of document. Append the next prompt as Step 56.*
+### Step 56
+**Date:** 2026-05-31
+**Module:** Job-card spacing across viewer roles (final resolution)
+**Purpose:** Make visitor / candidate / company job cards attractive, compact, and consistent — close the long-running tension between "equal heights everywhere" and "no empty space" by populating the empty slot on candidate surfaces and collapsing it on guest/company surfaces.
+**Prompt Command (verbatim, abbreviated):**
+> Fix job card spacing for visitor, candidate, and company users across Home / Jobs / Search / Recommended / Similar / Company-dashboard pages. Remove empty space; equal width/height/padding; visitor cards (no match/strong-fit/missing); candidate cards (Apply/Withdraw/Applied/match/missing); company cards (no candidate-only info); mobile responsive. Reuse JobCard.
+**Expected Output:**
+  - **CSS:** `.why-list-empty` collapses to zero height — visitor + company cards (which by spec never render match content) lose the previously-reserved 60px band below the work-mode chip and read as compact cards. Within each visitor/company grid, cards are uniformly collapsed so the equal-height row contract still holds.
+  - **Backend:** `listFavorites` (`services/candidate.service.js`) and `list` (`services/savedJob.service.js`) now run rows through `jobMatchService.rankJobs(rows, candidate, { filter: false })` after the repo fetch. `listApplications` does the same — applies live scoring against the candidate's current context so My Applications / Withdrawn / Rejected cards carry match content. Re-sort restored to applied-at descending on the applications path.
+  - **Frontend:** `CandidateApplications.jsx`, `CandidateWithdrawn.jsx`, `CandidateRejected.jsx` view-models now forward `match_score`, `reasons`, `missing` from the decorated row into `toJobCardShape`. Favourites + Saved Jobs pages already pass full records through `toJobCardShape` so they auto-pick up the new fields from the backend decoration.
+  - **Net visual result:**
+      - Visitor + company cards: COMPACT, no empty band (collapsed).
+      - Candidate cards across every surface (Jobs / Favs / Saved / Apps / Withdrawn / Rejected): UNIFORM 60px why-list reservation, populated with live match content.
+**Status:** Completed
+**Commit:** *(this commit)*
+**Notes:**
+  - **Resolves the iteration between Steps 48/55/57/59.** The fundamental tradeoff was: "equal heights" conflicts with "no empty band" iff the source data differs across surfaces. This step removes the conflict by ensuring source data matches at the data layer (backend decoration on every candidate surface).
+  - **Live scoring cost:** roughly 5–20 jobs × match algorithm per request on Favs / Saved / Applications. The matcher is pure JS over already-fetched rows; no extra DB round-trips. Acceptable for dashboard surfaces; not used on public listings where the smart-feed already scores.
+  - **Live vs stored match_score on Applications:** we live-score rather than reading the stored `applications.match_score` so the "Why we recommend" panel reflects the candidate's CURRENT skills, not the score at apply-time. This is the right UX for "what should I improve" surfaces.
+  - **Legacy `application_match_results` table** stays intact — it's still used for employer audit reporting.
+
+---
+
+*End of document. Append the next prompt as Step 57.*

@@ -20,6 +20,7 @@ const appRepo = require('../repositories/application.repository');
 const interviewRepo = require('../repositories/interview.repository');
 const matchRepo = require('../repositories/match.repository');
 const matchService = require('./match.service');
+const jobMatchService = require('./jobMatch.service');
 const cache = require('../cache/cache.helper');
 const AppError = require('../utils/AppError');
 const db = require('../config/database');
@@ -143,8 +144,37 @@ async function removeFavorite(user_id, job_id) {
   return true;
 }
 
+/**
+ * Decorate a candidate's favourite jobs with personalised match
+ * data (June 2031 dashboard-card consistency fix).
+ *
+ * The shared JobCard renders a "Why we recommend this role"
+ * checklist (matched skills / missing skills) whenever it sees
+ * `match_score` + `reasons` + `missing` on the row. The Jobs page
+ * smart-feed already supplies that triple; favourites + saved-jobs
+ * previously did not, so candidate dashboard cards looked taller-
+ * or-shorter than Jobs page cards depending on surface.
+ *
+ * We use the existing `jobMatch.rankJobs` helper to score the
+ * favourites against the candidate's loaded context. The
+ * decoration is best-effort: if the candidate context isn't
+ * loadable (missing profile / preferences) we hand back the raw
+ * rows unchanged, exactly like the guest path.
+ */
 async function listFavorites(user_id, paging) {
-  return favRepo.list(user_id, paging);
+  const { rows, total } = await favRepo.list(user_id, paging);
+  try {
+    const candidate = await jobRepo.loadCandidateContext(user_id);
+    if (candidate && Array.isArray(rows) && rows.length > 0) {
+      // `rankJobs` returns decorated rows preserving every field; we
+      // disable filtering so favourite jobs that score below the
+      // threshold still surface (the candidate explicitly opted in
+      // by favouriting them).
+      const decorated = jobMatchService.rankJobs(rows, candidate, { filter: false });
+      return { rows: decorated, total };
+    }
+  } catch (_e) { /* fall through with un-decorated rows */ }
+  return { rows, total };
 }
 
 async function applyToJob(user_id, job_id, payload) {
@@ -168,8 +198,44 @@ async function applyToJob(user_id, job_id, payload) {
   return appRepo.findById(id);
 }
 
+/**
+ * Decorate the candidate's applications (active / withdrawn /
+ * rejected) with live match data so the dashboard JobCard's "Why
+ * we recommend" checklist populates the same way it does on the
+ * Jobs page (June 2031 dashboard-card consistency fix).
+ *
+ * We live-score against the candidate's current context rather
+ * than pulling the historic `applications.match_score`/
+ * `application_match_results` row, because:
+ *
+ *   - The freshly-computed score reflects the candidate's CURRENT
+ *     skills/profile — most useful for "what should I improve".
+ *   - The historic row exists only for applications that went
+ *     through `apply-and-validate`; legacy `apply` rows lack it.
+ *
+ * Best-effort: if the candidate context isn't loadable, the rows
+ * pass through un-decorated and the dashboard cards fall back to
+ * their compact, no-match-content layout.
+ */
 async function listApplications(user_id, paging) {
-  return appRepo.listForCandidate(user_id, paging);
+  const { rows, total } = await appRepo.listForCandidate(user_id, paging);
+  try {
+    const candidate = await jobRepo.loadCandidateContext(user_id);
+    if (candidate && Array.isArray(rows) && rows.length > 0) {
+      // `filter: false` — applied rows must always surface,
+      // regardless of their score.
+      const decorated = jobMatchService.rankJobs(rows, candidate, { filter: false });
+      // `rankJobs` re-sorts by score; the caller expects applied-at
+      // ordering. Restore it.
+      decorated.sort((a, b) => {
+        const ta = a.applied_at ? new Date(a.applied_at).getTime() : 0;
+        const tb = b.applied_at ? new Date(b.applied_at).getTime() : 0;
+        return tb - ta;
+      });
+      return { rows: decorated, total };
+    }
+  } catch (_e) { /* fall through with un-decorated rows */ }
+  return { rows, total };
 }
 
 /**

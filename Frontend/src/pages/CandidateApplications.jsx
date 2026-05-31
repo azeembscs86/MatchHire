@@ -301,6 +301,15 @@ export default function CandidateApplications() {
                 created_at: row.job_created_at,
                 is_featured: row.is_featured,
                 description: row.description,
+                // Match decoration added by the backend's
+                // listApplications service (June 2031). Surfaces the
+                // candidate's current match score + matched / missing
+                // skills so the JobCard's "Why we recommend" slot has
+                // real content and the card height matches the Jobs
+                // page exactly.
+                match_score: row.match_score,
+                reasons: row.reasons,
+                missing: row.missing,
               });
               if (!view) return null;
               const badge = statusBadge(row.status);

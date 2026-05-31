@@ -113,6 +113,13 @@ export default function CandidateRejected() {
                 created_at: row.job_created_at,
                 is_featured: row.is_featured,
                 description: row.description,
+                // Live match decoration from the backend so the
+                // JobCard's "Why we recommend" slot populates on the
+                // Rejected tab too — pairs nicely with the
+                // .rejection-feedback panel below the card.
+                match_score: row.match_score,
+                reasons: row.reasons,
+                missing: row.missing,
               });
               if (!view) return null;
               const rejectionMeta = parseRejectionReason(row.rejection_reason);
