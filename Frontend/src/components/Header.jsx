@@ -5,11 +5,16 @@
  * driven by `/public/navigation`, which the backend tailors to the
  * caller's role:
  *
- *   - Anonymous:      Home, Jobs, Companies, Candidates, For Employers
- *   - Candidate:      + Candidate Hub dropdown (Favourites lives in the
- *                      dashboard sidebar, not in the header)
- *   - Employer:       + Company Profile, Job Postings
- *   - Admin/SuperAdm: + Admin Console
+ *   - Anonymous:      Home, Jobs, Companies, Candidates
+ *   - Candidate:      + My Profile, Preferences + Candidate Hub dropdown
+ *                      (Favourites lives in the dashboard sidebar,
+ *                      not in the header)
+ *   - Employer:       same as anonymous + Company Hub dropdown
+ *   - Admin/SuperAdm: same as anonymous + Admin dashboard dropdown
+ *
+ * Role-specific destinations (Company Profile, Job Postings, Admin
+ * Console) are surfaced via the DashboardDropdown, not the primary
+ * nav, so the marketplace links read the same across every role.
  *
  * We refetch the menu whenever the authenticated user changes so the
  * header swaps between guest and signed-in modes immediately after
@@ -35,7 +40,6 @@ const FALLBACK_PRIMARY = [
   { key: 'jobs', label: 'Jobs', to: '/jobs' },
   { key: 'companies', label: 'Companies', to: '/companies' },
   { key: 'candidates', label: 'Candidates', to: '/candidates' },
-  { key: 'employer-onboarding', label: 'For Employers', to: '/employer-onboarding' },
 ];
 
 /**

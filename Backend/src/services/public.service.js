@@ -233,10 +233,16 @@ async function topCandidates(limit = 8) {
  *   }
  *
  * Visibility rules (matches the project spec):
- *   - Anonymous          - Home, Jobs, Companies, Candidates, For Employers + Sign in / Join free
- *   - Candidate          - + My Profile, Preferences, Favorites + Candidate Dashboard
- *   - Employer           - + Company Hub (Company Profile + Job Postings) + Company Dashboard
- *   - Admin/Super admin  - + Admin Console
+ *   - Anonymous          - Home, Jobs, Companies, Candidates + Sign in / Join free
+ *   - Candidate          - + My Profile, Preferences + Candidate Dashboard
+ *   - Employer           - same as anonymous + Company Dashboard (via dropdown)
+ *   - Admin/Super admin  - same as anonymous + Admin Dashboard (via dropdown)
+ *
+ * Favourites is intentionally absent from the top header — candidates
+ * reach it from the Candidate Dashboard sidebar (♥ Favourites row).
+ * Role-specific destinations (Company Profile, Job Postings, Admin
+ * Console) live in the dashboard dropdown rather than the primary
+ * nav, keeping the marketplace links uniform across roles.
  *
  * Computed on the fly (not cached) because the payload depends on the
  * bearer token; the body is small (sub-1KB) and easy to regenerate.
@@ -255,17 +261,7 @@ function navigation(user) {
     primary.push(
       { key: 'profile', label: 'My Profile', to: '/profile' },
       { key: 'preferences', label: 'Preferences', to: '/preferences' },
-      { key: 'favorites', label: 'Favorites', to: '/favorites' },
     );
-  } else if (role === 'employer') {
-    primary.push(
-      { key: 'company-profile', label: 'Company Profile', to: '/employer-onboarding' },
-      { key: 'company-jobs', label: 'Job Postings', to: '/dashboard/company' },
-    );
-  } else if (role === 'admin' || role === 'super_admin') {
-    primary.push({ key: 'admin-console', label: 'Admin Console', to: '/dashboard/admin' });
-  } else {
-    primary.push({ key: 'employer-onboarding', label: 'For Employers', to: '/employer-onboarding' });
   }
 
   let dashboard = null;
