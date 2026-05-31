@@ -501,7 +501,7 @@ router.post('/favorites/:jobId/remove', validate(pubV.jobIdParam, 'params'), asy
  *     responses:
  *       '200': { $ref: '#/components/responses/PaginatedJobs' }
  */
-router.post('/favorites/list', validate(v.listFilters), asyncHandler(controller.listFavorites));
+router.post('/favorites/list', validate(v.savedJobsList), asyncHandler(controller.listFavorites));
 
 /* ----------------------------------------------------------------
  * Saved-for-later jobs (apply intent surface)

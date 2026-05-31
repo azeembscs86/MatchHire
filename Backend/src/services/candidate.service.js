@@ -162,6 +162,10 @@ async function removeFavorite(user_id, job_id) {
  * rows unchanged, exactly like the guest path.
  */
 async function listFavorites(user_id, paging) {
+  // `paging` accepts `{ page, limit, include_expired }`. The
+  // include_expired flag lets the dashboard render the
+  // "Expired favourites" filter without a second endpoint —
+  // see favorite.repository.list().
   const { rows, total } = await favRepo.list(user_id, paging);
   try {
     const candidate = await jobRepo.loadCandidateContext(user_id);

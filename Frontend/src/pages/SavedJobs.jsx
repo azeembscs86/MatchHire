@@ -20,10 +20,26 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.jsx';
-import { candidatesApi } from '../api/index.js';
-import { toJobCardShape } from '../api/adapters.js';
+import { candidatesApi, publicApi } from '../api/index.js';
+import { toJobCardShape, filterActiveJobs } from '../api/adapters.js';
 import { useSavedJobs } from '../context/SavedJobsContext.jsx';
 import JobCard from '../components/JobCard.jsx';
+
+/**
+ * Bucket a saved row into a dashboard filter bucket. Mirrors the
+ * favourites page categorisation so both surfaces speak the same
+ * language: active / expiring-within-7d / expired. Pure helper so
+ * the page render path stays declarative.
+ */
+function bucketFor(row) {
+  if (row?.isExpired) return 'expired';
+  const iso = row?.expires_at || row?.deadlineRaw;
+  if (!iso) return 'active';
+  const ms = new Date(iso).getTime() - Date.now();
+  if (!Number.isFinite(ms) || ms <= 0) return 'expired';
+  if (ms <= 7 * 86400000) return 'expiring';
+  return 'active';
+}
 
 // SavedJobs joins the `saved_jobs` row's metadata (`expires_at`,
 // `saved_at`) onto each card shape, so we can't use the generic
@@ -33,6 +49,14 @@ import JobCard from '../components/JobCard.jsx';
 export default function SavedJobs() {
   const { savedIds } = useSavedJobs();
   const [saved, setSaved] = useState([]);
+  // Companion rail at the bottom of the page — mirrors the
+  // Favourites surface so both dashboards feel like siblings.
+  // Populated from `publicApi.featuredJobs(...)` and filtered so a
+  // job the candidate already has saved doesn't show twice.
+  const [similar, setSimilar] = useState([]);
+  // Which summary tile is the active filter for the grid. `all`
+  // shows every saved row regardless of bucket.
+  const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   // Per-job toast for apply / eligibility / remove feedback. Keyed by
@@ -50,21 +74,26 @@ export default function SavedJobs() {
       setLoading(true);
       setError(null);
       try {
-        const data = await candidatesApi.savedJobs.list({ page: 1, limit: 100 });
+        // `include_expired: true` so the dashboard can surface the
+        // "Expired Saved" filter without a second request — the
+        // bucket helper below tags rows accordingly. Similar-roles
+        // rail uses the same `featuredJobs` endpoint as Favourites.
+        const [data, simData] = await Promise.all([
+          candidatesApi.savedJobs.list({ page: 1, limit: 100, include_expired: true }),
+          publicApi.featuredJobs(6).catch(() => ({ records: [] })),
+        ]);
         if (cancelled) return;
-        // Map to JobCard shape and merge the saved_jobs row's own
-        // metadata. The `.filter()` drops anything the adapter
-        // couldn't shape AND any row whose underlying job is expired,
-        // closed, or whose company went inactive — a backstop in case
-        // a stale cache leaks one through.
         const rows = (data?.records || [])
           .map((r) => {
             const shape = toJobCardShape(r);
             if (!shape) return null;
             return { ...shape, expires_at: r.expires_at || null, saved_at: r.saved_at };
           })
-          .filter((r) => r && !r.isExpired);
+          .filter(Boolean);
         setSaved(rows);
+        const savedIdSet = new Set(rows.map((r) => Number(r.id)));
+        const similarRaw = (simData?.records || []).filter((r) => !savedIdSet.has(Number(r.id)));
+        setSimilar(filterActiveJobs(similarRaw).slice(0, 3));
       } catch (err) {
         if (!cancelled) setError(err);
       } finally {
@@ -81,15 +110,28 @@ export default function SavedJobs() {
     setSaved((rows) => rows.filter((r) => savedIds.has(Number(r.id))));
   }, [savedIds]);
 
-  const insights = useMemo(() => {
-    if (saved.length === 0) return null;
-    const expiringSoon = saved.filter((j) => {
-      if (!j.expires_at) return false;
-      const days = (new Date(j.expires_at).getTime() - Date.now()) / 86400000;
-      return days >= 0 && days <= 7;
-    }).length;
-    return { count: saved.length, expiringSoon };
+  // Pre-bucketed list — re-derived whenever the saved set changes
+  // so the summary tiles + filtered grid never disagree.
+  const buckets = useMemo(() => {
+    const next = { active: [], expiring: [], expired: [] };
+    saved.forEach((row) => { next[bucketFor(row)].push(row); });
+    return next;
   }, [saved]);
+
+  const counts = useMemo(() => ({
+    all: saved.length,
+    active: buckets.active.length,
+    expiring: buckets.expiring.length,
+    expired: buckets.expired.length,
+  }), [saved.length, buckets]);
+
+  // Visible grid honours the selected filter chip. Falls back to
+  // the full list when 'all' is selected so the count and the grid
+  // always match the highlighted tile.
+  const visibleSaved = useMemo(() => {
+    if (filter === 'all') return saved;
+    return buckets[filter] || [];
+  }, [filter, saved, buckets]);
 
   function showMessage(jobId, message) {
     setPerJobMessage((prev) => ({ ...prev, [jobId]: message }));
@@ -162,25 +204,34 @@ export default function SavedJobs() {
       <div className="container" style={{ padding: '40px 0 80px' }}>
         {error && <ErrorState error={error} />}
 
-        {insights && (
-          <div className="fav-summary">
-            <div className="fav-stat coral">
-              <div className="fav-stat-icon">⌘</div>
-              <div className="fav-stat-value">{insights.count}</div>
-              <div className="fav-stat-label">Saved for later</div>
-            </div>
-            <div className="fav-stat">
-              <div className="fav-stat-icon">⏳</div>
-              <div className="fav-stat-value">{insights.expiringSoon}</div>
-              <div className="fav-stat-label">Expiring this week</div>
-            </div>
-            <div className="fav-stat">
-              <div className="fav-stat-icon">♥</div>
-              <div className="fav-stat-value">
-                <Link to="/favorites" style={{ color: 'inherit' }}>View →</Link>
-              </div>
-              <div className="fav-stat-label">Favourites</div>
-            </div>
+        {/*
+          * Summary tiles double as filter chips. Each one shows its
+          * bucket count and, when clicked, narrows the grid below to
+          * that bucket. `aria-pressed` + `.is-active` mark the
+          * current selection so the row reads as a toolbar to AT
+          * users and as a tab set visually.
+          */}
+        {saved.length > 0 && (
+          <div className="fav-summary" role="group" aria-label="Filter saved jobs">
+            {[
+              { key: 'all',      icon: '⌘', label: 'Total saved',   value: counts.all },
+              { key: 'active',   icon: '◉', label: 'Active saved',  value: counts.active },
+              { key: 'expiring', icon: '⏳', label: 'Expiring soon', value: counts.expiring },
+              { key: 'expired',  icon: '×', label: 'Expired saved', value: counts.expired },
+            ].map((tile) => (
+              <button
+                key={tile.key}
+                type="button"
+                className={`fav-stat${filter === tile.key ? ' is-active' : ''}`}
+                onClick={() => setFilter(tile.key)}
+                aria-pressed={filter === tile.key}
+                data-testid={`saved-filter-${tile.key}`}
+              >
+                <div className="fav-stat-icon">{tile.icon}</div>
+                <div className="fav-stat-value">{tile.value}</div>
+                <div className="fav-stat-label">{tile.label}</div>
+              </button>
+            ))}
           </div>
         )}
 
@@ -210,9 +261,21 @@ export default function SavedJobs() {
             </p>
             <Link to="/jobs" className="btn btn-coral">Browse jobs →</Link>
           </div>
+        ) : visibleSaved.length === 0 ? (
+          // Empty bucket: the candidate has saved jobs but none in
+          // the currently selected filter. Surface a soft empty
+          // state plus a "show all" escape hatch.
+          <div className="fav-empty" data-testid="saved-empty-bucket">
+            <div className="fav-empty-icon">○</div>
+            <h3>No saved jobs in this view</h3>
+            <p>Try a different filter above, or browse all of your saved roles.</p>
+            <button type="button" className="btn btn-coral" onClick={() => setFilter('all')}>
+              Show all saved
+            </button>
+          </div>
         ) : (
           <div className="jobs-grid">
-            {saved.map((j) => (
+            {visibleSaved.map((j) => (
               <JobCard
                 key={j.id}
                 job={j}
@@ -225,7 +288,38 @@ export default function SavedJobs() {
           </div>
         )}
 
-        {!error && saved.length === 0 && (
+        {/*
+          * Similar roles rail — mirrors the Favourites surface so
+          * a candidate sitting on Saved Jobs always has something
+          * actionable below the fold. Hidden when the API returned
+          * nothing fresh so the page doesn't end on an empty band.
+          */}
+        {similar.length > 0 && (
+          <div style={{ paddingTop: 24, marginTop: 24, borderTop: '1px solid var(--line)' }}>
+            <div className="section-head" style={{ marginBottom: 32 }}>
+              <div>
+                <span className="eyebrow" style={{ display: 'block', marginBottom: 14 }}>★ More like your saved roles</span>
+                <h2 className="display" style={{ fontSize: 36 }}>
+                  Similar roles you might <span className="ital" style={{ fontStyle: 'italic', color: 'var(--coral)' }}>love</span>.
+                </h2>
+              </div>
+              <Link to="/jobs" className="section-link">Browse all →</Link>
+            </div>
+            <div className="jobs-grid">
+              {similar.map((j) => (
+                <JobCard
+                  key={j.id}
+                  job={j}
+                  featured
+                  onApply={handleApply}
+                  applyingId={actingId}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {!error && saved.length === 0 && similar.length === 0 && (
           <EmptyState title="Nothing here yet" />
         )}
       </div>

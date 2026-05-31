@@ -1471,9 +1471,20 @@
   }
   .fav-stat{
     background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:20px;
-    transition:all .2s;
+    transition:all .2s;text-align:left;width:100%;font:inherit;color:inherit;
   }
+  /* When .fav-stat is rendered as a button (clickable filter chip)
+   * the user-agent default focus ring + cursor are normalised so it
+   * still reads as a card. The `.is-active` modifier inverts the
+   * card to ink-on-bone so the selected filter is obvious. */
+  button.fav-stat{cursor:pointer;display:block}
+  button.fav-stat:focus-visible{outline:2px solid var(--coral);outline-offset:2px}
   .fav-stat:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+  .fav-stat.is-active{
+    background:var(--ink);color:var(--bone);border-color:var(--ink);
+  }
+  .fav-stat.is-active .fav-stat-label{color:rgba(245,240,230,.75)}
+  .fav-stat.is-active .fav-stat-icon{background:rgba(245,240,230,.18)}
   .fav-stat.coral{background:var(--coral);color:#fff;border-color:var(--coral)}
   .fav-stat.coral .fav-stat-label{color:rgba(255,255,255,.8)}
   .fav-stat-icon{width:32px;height:32px;border-radius:8px;background:var(--bone-2);display:grid;place-items:center;margin-bottom:14px;font-size:14px}

@@ -159,7 +159,8 @@ exports.removeFavorite = async (req, res) => {
 exports.listFavorites = async (req, res) => {
   const page = req.body?.page || 1;
   const limit = req.body?.limit || 10;
-  const { rows, total } = await service.listFavorites(req.user.id, { page, limit });
+  const include_expired = !!req.body?.include_expired;
+  const { rows, total } = await service.listFavorites(req.user.id, { page, limit, include_expired });
   return response.list(res, rows, buildPagination(page, limit, total), 'Favorites returned');
 };
 

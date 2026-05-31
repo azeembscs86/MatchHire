@@ -20,12 +20,32 @@ import { useFavorites } from '../context/FavoritesContext.jsx';
 import JobCard from '../components/JobCard.jsx';
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.jsx';
 import { candidatesApi, publicApi } from '../api/index.js';
-import { filterActiveJobs } from '../api/adapters.js';
+import { filterActiveJobs, toJobCardShape } from '../api/adapters.js';
+
+/**
+ * Bucket a favourited job into a dashboard filter bucket. Keeps the
+ * Favourites surface in lockstep with Saved Jobs so the two
+ * dashboards share the same vocabulary (active / expiring / expired)
+ * across the same time horizon (7 days). Expiry source is the
+ * application deadline that `toJobCardShape` already preserves.
+ */
+function bucketFor(row) {
+  if (row?.isExpired) return 'expired';
+  const iso = row?.deadlineRaw;
+  if (!iso) return 'active';
+  const ms = new Date(iso).getTime() - Date.now();
+  if (!Number.isFinite(ms) || ms <= 0) return 'expired';
+  if (ms <= 7 * 86400000) return 'expiring';
+  return 'active';
+}
 
 export default function Favorites() {
   const { savedJobs: favoriteIds } = useFavorites();
   const [favs, setFavs] = useState([]);
   const [similar, setSimilar] = useState([]);
+  // Active filter chip — drives both the summary tile highlight
+  // and which rows pass through to the grid below.
+  const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [applyMessage, setApplyMessage] = useState(null);
@@ -42,13 +62,22 @@ export default function Favorites() {
       setLoading(true);
       setError(null);
       try {
+        // `include_expired: true` so the dashboard can show
+        // "Expired favourites" as a real, filterable bucket — the
+        // backend repo gates the deadline / status checks behind
+        // this flag (mirrors saved-jobs). The card itself still
+        // renders an "Expired" pill + disabled apply, so passing
+        // expired rows through is safe.
         const [favData, simData] = await Promise.all([
-          candidatesApi.favorites.list({ page: 1, limit: 100 }),
+          candidatesApi.favorites.list({ page: 1, limit: 100, include_expired: true }),
           publicApi.featuredJobs(6).catch(() => ({ records: [] })),
         ]);
         if (cancelled) return;
-        setFavs(filterActiveJobs(favData?.records));
-        const favIds = new Set((favData?.records || []).map((r) => Number(r.id)));
+        const allFavs = (favData?.records || [])
+          .map(toJobCardShape)
+          .filter(Boolean);
+        setFavs(allFavs);
+        const favIds = new Set(allFavs.map((r) => Number(r.id)));
         const similarRaw = (simData?.records || []).filter((r) => !favIds.has(Number(r.id)));
         setSimilar(filterActiveJobs(similarRaw).slice(0, 3));
       } catch (err) {
@@ -69,13 +98,39 @@ export default function Favorites() {
     setFavs((rows) => rows.filter((r) => favoriteIds.has(Number(r.id))));
   }, [favoriteIds]);
 
-  const insights = useMemo(() => {
-    if (favs.length === 0) return null;
-    const remoteCount = favs.filter((j) => /Remote/i.test(j.loc)).length;
-    const remotePct = Math.round((remoteCount / favs.length) * 100);
-    const stack = (favs.flatMap((j) => j.tags || []).slice(0, 4)).join(' · ') || 'Open';
-    return { remotePct, stack, count: favs.length };
+  // Bucketed view of the favourites list — drives both the summary
+  // tiles' counts and the filtered grid below. Keeps the source of
+  // truth (`favs`) intact so the FavoritesContext sync above can
+  // continue to remove rows on heart-toggle.
+  const buckets = useMemo(() => {
+    const next = { active: [], expiring: [], expired: [] };
+    favs.forEach((row) => { next[bucketFor(row)].push(row); });
+    return next;
   }, [favs]);
+
+  const counts = useMemo(() => ({
+    all: favs.length,
+    active: buckets.active.length,
+    expiring: buckets.expiring.length,
+    expired: buckets.expired.length,
+  }), [favs.length, buckets]);
+
+  const visibleFavs = useMemo(() => {
+    if (filter === 'all') return favs;
+    return buckets[filter] || [];
+  }, [filter, favs, buckets]);
+
+  // Lightweight "what your favourites tell us" insight strip below
+  // the tiles. Computed only from active rows so a stash of expired
+  // saves doesn't skew the snapshot.
+  const insights = useMemo(() => {
+    const source = buckets.active;
+    if (source.length === 0) return null;
+    const remoteCount = source.filter((j) => /Remote/i.test(j.loc)).length;
+    const remotePct = Math.round((remoteCount / source.length) * 100);
+    const stack = (source.flatMap((j) => j.tags || []).slice(0, 4)).join(' · ') || 'Open';
+    return { remotePct, stack, count: source.length };
+  }, [buckets.active]);
 
   async function handleApply(job) {
     if (job?.isExpired) return;
@@ -125,27 +180,32 @@ export default function Favorites() {
       <div className="container" style={{ padding: '40px 0 80px' }}>
         {error && <ErrorState error={error} />}
 
-        <div className="fav-summary">
-          <div className="fav-stat coral">
-            <div className="fav-stat-icon">♥</div>
-            <div className="fav-stat-value">{favs.length}</div>
-            <div className="fav-stat-label">Total saved jobs</div>
-          </div>
-          <div className="fav-stat">
-            <div className="fav-stat-icon">★</div>
-            <div className="fav-stat-value">{favs.filter((j) => j.featured).length}</div>
-            <div className="fav-stat-label">Featured saved</div>
-          </div>
-          <div className="fav-stat">
-            <div className="fav-stat-icon">⌂</div>
-            <div className="fav-stat-value">{insights?.remotePct ?? 0}%</div>
-            <div className="fav-stat-label">Remote share</div>
-          </div>
-          <div className="fav-stat">
-            <div className="fav-stat-icon">⊕</div>
-            <div className="fav-stat-value">{similar.length}</div>
-            <div className="fav-stat-label">Similar roles</div>
-          </div>
+        {/*
+          * Summary tiles double as filter chips — mirrors Saved Jobs
+          * so the two dashboards behave identically. Each tile is a
+          * proper button (aria-pressed + `.is-active`) so the picked
+          * filter reads as a tab to both visual + AT users.
+          */}
+        <div className="fav-summary" role="group" aria-label="Filter favourites">
+          {[
+            { key: 'all',      icon: '♥', label: 'Total favourites',   value: counts.all },
+            { key: 'active',   icon: '◉', label: 'Active favourites',  value: counts.active },
+            { key: 'expiring', icon: '⏳', label: 'Expiring soon',      value: counts.expiring },
+            { key: 'expired',  icon: '×', label: 'Expired favourites', value: counts.expired },
+          ].map((tile) => (
+            <button
+              key={tile.key}
+              type="button"
+              className={`fav-stat${filter === tile.key ? ' is-active' : ''}`}
+              onClick={() => setFilter(tile.key)}
+              aria-pressed={filter === tile.key}
+              data-testid={`fav-filter-${tile.key}`}
+            >
+              <div className="fav-stat-icon">{tile.icon}</div>
+              <div className="fav-stat-value">{tile.value}</div>
+              <div className="fav-stat-label">{tile.label}</div>
+            </button>
+          ))}
         </div>
 
         {insights && (
@@ -177,9 +237,21 @@ export default function Favorites() {
             <p>Browse jobs and tap the heart icon on any role you like — it'll show up here for easy access later.</p>
             <Link to="/jobs" className="btn btn-coral">Browse jobs →</Link>
           </div>
+        ) : visibleFavs.length === 0 ? (
+          // Empty bucket: the candidate has favourites but none in
+          // the currently selected filter. Soft empty state with a
+          // "show all" escape hatch to match Saved Jobs.
+          <div className="fav-empty" data-testid="fav-empty-bucket">
+            <div className="fav-empty-icon">○</div>
+            <h3>No favourites in this view</h3>
+            <p>Try a different filter above, or browse all of your favourites.</p>
+            <button type="button" className="btn btn-coral" onClick={() => setFilter('all')}>
+              Show all favourites
+            </button>
+          </div>
         ) : (
           <div className="jobs-grid">
-            {favs.map((j) => (
+            {visibleFavs.map((j) => (
               <JobCard
                 key={j.id}
                 job={j}

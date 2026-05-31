@@ -32,15 +32,24 @@ async function remove(user_id, job_id) {
  * preserved in the DB (only the LIST result is filtered) so if the
  * employer revives the job, the favourite reappears automatically.
  */
-async function list(user_id, { page = 1, limit = 10 }) {
+async function list(user_id, { page = 1, limit = 10, include_expired = false } = {}) {
   const offset = (page - 1) * limit;
-  const activeJobClauses = `
+  // `deleted_at` + admin approval + company status are ALWAYS enforced
+  // — those rows must never reach a candidate's dashboard. The
+  // job-status + deadline checks are gated behind `include_expired`
+  // so the SPA can render the "Expired favourites" filter without a
+  // second endpoint. Mirrors `savedJob.repository.list()` (see
+  // migration 035 + saved-jobs dashboard fix).
+  const baseClauses = `
     AND j.deleted_at IS NULL
-    AND j.status = 'open'
     AND j.admin_status = 'approved'
     AND c.status = 'active'
-    AND (j.application_deadline IS NULL OR j.application_deadline > NOW())
   `;
+  const activeOnlyClauses = include_expired
+    ? ''
+    : `AND j.status = 'open'
+       AND (j.application_deadline IS NULL OR j.application_deadline > NOW())`;
+  const activeJobClauses = `${baseClauses} ${activeOnlyClauses}`;
   // Select the same column set as `jobRepo.jobsListSelect()` so the
   // shared frontend adapter (`toJobCardShape`) produces a view-model
   // byte-for-byte identical to the Jobs page feed — description
