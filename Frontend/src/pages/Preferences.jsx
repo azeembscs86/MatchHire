@@ -286,31 +286,27 @@ export default function Preferences() {
   }, []);
 
   /*
-   * Sidebar auto-active on scroll.
-   * --------------------------------
-   * Deterministic anchor-line picker, rAF-throttled.
+   * Sidebar scroll-spy.
+   * -------------------
+   * IntersectionObserver-primary design. Each `.pref-card` section
+   * is observed; the rootMargin shrinks the observer's viewport to
+   * a trigger band ~100px from the top down to 60% of the window
+   * (i.e. only sections whose box crosses the upper third of the
+   * screen are considered "active"). Whichever observed section
+   * occupies that band wins.
    *
-   * Walk the section list in document order; the LAST section whose
-   * top has crossed an anchor line ~140px below the viewport top is
-   * the one currently being read. Below the header, above any
-   * section that's still scrolled off-screen, robust across every
-   * scroll position (top-of-page, mid-section, between sections,
-   * end-of-page).
+   * Anchor-line fallback covers the gaps the observer alone can't:
    *
-   * Why this beats IntersectionObserver here: with the previous IO
-   * setup, a section taller than the trigger band kept the active
-   * tab frozen between sibling sections — when the reader scrolled
-   * out of section A's band the observer briefly saw an empty
-   * intersecting set, fell through to its fallback, and snapped
-   * back to the first section before the next IO callback fired
-   * for B. The anchor-line picker reads every section's box on
-   * every tick so there is no "empty set" gap to flicker through.
-   *
-   * IntersectionObserver is still wired below as a cheap wake-up
-   * signal so the picker re-runs as soon as a section enters or
-   * leaves the viewport (covers the case where the user resizes,
-   * uses keyboard navigation, or scrolls programmatically without
-   * firing a regular scroll event).
+   *   - Between two sections, the observer's intersecting set is
+   *     briefly empty. Without a fallback the sidebar would snap
+   *     back to a default tab and flicker. We instead read each
+   *     section's `getBoundingClientRect().top` against a 140px
+   *     anchor line and pick the last one whose top has crossed
+   *     it — deterministic, no flicker.
+   *   - Tall sections that fully cover the band fire no fresh
+   *     intersection events while you scroll through their middle.
+   *     The scroll listener (rAF-throttled) keeps the picker
+   *     ticking so the active tab stays correctly held.
    *
    * Click handler `scrollPref` stamps a 700 ms lock on
    * `scrollLockUntilRef` so the smooth-scroll animation doesn't
@@ -323,15 +319,38 @@ export default function Preferences() {
       .filter((s) => s.el);
     if (sections.length === 0) return undefined;
 
-    // Trigger line ~140px below the viewport top — clears the
-    // sticky `.main-nav` header and leaves a small reading
-    // margin so the heading is visible when the tab flips.
+    // Anchor line ~140px below the viewport top — clears the sticky
+    // `.main-nav` header and leaves a small reading margin so the
+    // section heading is visible when the tab flips.
     const ANCHOR = 140;
 
-    let rafId = 0;
-    function compute() {
-      rafId = 0;
+    // Live set of sections currently inside the observer's trigger
+    // band. The observer only mutates this set; the picker reads
+    // it. Map<sectionId, IntersectionObserverEntry>.
+    const intersecting = new Set();
+
+    function pick() {
       if (Date.now() < scrollLockUntilRef.current) return;
+
+      // Preferred path: pick the LAST intersecting section in
+      // document order — the one furthest down the page that's
+      // still occupying the trigger band. Matches reading direction.
+      if (intersecting.size > 0) {
+        let chosen = null;
+        for (const s of sections) {
+          if (intersecting.has(s.id)) chosen = s.id;
+        }
+        if (chosen) {
+          setActiveSection((prev) => (prev === chosen ? prev : chosen));
+          return;
+        }
+      }
+
+      // Fallback: anchor-line bounding-rect walk. Pick the last
+      // section whose top has crossed the anchor line. Robust at
+      // the top of the page (everything below anchor → first
+      // section wins) and at the bottom (last section wins even
+      // after the band has scrolled past it).
       let chosen = sections[0].id;
       for (const s of sections) {
         const top = s.el.getBoundingClientRect().top;
@@ -340,31 +359,72 @@ export default function Preferences() {
       }
       setActiveSection((prev) => (prev === chosen ? prev : chosen));
     }
+
+    let rafId = 0;
     function schedule() {
       if (rafId) return;
-      rafId = requestAnimationFrame(compute);
+      rafId = requestAnimationFrame(() => { rafId = 0; pick(); });
     }
 
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const id = entry.target.id.replace(/^pref-/, '');
+          if (entry.isIntersecting) intersecting.add(id);
+          else intersecting.delete(id);
+        }
+        schedule();
+      },
+      {
+        // Trigger band: top 40% of the viewport, below the sticky
+        // header. Top inset clears the `.main-nav`; bottom inset
+        // pulls the band up so only the section currently being
+        // READ (not one peeking from below) wins.
+        rootMargin: '-100px 0px -60% 0px',
+        threshold: [0, 0.25, 0.5, 1],
+      }
+    );
+    sections.forEach((s) => observer.observe(s.el));
+
+    // Scroll + resize keep the picker ticking when no IO event
+    // would fire (e.g. scrolling slowly inside one tall section).
     window.addEventListener('scroll', schedule, { passive: true });
     window.addEventListener('resize', schedule, { passive: true });
 
-    // IO acts as a wake-up signal — it doesn't pick the active tab
-    // itself; it just nudges the rAF-throttled picker so the tab
-    // updates immediately when a section's boundary crosses the
-    // viewport even without a discrete scroll event.
-    const observer = new IntersectionObserver(schedule, { threshold: 0 });
-    sections.forEach((s) => observer.observe(s.el));
-
     // Initial sync — covers deep-link / refreshed scroll positions
     // where no scroll event has fired yet.
-    compute();
+    pick();
 
     return () => {
+      observer.disconnect();
       window.removeEventListener('scroll', schedule);
       window.removeEventListener('resize', schedule);
-      observer.disconnect();
       if (rafId) cancelAnimationFrame(rafId);
     };
+  }, [loading]);
+
+  /*
+   * URL-hash deep linking.
+   * ---------------------
+   * If the page is opened with `#role` (etc.) in the address bar,
+   * scroll to that section once the form has hydrated. Validated
+   * against the section catalogue so a stray hash can't crash the
+   * effect. Runs once after `loading` flips false.
+   */
+  useEffect(() => {
+    if (loading) return;
+    const hash = window.location.hash.replace(/^#/, '');
+    if (!hash) return;
+    if (!SECTIONS.some((s) => s.id === hash)) return;
+    // Defer one frame so the scroll-spy effect above has wired up
+    // its listeners before we drive a programmatic scroll.
+    requestAnimationFrame(() => {
+      const el = document.getElementById('pref-' + hash);
+      if (!el) return;
+      scrollLockUntilRef.current = Date.now() + 700;
+      setActiveSection(hash);
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   }, [loading]);
 
   /*
@@ -486,6 +546,12 @@ export default function Preferences() {
     scrollLockUntilRef.current = Date.now() + 700;
     const el = document.getElementById('pref-' + id);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Reflect the section in the URL so deep-links + back/forward
+    // both work. `replaceState` keeps the navigation history clean
+    // — clicking tabs is a same-page move, not a routing event.
+    if (window.history && typeof window.history.replaceState === 'function') {
+      window.history.replaceState(null, '', `#${id}`);
+    }
   };
 
   const addDeal = () => {
