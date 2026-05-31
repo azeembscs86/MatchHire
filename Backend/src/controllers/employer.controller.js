@@ -76,6 +76,22 @@ exports.shortlistApplication = async (req, res) => {
 };
 
 /**
+ * AI bulk shortlist: flip every actionable applicant for the given
+ * job to status='shortlisted' when their match score >= 60%. Idempotent
+ * — already-decided rows (shortlisted / interview / offered / hired /
+ * rejected / withdrawn) are skipped, so re-running the action never
+ * undoes a manual decision.
+ *
+ * Ownership is enforced inside `service.autoShortlistApplicants()` via
+ * `jobRepo.ownsJob()`. The response carries a small summary the UI
+ * uses to render its post-action toast.
+ */
+exports.autoShortlistApplicants = async (req, res) => {
+  const data = await service.autoShortlistApplicants(req.user.id, Number(req.params.jobId));
+  return response.success(res, data, 'AI shortlist complete');
+};
+
+/**
  * Reject an application with a mandatory canonical reason.
  *
  * The validator has already enforced that:

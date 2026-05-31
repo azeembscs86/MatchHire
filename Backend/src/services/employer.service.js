@@ -116,6 +116,80 @@ async function rejectApplication(user_id, applicationId, reason) {
   return appRepo.findById(applicationId);
 }
 
+/**
+ * Bulk-shortlist every actionable applicant for a job whose AI
+ * match score against the job clears the 60% threshold.
+ *
+ * Used by the company dashboard's "AI Shortlist" CTA — the
+ * employer fires it once per job and the service walks the
+ * applicant set, scores each candidate against the role, and
+ * flips eligible rows to status='shortlisted'.
+ *
+ * Idempotent: rows already in a downstream state (`shortlisted`,
+ * `interview`, `offered`, `hired`, `rejected`, `withdrawn`) are
+ * skipped. Re-running the action never undoes a manual decision.
+ *
+ * Ownership: enforced via `jobRepo.ownsJob()` — an employer can
+ * only auto-shortlist applicants for jobs their own company posted.
+ *
+ * Returns:
+ *   {
+ *     job_id, threshold,
+ *     actionable,                 // applicants the action considered
+ *     shortlisted,                // newly flipped to shortlisted
+ *     skipped_below_threshold,    // scored under 60 OR no candidate context
+ *     shortlisted_application_ids // ids the caller can refetch
+ *   }
+ */
+async function autoShortlistApplicants(user_id, jobId) {
+  const owns = await jobRepo.ownsJob(jobId, user_id);
+  if (!owns) throw new AppError('Job not found or access denied', 404);
+
+  const job = await jobRepo.findById(jobId);
+  if (!job) throw new AppError('Job not found', 404);
+
+  // Over-fetch up to 100 applicants — large enough to cover the
+  // active pipeline of every realistic posting; truncated batches
+  // can re-run the action without side effects (idempotent).
+  const { rows: applicants } = await appRepo.listApplicantsForJob(jobId, {
+    page: 1, limit: 100,
+  });
+
+  // Only act on rows the employer still owes a decision on.
+  // Already-shortlisted/interview/offered/hired/rejected/withdrawn
+  // rows are intentionally untouched.
+  const ACTIONABLE = new Set(['applied', 'reviewing', 'under_review']);
+  const eligible = applicants.filter((a) =>
+    ACTIONABLE.has(String(a.status || '').toLowerCase())
+  );
+
+  const shortlistedIds = [];
+  let belowThreshold = 0;
+
+  for (const app of eligible) {
+    const candidate = await jobRepo.loadCandidateContext(app.candidate_id);
+    if (!candidate) { belowThreshold += 1; continue; }
+    const result = matchService.scoreJob(job, candidate);
+    if (result.score >= matchService.ACCEPT_THRESHOLD) {
+      await appRepo.setStatus(app.id, 'shortlisted');
+      shortlistedIds.push(app.id);
+    } else {
+      belowThreshold += 1;
+    }
+  }
+
+  await cache.deleteByPattern(cache.Patterns.dashboardStats('employer'));
+
+  return {
+    job_id: Number(jobId),
+    threshold: matchService.ACCEPT_THRESHOLD,
+    actionable: eligible.length,
+    shortlisted: shortlistedIds.length,
+    skipped_below_threshold: belowThreshold,
+    shortlisted_application_ids: shortlistedIds,
+  };
+}
+
 async function scheduleInterview(user_id, payload) {
   const application = await appRepo.findById(payload.application_id);
   if (!application) throw new AppError('Application not found', 404);
@@ -461,6 +535,7 @@ module.exports = {
   listMyJobs,
   listApplicants,
   shortlistApplication,
+  autoShortlistApplicants,
   rejectApplication,
   scheduleInterview,
   dashboardStats,

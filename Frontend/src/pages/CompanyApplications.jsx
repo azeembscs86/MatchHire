@@ -81,8 +81,15 @@ export default function CompanyApplications({ mode = 'all' }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [rows, setRows] = useState([]);
+  const [jobsRef, setJobsRef] = useState([]);
   const [busyId, setBusyId] = useState(null);
   const [rejecting, setRejecting] = useState(null);
+  // AI bulk-shortlist orchestration state. We fan out the per-job
+  // endpoint across every active job the company owns so the
+  // employer triggers a single "shortlist everyone >=60% match"
+  // pass without having to pick a job first.
+  const [autoBusy, setAutoBusy] = useState(false);
+  const [autoSummary, setAutoSummary] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,6 +103,7 @@ export default function CompanyApplications({ mode = 'all' }) {
         const jobsRes = await employersApi.jobs.list({ page: 1, limit: 100 });
         if (cancelled) return;
         const jobs = jobsRes?.records || [];
+        setJobsRef(jobs);
         if (jobs.length === 0) {
           setRows([]);
           return;
@@ -168,6 +176,76 @@ export default function CompanyApplications({ mode = 'all' }) {
 
   const headerCount = useMemo(() => rows.length, [rows]);
 
+  // Eligible-for-bulk-shortlist counter. Only `applied` /
+  // `reviewing` rows are actionable on the backend; surfacing the
+  // count next to the button gives the employer a clear sense of
+  // what the action will touch BEFORE they click.
+  const actionableCount = useMemo(() => {
+    return rows.filter((a) => {
+      const s = String(a.status || '').toLowerCase();
+      return s === 'applied' || s === 'reviewing' || s === 'under_review';
+    }).length;
+  }, [rows]);
+
+  /**
+   * AI bulk-shortlist fanout. The backend endpoint is per-job
+   * (`/employers/jobs/:jobId/auto-shortlist`), so we fan out one
+   * call per active posting and roll the responses up into a
+   * single summary. Open jobs only — closed / archived rows
+   * shouldn't have new applicants entering the pipeline.
+   *
+   * After the fanout we re-derive the applicants list rather than
+   * patching local state, so the UI reflects whatever the server
+   * actually did (including races where another tab made changes
+   * mid-flight).
+   */
+  async function handleAutoShortlist() {
+    if (autoBusy) return;
+    const targetJobs = (jobsRef || []).filter((j) => String(j.status || '').toLowerCase() === 'open');
+    if (targetJobs.length === 0) return;
+    setAutoBusy(true);
+    setAutoSummary(null);
+    try {
+      const results = await Promise.all(targetJobs.map((j) =>
+        employersApi.jobs.autoShortlist(j.id).catch(() => null)
+      ));
+      const totals = results.filter(Boolean).reduce((acc, r) => ({
+        actionable: acc.actionable + (r.actionable || 0),
+        shortlisted: acc.shortlisted + (r.shortlisted || 0),
+        skipped_below_threshold: acc.skipped_below_threshold + (r.skipped_below_threshold || 0),
+      }), { actionable: 0, shortlisted: 0, skipped_below_threshold: 0 });
+      setAutoSummary({ ...totals, jobs: targetJobs.length, threshold: 60 });
+
+      // Refetch applicants so the table reflects the new statuses.
+      const perJob = await Promise.all(targetJobs.map((j) =>
+        employersApi.jobs.applicants(j.id, {
+          page: 1,
+          limit: 100,
+          status: cfg.statusFilter || undefined,
+        })
+          .then((res) => (res?.records || []).map((a) => ({
+            ...a,
+            _jobId: j.id,
+            _jobTitle: j.title,
+          })))
+          .catch(() => [])
+      ));
+      const merged = perJob.flat();
+      merged.sort((a, b) => {
+        const ta = new Date(a.applied_at || a.updated_at || 0).getTime();
+        const tb = new Date(b.applied_at || b.updated_at || 0).getTime();
+        return tb - ta;
+      });
+      setRows(merged);
+    } catch (e) {
+      setAutoSummary({ error: e?.message || 'AI shortlist failed. Please try again.' });
+    } finally {
+      setAutoBusy(false);
+      // Clear the summary toast after 8 seconds so the page tidies up.
+      setTimeout(() => setAutoSummary(null), 8000);
+    }
+  }
+
   if (loading) {
     return (
       <div className="container" style={{ padding: '48px 0' }}>
@@ -183,8 +261,60 @@ export default function CompanyApplications({ mode = 'all' }) {
           <h1>{cfg.heading} <span className="ital">{cfg.italic}</span>.</h1>
           <p>{headerCount} {headerCount === 1 ? 'record' : 'records'} · {cfg.description}</p>
         </div>
-        <Link to="/dashboard/company" className="btn btn-ghost">← Back to dashboard</Link>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          {/*
+            * AI Shortlist CTA — only on the unfiltered Applicants
+            * view. Disabled when there are no actionable applicants
+            * (already-decided rows can't be flipped) so the button
+            * never fires a no-op fanout. Title attribute explains
+            * the threshold so the employer doesn't have to guess.
+            */}
+          {mode === 'all' && (
+            <button
+              type="button"
+              className="btn btn-coral"
+              onClick={handleAutoShortlist}
+              disabled={autoBusy || actionableCount === 0}
+              title="Auto-shortlist every applicant whose match score is at least 60%"
+              data-testid="company-ai-shortlist-cta"
+            >
+              {autoBusy
+                ? 'AI Shortlisting…'
+                : `★ AI Shortlist 60%+ (${actionableCount})`}
+            </button>
+          )}
+          <Link to="/dashboard/company" className="btn btn-ghost">← Back to dashboard</Link>
+        </div>
       </div>
+
+      {/*
+        * Post-action summary. Renders briefly after a successful
+        * AI shortlist fanout; tells the employer exactly how many
+        * rows flipped and how many fell below the threshold so
+        * they can act on the leftovers manually if needed.
+        */}
+      {autoSummary && (
+        <div
+          role="status"
+          style={{
+            margin: '12px 0', padding: '12px 14px', borderRadius: 10,
+            background: autoSummary.error ? '#fde9e3' : '#e6f4ea',
+            color: autoSummary.error ? '#b3361b' : '#0f5132',
+            fontSize: 13,
+          }}
+          data-testid="company-ai-shortlist-summary"
+        >
+          {autoSummary.error
+            ? autoSummary.error
+            : (
+              <>
+                <strong>{autoSummary.shortlisted}</strong> candidate{autoSummary.shortlisted === 1 ? '' : 's'} shortlisted
+                {' '}across {autoSummary.jobs} job{autoSummary.jobs === 1 ? '' : 's'} ·{' '}
+                <strong>{autoSummary.skipped_below_threshold}</strong> skipped (below {autoSummary.threshold}% match).
+              </>
+            )}
+        </div>
+      )}
 
       {error && <ErrorState error={error} />}
 

@@ -182,6 +182,30 @@ router.post('/jobs/:jobId/applicants', validate(pubV.jobIdParam, 'params'), vali
 
 /**
  * @swagger
+ * /employers/jobs/{jobId}/auto-shortlist:
+ *   post:
+ *     tags: [Employers]
+ *     summary: AI bulk-shortlist applicants whose match score >= 60%
+ *     description: |
+ *       Walks every actionable application on the job
+ *       (`applied` / `reviewing` / `under_review`), scores each
+ *       candidate against the role with the same match service the
+ *       apply-validation path uses, and flips eligible rows to
+ *       `status='shortlisted'`. Rows already in a downstream state
+ *       (shortlisted / interview / offered / hired / rejected /
+ *       withdrawn) are skipped so re-running the action never undoes
+ *       a manual decision.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: jobId, in: path, required: true, schema: { type: integer } }]
+ *     responses:
+ *       '200': { $ref: '#/components/responses/EmptySuccess' }
+ *       '403': { $ref: '#/components/responses/ForbiddenError' }
+ *       '404': { $ref: '#/components/responses/NotFoundError' }
+ */
+router.post('/jobs/:jobId/auto-shortlist', validate(pubV.jobIdParam, 'params'), asyncHandler(controller.autoShortlistApplicants));
+
+/**
+ * @swagger
  * /employers/applications/{applicationId}/shortlist:
  *   post:
  *     tags: [Employers]

@@ -22,6 +22,22 @@ export const employersApi = {
     remove(jobId) { return call(api.post(`/employers/jobs/${jobId}/delete`)); },
     close(jobId) { return call(api.post(`/employers/jobs/${jobId}/close`)); },
     applicants(jobId, body = {}) { return call(api.post(`/employers/jobs/${jobId}/applicants`, body)); },
+    /**
+     * AI bulk-shortlist: backend walks every actionable applicant
+     * on the job, scores each candidate against the role, and
+     * flips status to 'shortlisted' for matches >= 60%. Idempotent
+     * — rows already in a downstream state are skipped.
+     *
+     * Response shape:
+     *   {
+     *     job_id, threshold,
+     *     actionable, shortlisted, skipped_below_threshold,
+     *     shortlisted_application_ids: number[]
+     *   }
+     */
+    autoShortlist(jobId) {
+      return call(api.post(`/employers/jobs/${jobId}/auto-shortlist`));
+    },
   },
 
   applications: {
