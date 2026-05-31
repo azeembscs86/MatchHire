@@ -1,7 +1,13 @@
 /**
- * DashboardCompany - "Company Hub".
+ * DashboardCompany — "Company Hub" overview.
  *
- * Employer-side workspace. Data sources:
+ * The dashboard sidebar + shell now live in CompanyDashboardLayout
+ * (which wraps this route along with all the other company tabs).
+ * This page renders ONLY the overview content: stats, the active
+ * job postings panel, the recent applicants table, and the hiring
+ * funnel.
+ *
+ * Data sources:
  *
  *   /employers/dashboard/stats     by-status counts + interviews
  *   /employers/jobs/list           the company's job postings
@@ -11,6 +17,10 @@
  * `applications` (Applied -> Reviewed -> Shortlisted -> Interview ->
  * Offered -> Hired), so the percentages stay accurate as the pipeline
  * moves without an extra endpoint.
+ *
+ * Reject action opens the shared CompanyRejectionModal — the inline
+ * one-click reject was removed because the backend now requires a
+ * canonical reason key (an empty string fails Joi validation).
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -18,6 +28,7 @@ import { employersApi } from '../api/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { LoadingState, ErrorState } from '../components/AsyncState.jsx';
 import CompanyJobCard from '../components/CompanyJobCard.jsx';
+import CompanyRejectionModal from '../components/CompanyRejectionModal.jsx';
 import { toJobCardShape } from '../api/adapters.js';
 
 function initials(name = '') {
@@ -29,9 +40,7 @@ function initials(name = '') {
  * surfaced on the company dashboard (the backend's
  * `listApplicantsForJob` + `statsForCompany` both exclude them by
  * default); the row stays present in the database for the
- * candidate's own withdrawn tab and for audit reporting. Should a
- * withdrawn row ever slip through (e.g. an admin-only view), we
- * still map it gracefully here.
+ * candidate's own withdrawn tab and for audit reporting.
  */
 const APPLICANT_STATUS = {
   applied:      { cls: 'pill-applied',     label: 'Applied' },
@@ -50,15 +59,11 @@ function applicantStatus(status) {
     || { cls: 'pill-active', label: status || 'Applied' };
 }
 
-/**
- * Terminal states the employer can no longer act on. `withdrawn` is
- * intentionally omitted — the employer never sees those rows.
- */
 const TERMINAL_APPLICANT_STATUSES = new Set(['rejected', 'hired', 'accepted']);
 
 
 export default function DashboardCompany() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [jobs, setJobs] = useState([]);
@@ -66,6 +71,10 @@ export default function DashboardCompany() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  // Rejection target — when set, the modal opens. Null closes it.
+  // `_jobTitle` is carried through so the modal heading can name
+  // the role the applicant applied for.
+  const [rejecting, setRejecting] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,16 +125,30 @@ export default function DashboardCompany() {
     return buckets.map((b) => ({ ...b, percent: pct(b.count) }));
   }, [stats]);
 
-  async function moderate(applicationId, action) {
+  async function shortlistApplicant(applicationId) {
     setBusyId(applicationId);
     try {
-      if (action === 'shortlist') await employersApi.applications.shortlist(applicationId);
-      if (action === 'reject') await employersApi.applications.reject(applicationId, '');
+      await employersApi.applications.shortlist(applicationId);
       setTopApplicants((list) => list.map((a) => a.id === applicationId
-        ? { ...a, status: action === 'shortlist' ? 'shortlisted' : 'rejected' }
+        ? { ...a, status: 'shortlisted' }
         : a));
-    } catch (_e) {
-      /* surface via shared ErrorState if needed; the row keeps its old state */
+    } catch { /* row keeps prior state */ } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleRejectConfirmed(reasonKey, customReason) {
+    if (!rejecting) return;
+    setBusyId(rejecting.id);
+    try {
+      await employersApi.applications.reject(rejecting.id, reasonKey, customReason);
+      setTopApplicants((list) => list.map((a) => a.id === rejecting.id
+        ? { ...a, status: 'rejected' }
+        : a));
+      setRejecting(null);
+    } catch (e) {
+      // Surface error inside the modal via the prop below
+      throw e;
     } finally {
       setBusyId(null);
     }
@@ -133,11 +156,9 @@ export default function DashboardCompany() {
 
   if (loading) {
     return (
-      <section className="view active" id="view-dash-company" data-testid="company-dashboard" style={{ background: 'var(--bone)' }}>
-        <div className="container" style={{ padding: '48px 0' }}>
-          <LoadingState label="Loading your hiring dashboard…" />
-        </div>
-      </section>
+      <div className="container" style={{ padding: '48px 0' }}>
+        <LoadingState label="Loading your hiring dashboard…" />
+      </div>
     );
   }
 
@@ -147,197 +168,175 @@ export default function DashboardCompany() {
   const hired = stats?.applications?.by_status?.hired ?? 0;
 
   return (
-    <section className="view active" id="view-dash-company" data-testid="company-dashboard" style={{ background: 'var(--bone)' }}>
-      <div className="dash-layout">
-        <aside className="dash-sidebar">
-          <div className="dash-side-head">
-            <div className="dash-side-role">Employer · Growth plan</div>
-            <div className="dash-side-name">
-              <div className="dash-side-avatar lg-2">{initials(company.name || user?.full_name)}</div>
-              {company.name || 'Your company'}
-            </div>
+    <div className="dash-content" data-testid="company-dashboard">
+      <div className="dash-topbar">
+        <div>
+          <h1>Hiring at <span className="ital">{company.name || 'your company'}</span>.</h1>
+          <p>
+            {appsTotal} application{appsTotal === 1 ? '' : 's'} · {stats?.interviews?.scheduled ?? 0} interview{stats?.interviews?.scheduled === 1 ? '' : 's'} scheduled
+          </p>
+        </div>
+        <div className="dash-topbar-actions">
+          <Link to="/dashboard/company/post-job" className="btn btn-coral" data-testid="company-post-job-cta">
+            + Post new job
+          </Link>
+        </div>
+      </div>
+
+      {error && <ErrorState error={error} />}
+
+      <div className="stat-row">
+        <div className="stat-card">
+          <div className="stat-label">Active jobs<div className="stat-icon">▤</div></div>
+          <div className="stat-value">{jobs.filter((j) => j.status === 'open').length}</div>
+          <div className="stat-trend">{jobs.length} total</div>
+        </div>
+        <div className="stat-card dark">
+          <div className="stat-label" style={{ color: 'rgba(245,240,230,.6)' }}>Total applicants<div className="stat-icon">◉</div></div>
+          <div className="stat-value">{appsTotal}</div>
+          <div className="stat-trend">All-time</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">In review<div className="stat-icon">⌕</div></div>
+          <div className="stat-value">{inReview}</div>
+          <div className="stat-trend">Awaiting decision</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Hired<div className="stat-icon">✓</div></div>
+          <div className="stat-value">{hired}</div>
+          <div className="stat-trend">All-time</div>
+        </div>
+      </div>
+
+      <div className="dash-panel" style={{ marginBottom: 24 }}>
+        <div className="dash-panel-head">
+          <h3>Active job postings</h3>
+          <Link to="/dashboard/company/jobs" className="section-link">Manage all →</Link>
+        </div>
+        {jobs.length === 0 ? (
+          <p className="muted" style={{ padding: '12px 0' }}>
+            No jobs posted yet.{' '}
+            <Link to="/dashboard/company/post-job" style={{ color: 'var(--coral)' }}>Post your first listing →</Link>
+          </p>
+        ) : (
+          <div className="jobs-grid" data-testid="company-jobs-grid">
+            {jobs.map((j) => {
+              const view = toJobCardShape({
+                ...j,
+                company_name: company.name || j.company_name,
+                company_id: company.id || j.company_id,
+              });
+              if (!view) return null;
+              return (
+                <CompanyJobCard
+                  key={j.id}
+                  job={view}
+                  featured={!!j.is_featured}
+                  onManage={(target) => navigate(`/jobs/${target.id}`)}
+                />
+              );
+            })}
           </div>
-          <ul className="dash-nav">
-            <li><a className="active"><span className="ic">●</span> Dashboard</a></li>
-            <li><a><span className="ic">▤</span> Job Postings <span className="badge">{stats?.jobs_total ?? jobs.length}</span></a></li>
-            <li><a><span className="ic">◉</span> Applicants <span className="badge">{appsTotal}</span></a></li>
-            <li><a><span className="ic">★</span> Shortlists <span className="badge">{stats?.applications?.by_status?.shortlisted ?? 0}</span></a></li>
-            <li><a><span className="ic">☎</span> Interviews <span className="badge">{stats?.interviews?.scheduled ?? 0}</span></a></li>
-            <li><Link to="/candidates"><span className="ic">⌕</span> Talent Search</Link></li>
-            <li><a><span className="ic">◧</span> Company Profile</a></li>
-            <div className="dash-nav-section">Insights</div>
-            <li><a><span className="ic">▲</span> Analytics</a></li>
-            <div className="dash-nav-section">Account</div>
-            <li><a><span className="ic">⚙</span> Team & Billing</a></li>
-            <li><a onClick={logout} style={{ cursor: 'pointer' }}><span className="ic">⤓</span> Sign out</a></li>
-          </ul>
-        </aside>
+        )}
+      </div>
 
-        <div className="dash-main">
-          <div className="dash-topbar">
-            <div>
-              <h1>Hiring at <span className="ital">{company.name || 'your company'}</span>.</h1>
-              <p>
-                {appsTotal} application{appsTotal === 1 ? '' : 's'} · {stats?.interviews?.scheduled ?? 0} interview{stats?.interviews?.scheduled === 1 ? '' : 's'} scheduled
-              </p>
-            </div>
-            <div className="dash-topbar-actions">
-              <button className="btn btn-coral" type="button">+ Post new job</button>
-            </div>
+      <div className="dash-row split">
+        <div className="dash-panel">
+          <div className="dash-panel-head">
+            <h3>Recent applicants <small>· top job</small></h3>
+            <Link to="/dashboard/company/applications" className="section-link">View all →</Link>
           </div>
-
-          {error && <ErrorState error={error} />}
-
-          <div className="stat-row">
-            <div className="stat-card">
-              <div className="stat-label">Active jobs<div className="stat-icon">▤</div></div>
-              <div className="stat-value">{jobs.filter((j) => j.status === 'open').length}</div>
-              <div className="stat-trend">{jobs.length} total</div>
-            </div>
-            <div className="stat-card dark">
-              <div className="stat-label" style={{ color: 'rgba(245,240,230,.6)' }}>Total applicants<div className="stat-icon">◉</div></div>
-              <div className="stat-value">{appsTotal}</div>
-              <div className="stat-trend">All-time</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-label">In review<div className="stat-icon">⌕</div></div>
-              <div className="stat-value">{inReview}</div>
-              <div className="stat-trend">Awaiting decision</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-label">Hired<div className="stat-icon">✓</div></div>
-              <div className="stat-value">{hired}</div>
-              <div className="stat-trend">All-time</div>
-            </div>
-          </div>
-
-          <div className="dash-panel" style={{ marginBottom: 24 }}>
-            <div className="dash-panel-head">
-              <h3>Active job postings</h3>
-              <a>Manage all →</a>
-            </div>
-            {jobs.length === 0 ? (
-              <p className="muted" style={{ padding: '12px 0' }}>No jobs posted yet. Use "Post new job" to create your first listing.</p>
-            ) : (
-              /*
-               * Render every company posting through the shared
-               * JobCard. We deliberately do NOT pass `onApply`,
-               * which is how JobCard hides the Apply Now button —
-               * employer viewers should see the same card chrome
-               * (logo, title, work-mode badge, skills, salary,
-               * deadline) plus the employer-only signals
-               * surfaced by toJobCardShape: status pill,
-               * applicants count, views count, expired flag.
-               *
-               * The candidate-side rendering is unaffected: those
-               * fields default to null in `toJobCardShape`, so
-               * JobCard's conditional rendering keeps the
-               * candidate card visually identical.
-               */
-              <div className="jobs-grid" data-testid="company-jobs-grid">
-                {jobs.map((j) => {
-                  const view = toJobCardShape({
-                    ...j,
-                    company_name: company.name || j.company_name,
-                    company_id: company.id || j.company_id,
-                  });
-                  if (!view) return null;
-                  return (
-                    <CompanyJobCard
-                      key={j.id}
-                      job={view}
-                      featured={!!j.is_featured}
-                      onManage={(target) => navigate(`/jobs/${target.id}`)}
-                    />
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div className="dash-row split">
-            <div className="dash-panel">
-              <div className="dash-panel-head">
-                <h3>Recent applicants <small>· top job</small></h3>
-                <a>View all →</a>
-              </div>
-              {topApplicants.length === 0 ? (
-                <p className="muted" style={{ padding: '12px 0' }}>No applicants yet on your jobs.</p>
-              ) : (
-                <table className="dash-table">
-                  <thead>
-                    <tr><th>Candidate</th><th>Applied for</th><th>Status</th><th></th></tr>
-                  </thead>
-                  <tbody>
-                    {topApplicants.map((a) => (
-                      <tr key={a.id}>
-                        <td>
-                          <div className="table-co">
-                            <div className="cand-tiny lg-1">{initials(a.candidate_name)}</div>
-                            <div>
-                              <strong>{a.candidate_name || 'Candidate'}</strong>
-                              <small>{a.location || a.headline || ''}{a.years_experience != null ? ` · ${a.years_experience}+ yrs` : ''}</small>
-                            </div>
-                          </div>
-                        </td>
-                        <td><small>{a._jobTitle}</small></td>
-                        <td>
-                          {(() => { const s = applicantStatus(a.status); return (
-                            <span className={`pill ${s.cls}`} data-testid="applicant-status">{s.label}</span>
-                          ); })()}
-                        </td>
-                        <td>
-                          {/* Moderation is hidden once the application
-                              reaches a terminal state (withdrawn /
-                              rejected / hired) — you can't shortlist a
-                              candidate who already pulled out. */}
-                          {TERMINAL_APPLICANT_STATUSES.has(String(a.status || '').toLowerCase()) ? (
-                            <span className="muted" style={{ fontSize: 11 }}>—</span>
-                          ) : (
-                            <div className="row-actions">
-                              <button className="icon-btn success" type="button" disabled={busyId === a.id} onClick={() => moderate(a.id, 'shortlist')}>✓</button>
-                              <button className="icon-btn danger" type="button" disabled={busyId === a.id} onClick={() => moderate(a.id, 'reject')}>×</button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-
-            <div className="dash-panel">
-              <div className="dash-panel-head">
-                <h3>Hiring funnel</h3>
-              </div>
-              <div className="funnel">
-                {funnel.map((b) => (
-                  <div key={b.key} className="funnel-row">
-                    <span>{b.label}</span>
-                    <div className="funnel-bar">
-                      <div className={`funnel-fill ${b.cls}`} style={{ width: `${Math.max(b.percent, 4)}%` }}>{b.count}</div>
-                    </div>
-                    <strong>{b.percent}%</strong>
-                  </div>
+          {topApplicants.length === 0 ? (
+            <p className="muted" style={{ padding: '12px 0' }}>No applicants yet on your jobs.</p>
+          ) : (
+            <table className="dash-table">
+              <thead>
+                <tr><th>Candidate</th><th>Applied for</th><th>Status</th><th></th></tr>
+              </thead>
+              <tbody>
+                {topApplicants.map((a) => (
+                  <tr key={a.id}>
+                    <td>
+                      <div className="table-co">
+                        <div className="cand-tiny lg-1">{initials(a.candidate_name)}</div>
+                        <div>
+                          <strong>{a.candidate_name || 'Candidate'}</strong>
+                          <small>{a.location || a.headline || ''}{a.years_experience != null ? ` · ${a.years_experience}+ yrs` : ''}</small>
+                        </div>
+                      </div>
+                    </td>
+                    <td><small>{a._jobTitle}</small></td>
+                    <td>
+                      {(() => { const s = applicantStatus(a.status); return (
+                        <span className={`pill ${s.cls}`} data-testid="applicant-status">{s.label}</span>
+                      ); })()}
+                    </td>
+                    <td>
+                      {TERMINAL_APPLICANT_STATUSES.has(String(a.status || '').toLowerCase()) ? (
+                        <span className="muted" style={{ fontSize: 11 }}>—</span>
+                      ) : (
+                        <div className="row-actions">
+                          <button
+                            className="icon-btn success"
+                            type="button"
+                            disabled={busyId === a.id}
+                            onClick={() => shortlistApplicant(a.id)}
+                            title="Shortlist"
+                          >✓</button>
+                          <button
+                            className="icon-btn danger"
+                            type="button"
+                            disabled={busyId === a.id}
+                            onClick={() => setRejecting(a)}
+                            title="Reject"
+                          >×</button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
                 ))}
-              </div>
-              <div style={{ marginTop: 24, paddingTop: 18, borderTop: '1px solid var(--line-soft)', fontSize: 12, color: 'var(--muted)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <span>Total applications</span>
-                  <strong style={{ color: 'var(--ink)', fontFamily: "'Fraunces',serif" }}>{appsTotal}</strong>
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="dash-panel">
+          <div className="dash-panel-head">
+            <h3>Hiring funnel</h3>
+          </div>
+          <div className="funnel">
+            {funnel.map((b) => (
+              <div key={b.key} className="funnel-row">
+                <span>{b.label}</span>
+                <div className="funnel-bar">
+                  <div className={`funnel-fill ${b.cls}`} style={{ width: `${Math.max(b.percent, 4)}%` }}>{b.count}</div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Conversion to hire</span>
-                  <strong style={{ color: 'var(--ink)', fontFamily: "'Fraunces',serif" }}>
-                    {appsTotal ? `${Math.round((hired / appsTotal) * 100)}%` : '—'}
-                  </strong>
-                </div>
+                <strong>{b.percent}%</strong>
               </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 24, paddingTop: 18, borderTop: '1px solid var(--line-soft)', fontSize: 12, color: 'var(--muted)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span>Total applications</span>
+              <strong style={{ color: 'var(--ink)', fontFamily: "'Fraunces',serif" }}>{appsTotal}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Conversion to hire</span>
+              <strong style={{ color: 'var(--ink)', fontFamily: "'Fraunces',serif" }}>
+                {appsTotal ? `${Math.round((hired / appsTotal) * 100)}%` : '—'}
+              </strong>
             </div>
           </div>
         </div>
       </div>
-    </section>
+
+      <CompanyRejectionModal
+        open={!!rejecting}
+        candidateName={rejecting?.candidate_name}
+        jobTitle={rejecting?._jobTitle}
+        onClose={() => setRejecting(null)}
+        onConfirm={handleRejectConfirmed}
+      />
+    </div>
   );
 }

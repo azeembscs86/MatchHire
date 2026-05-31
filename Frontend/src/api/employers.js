@@ -26,7 +26,18 @@ export const employersApi = {
 
   applications: {
     shortlist(applicationId) { return call(api.post(`/employers/applications/${applicationId}/shortlist`)); },
-    reject(applicationId, reason) { return call(api.post(`/employers/applications/${applicationId}/reject`, { reason })); },
+    /**
+     * Reject an application. `reason` must be one of the canonical
+     * keys from `data/rejection-reasons.js` (Joi-enforced server-side).
+     * When `reason === 'other'`, `customReason` is required — the
+     * employer-supplied free text is persisted alongside the key so
+     * the candidate sees the original wording.
+     */
+    reject(applicationId, reason, customReason) {
+      const body = { reason };
+      if (customReason) body.custom_reason = customReason;
+      return call(api.post(`/employers/applications/${applicationId}/reject`, body));
+    },
   },
 
   scheduleInterview(payload) { return call(api.post('/employers/interviews', payload)); },

@@ -42,12 +42,17 @@ import DashboardCandidate from './pages/DashboardCandidate.jsx';
 import DashboardCompany from './pages/DashboardCompany.jsx';
 import DashboardAdmin from './pages/DashboardAdmin.jsx';
 import CandidateDashboardLayout from './components/CandidateDashboardLayout.jsx';
+import CompanyDashboardLayout from './components/CompanyDashboardLayout.jsx';
 import CandidateApplications from './pages/CandidateApplications.jsx';
 import CandidateWithdrawn from './pages/CandidateWithdrawn.jsx';
 import CandidateRejected from './pages/CandidateRejected.jsx';
 import CandidateMessages from './pages/dashboard/CandidateMessages.jsx';
 import CandidateNotifications from './pages/dashboard/CandidateNotifications.jsx';
 import CandidateSettings from './pages/dashboard/CandidateSettings.jsx';
+import PostJob from './pages/PostJob.jsx';
+import CompanyJobs from './pages/CompanyJobs.jsx';
+import CompanyApplications from './pages/CompanyApplications.jsx';
+import DashEmptyPage from './pages/dashboard/DashEmptyPage.jsx';
 import VerifyEmail from './pages/VerifyEmail.jsx';
 import VerifyPending from './pages/VerifyPending.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
@@ -136,7 +141,59 @@ export default function App() {
 
         {/* Employer-only flows */}
         <Route element={<ProtectedRoute roles={['employer']} />}>
-          <Route path="/dashboard/company" element={<DashboardCompany />} />
+          {/*
+           * Company dashboard SHELL — sidebar + main column. Every
+           * employer-facing tab mounts inside this wrapper so the
+           * sidebar persists when the user clicks between tabs.
+           * `/employer-onboarding` is the existing company-profile
+           * editor — the Profile sidebar item routes there directly
+           * via NavLink rather than duplicating that surface here.
+           */}
+          <Route element={<CompanyDashboardLayout />}>
+            <Route path="/dashboard/company" element={<DashboardCompany />} />
+            <Route path="/dashboard/company/post-job" element={<PostJob />} />
+            <Route path="/dashboard/company/jobs" element={<CompanyJobs />} />
+            <Route path="/dashboard/company/applications" element={<CompanyApplications mode="all" />} />
+            <Route path="/dashboard/company/shortlisted" element={<CompanyApplications mode="shortlisted" />} />
+            <Route path="/dashboard/company/rejected" element={<CompanyApplications mode="rejected" />} />
+            {/*
+             * Interviews + Profile placeholders so every sidebar tab
+             * lands on a real page. Interviews surfaces an empty
+             * state until the scheduling UI ships; Profile takes the
+             * employer to the existing onboarding editor which
+             * already calls /employers/company-profile/update.
+             */}
+            <Route
+              path="/dashboard/company/interviews"
+              element={(
+                <DashEmptyPage
+                  testid="company-interviews"
+                  icon="☎"
+                  eyebrow="Interview pipeline"
+                  display="Scheduled"
+                  emphasis="interviews"
+                  intro="Interviews you've booked with shortlisted candidates appear here."
+                  emptyTitle="No interviews scheduled yet"
+                  emptyMessage="When you schedule an interview from an applicant's row, it'll show up on this tab."
+                />
+              )}
+            />
+            <Route
+              path="/dashboard/company/profile"
+              element={(
+                <DashEmptyPage
+                  testid="company-profile-redirect"
+                  icon="◧"
+                  eyebrow="Company profile"
+                  display="Edit your"
+                  emphasis="company profile"
+                  intro="Visit the company profile editor to update your logo, location, industry, website, and description."
+                  emptyTitle="Open the profile editor"
+                  emptyMessage="Click 'Edit company profile' on the Employer Onboarding page to update your details."
+                />
+              )}
+            />
+          </Route>
         </Route>
 
         {/* Admin-only flows */}
