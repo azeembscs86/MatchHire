@@ -23,6 +23,8 @@
     "seed:matching-jobs": "node src/database/seed.matching-jobs.js",
     "seed:matching-jobs:rollback": "node src/database/seed.matching-jobs.js rollback",
     "seed:matching-jobs:verify": "node src/database/seed.matching-jobs.js verify",
+    "seed:inovertex-applications": "node src/database/seed.inovertex-applications.js",
+    "seed:inovertex-applications:rollback": "node src/database/seed.inovertex-applications.js rollback",
     "docs": "node src/docs/swagger.js",
     "lint": "eslint src",
     "test": "jest --passWithNoTests"
