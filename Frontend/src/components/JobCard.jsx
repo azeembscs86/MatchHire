@@ -257,16 +257,23 @@ export default function JobCard({
    * Who's looking at this card. Controls which decorations render:
    *
    *   'candidate' (default) — match badge, why-recommended
-   *     checklist (matching + missing skills), Apply/Applied row.
-   *     Personalised hiring-marketplace view.
+   *     checklist (matching + missing skills), Apply/Applied row,
+   *     plus the heart + bookmark icons in the top-right action
+   *     cluster. Personalised hiring-marketplace view.
    *   'company'             — NEVER renders the candidate-only
    *     match score / profile-strength / missing-skills UI even
-   *     if a stray score leaks onto the row. Company-relevant
+   *     if a stray score leaks onto the row. Heart + bookmark
+   *     icons are also suppressed so an employer can't acciden-
+   *     tally "favourite" their own job posting. Company-relevant
    *     signals (status pill, applicants + views chips) stay.
+   *   'admin' / 'super_admin' — moderation surface. Same
+   *     suppression as 'company' for heart/bookmark/apply; the
+   *     status/applicants/views chips stay visible because
+   *     they're useful for moderation triage.
    *   'guest'               — public view: no match score, no
-   *     profile strength. (These are score-gated already, so a
-   *     guest with no score sees the plain card; the explicit
-   *     value just documents intent + hard-guards the path.)
+   *     profile strength, no heart/bookmark/apply (those require
+   *     auth + a candidate role). Sign-in prompts live one layer
+   *     up at the page level.
    */
   viewer = 'candidate',
 }) {
@@ -275,11 +282,13 @@ export default function JobCard({
   const { isSavedForLater, toggleSave: toggleSavedForLater } = useSavedJobs();
   const saved = isSaved(job.id);
   const savedForLater = isSavedForLater(job.id);
-  // Candidate-only match decorations. A company viewer never sees
-  // the match score / matching-skills / missing-skills surface —
-  // that information is meaningless (and arguably leaky) on the
-  // employer side. Guests have no score to show either.
-  const showMatchUI = viewer === 'candidate';
+  // Candidate-only surfaces. ONE flag drives match score,
+  // why-recommended checklist, heart, bookmark, and the Apply
+  // row — so a non-candidate viewer (employer / admin / guest)
+  // can never see a candidate-only affordance even if a stray
+  // prop slips through from a parent caller.
+  const isCandidateView = viewer === 'candidate';
+  const showMatchUI = isCandidateView;
   const score = showMatchUI ? job.matchScore : null;
   const visibleSkills = (job.tags || []).slice(0, variant === 'row' ? 2 : 3);
   const extraSkills = Math.max(0, (job.tags || []).length - visibleSkills.length);
@@ -329,26 +338,39 @@ export default function JobCard({
           {featured && job.featured && (
             <span className="featured-pill" aria-label="Featured job">★ Featured</span>
           )}
-          <button
-            className={`job-icon-btn${saved ? ' is-active' : ''}`}
-            onClick={(e) => { e.stopPropagation(); toggleSave(job.id); }}
-            title={saved ? 'Remove from favourites' : 'Add to favourites'}
-            aria-label={saved ? 'Remove from favourites' : 'Add to favourites'}
-            aria-pressed={saved}
-            type="button"
-          >
-            <HeartIcon filled={saved} />
-          </button>
-          <button
-            className={`job-icon-btn${savedForLater ? ' is-active' : ''}`}
-            onClick={(e) => { e.stopPropagation(); toggleSavedForLater(job.id); }}
-            title={savedForLater ? 'Remove from saved' : 'Save for later'}
-            aria-label={savedForLater ? 'Remove from saved' : 'Save for later'}
-            aria-pressed={savedForLater}
-            type="button"
-          >
-            <BookmarkIcon filled={savedForLater} />
-          </button>
+          {/*
+            * Heart + bookmark are candidate-only affordances —
+            * favourites and "save for later" rely on candidate-
+            * scoped APIs (under /candidates/*) that the backend
+            * rejects for any other role. Hiding the icons keeps
+            * the card honest for employer / admin / guest viewers
+            * who'd otherwise click a button that just bounces back
+            * with a 403.
+            */}
+          {isCandidateView && (
+            <>
+              <button
+                className={`job-icon-btn${saved ? ' is-active' : ''}`}
+                onClick={(e) => { e.stopPropagation(); toggleSave(job.id); }}
+                title={saved ? 'Remove from favourites' : 'Add to favourites'}
+                aria-label={saved ? 'Remove from favourites' : 'Add to favourites'}
+                aria-pressed={saved}
+                type="button"
+              >
+                <HeartIcon filled={saved} />
+              </button>
+              <button
+                className={`job-icon-btn${savedForLater ? ' is-active' : ''}`}
+                onClick={(e) => { e.stopPropagation(); toggleSavedForLater(job.id); }}
+                title={savedForLater ? 'Remove from saved' : 'Save for later'}
+                aria-label={savedForLater ? 'Remove from saved' : 'Save for later'}
+                aria-pressed={savedForLater}
+                type="button"
+              >
+                <BookmarkIcon filled={savedForLater} />
+              </button>
+            </>
+          )}
         </div>
 
         <div className="job-head">
@@ -480,7 +502,7 @@ export default function JobCard({
           * which the parent gates on logged-in-candidate so guests,
           * employers, and admins never see the button.
           */}
-        {!showManageRow && (applied || onApply) && (
+        {!showManageRow && isCandidateView && (applied || onApply) && (
           <div className="job-actions-row">
             {applied && typeof onWithdraw === 'function' ? (
               // My Applications list passes `onWithdraw` — replace the

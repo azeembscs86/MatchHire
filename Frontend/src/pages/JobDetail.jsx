@@ -42,6 +42,7 @@ import { publicApi, candidatesApi } from '../api/index.js';
 import { toJobCardShape, filterActiveJobs } from '../api/adapters.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useAuthModal } from '../context/AuthModalContext.jsx';
+import { viewerForRole } from '../lib/viewer.js';
 import { useFavorites } from '../context/FavoritesContext.jsx';
 import { useSavedJobs } from '../context/SavedJobsContext.jsx';
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.jsx';
@@ -109,6 +110,13 @@ export default function JobDetail() {
   const { user, role } = useAuth();
   const { openAuth } = useAuthModal();
   const isCandidate = !!user && role === 'candidate';
+  const isEmployer = !!user && role === 'employer';
+  const isAdmin = !!user && (role === 'admin' || role === 'super_admin');
+  // Single source of truth for the role → JobCard `viewer` map.
+  // Drives the similar-roles rail at the bottom of the page so
+  // employer / admin / guest viewers don't see candidate-only
+  // affordances on those secondary cards.
+  const viewer = viewerForRole(role);
 
   const { isSaved, toggleSave: toggleFav } = useFavorites();
   const { isSavedForLater, toggleSave: toggleSavedForLater } = useSavedJobs();
@@ -367,7 +375,49 @@ export default function JobDetail() {
             </div>
           </div>
 
-          {/* ACTION BAR — Apply / Save / Favourite */}
+          {/*
+            * ACTION BAR — role-gated.
+            *
+            * Candidate: full apply + save + favourite + withdraw row.
+            * Employer:  dashboard CTA only — apply/save/favourite are
+            *            candidate APIs (`/candidates/*`) and the
+            *            backend rejects them with 403 for non-
+            *            candidates, so hiding the buttons keeps the
+            *            UI honest.
+            * Admin:     admin-console CTA — moderation lives in
+            *            /dashboard/admin, not on the public job page.
+            * Guest:     a single "Sign in to apply" entry-point that
+            *            opens the existing auth modal instead of
+            *            silently failing on the candidate buttons.
+            */}
+          {!isCandidate && (
+            <div className="jd-actions">
+              {isEmployer && (
+                <Link to="/dashboard/company" className="btn btn-coral" style={{ minWidth: 180 }}>
+                  Go to company dashboard
+                </Link>
+              )}
+              {isAdmin && (
+                <Link to="/dashboard/admin" className="btn btn-coral" style={{ minWidth: 180 }}>
+                  Open admin console
+                </Link>
+              )}
+              {!isEmployer && !isAdmin && (
+                <button
+                  type="button"
+                  className="btn btn-coral apply-btn"
+                  onClick={() => openAuth('signin')}
+                  style={{ minWidth: 180 }}
+                  data-testid="jd-signin-cta"
+                  title="Sign in as a candidate to apply"
+                >
+                  Sign in to apply
+                </button>
+              )}
+            </div>
+          )}
+          {/* Candidate-only action bar */}
+          {isCandidate && (
           <div className="jd-actions">
             {hasApplied ? (
               <>
@@ -448,6 +498,7 @@ export default function JobDetail() {
               {savedActive ? 'Saved' : 'Save for later'}
             </button>
           </div>
+          )}
 
           {actionMessage && (
             <div
@@ -569,6 +620,7 @@ export default function JobDetail() {
                   key={j.id}
                   job={j}
                   featured
+                  viewer={viewer}
                   applied={similarAppliedIds.has(j.id)}
                   applyingId={similarApplyingId}
                   onApply={isCandidate ? async (target) => {

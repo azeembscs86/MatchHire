@@ -23,6 +23,7 @@ import JobCard from '../components/JobCard.jsx';
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.jsx';
 import { homeApi, candidatesApi, skillsApi } from '../api/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import { viewerForRole } from '../lib/viewer.js';
 import { toJobCardShape } from '../api/adapters.js';
 
 /* ---------- Apply-rejection modal (carried over from prior version) ------- */
@@ -439,6 +440,12 @@ function SearchField({
 export default function Jobs() {
   const { role, user } = useAuth();
   const isCandidate = role === 'candidate';
+  // Resolve once and pass to every JobCard render path so the
+  // top-right heart/bookmark cluster, match badge, and Apply row
+  // only appear for the candidate role. Employer/admin/guest
+  // viewers see the same job card without the candidate-only
+  // affordances.
+  const viewer = viewerForRole(role);
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Filters are the single source of truth for the request. They
@@ -1035,6 +1042,7 @@ export default function Jobs() {
                         key={j.id}
                         job={j}
                         featured
+                        viewer={viewer}
                         onApply={isCandidate ? handleApply : undefined}
                         applyingId={applyingId}
                       />

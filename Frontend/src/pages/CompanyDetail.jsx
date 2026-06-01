@@ -17,6 +17,8 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import { publicApi } from '../api/index.js';
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.jsx';
 import JobCard from '../components/JobCard.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
+import { viewerForRole } from '../lib/viewer.js';
 import { filterActiveJobs } from '../api/adapters.js';
 
 function firstLetter(s) { return (s || '·').trim()[0]?.toUpperCase() || '·'; }
@@ -34,6 +36,11 @@ function toneFor(id) {
 export default function CompanyDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { role } = useAuth();
+  // Pass through to every JobCard so employer / admin / guest
+  // viewers don't see candidate-only affordances (heart, save,
+  // Apply) on a company's job grid.
+  const viewer = viewerForRole(role);
   const [company, setCompany] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -143,7 +150,7 @@ export default function CompanyDetail() {
               ) : (
                 <div className="jobs-grid">
                   {jobs.map((j) => (
-                    <JobCard key={j.id} job={j} featured />
+                    <JobCard key={j.id} job={j} featured viewer={viewer} />
                   ))}
                 </div>
               )}

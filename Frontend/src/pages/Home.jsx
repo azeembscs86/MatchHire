@@ -21,6 +21,7 @@ import JobCard from '../components/JobCard.jsx';
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.jsx';
 import { homeApi } from '../api/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import { viewerForRole } from '../lib/viewer.js';
 import { filterActiveJobs } from '../api/adapters.js';
 import { useApplyToJob } from '../hooks/useApplyToJob.js';
 
@@ -455,8 +456,12 @@ function CtaBand({ block, tone = 'light' }) {
 }
 
 export default function Home() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const navigate = useNavigate();
+  // Map auth role → JobCard `viewer` once so every card on Home
+  // (recommended rail, latest rail, featured grid) suppresses
+  // candidate-only affordances for employer / admin / guest.
+  const viewer = viewerForRole(role);
 
   const [payload, setPayload] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -674,6 +679,7 @@ export default function Home() {
                         key={j.id}
                         job={j}
                         featured
+                        viewer={viewer}
                         onApply={isCandidate ? apply : undefined}
                         applied={appliedIds.has(j.id)}
                         applyingId={applyingId}
@@ -725,6 +731,7 @@ export default function Home() {
                   key={j.id}
                   job={j}
                   featured
+                  viewer={viewer}
                   onApply={isCandidate ? apply : undefined}
                   applied={appliedIds.has(j.id)}
                   applyingId={applyingId}

@@ -235,7 +235,11 @@ export default function MatchingJobsCarousel({ candidateId }) {
         ) : (
           state.records.map((j) => (
             <div key={j.id} className="match-carousel-item">
-              <JobCard job={j} featured />
+              {/* This carousel only mounts on the candidate detail
+                * page for employer viewers, so the card is locked
+                * to the company viewer mode — no candidate-only
+                * heart / save / apply affordances. */}
+              <JobCard job={j} featured viewer="company" />
             </div>
           ))
         )}
