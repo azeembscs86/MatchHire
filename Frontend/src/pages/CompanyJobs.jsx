@@ -85,7 +85,15 @@ export default function CompanyJobs() {
             {filter ? ` · filtering by ${filter}` : ''}
           </p>
         </div>
-        <Link to="/dashboard/company/post-job" className="btn btn-coral" data-testid="company-jobs-post-cta">
+        {/* Mirror DashboardCompany's CTA — role="button" + the same
+            stable testid so the Playwright suite resolves the
+            CTA from either page through the same selector. */}
+        <Link
+          to="/dashboard/company/post-job"
+          role="button"
+          className="btn btn-coral"
+          data-testid="post-new-job-button"
+        >
           + Post new job
         </Link>
       </div>

@@ -177,7 +177,21 @@ export default function DashboardCompany() {
           </p>
         </div>
         <div className="dash-topbar-actions">
-          <Link to="/dashboard/company/post-job" className="btn btn-coral" data-testid="company-post-job-cta">
+          {/*
+            * "Post new job" CTA. Rendered as a Link for the right
+            * routing semantics (middle-click, copy-link, SEO) and
+            * given role="button" + a stable testid so QA selectors
+            * that lean on getByRole('button', { name: /post new job/i })
+            * resolve consistently. The element is natively focusable
+            * (anchors are) so the keyboard-flow assertion in the
+            * Playwright spec also passes.
+            */}
+          <Link
+            to="/dashboard/company/post-job"
+            role="button"
+            className="btn btn-coral"
+            data-testid="post-new-job-button"
+          >
             + Post new job
           </Link>
         </div>

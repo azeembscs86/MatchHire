@@ -56,6 +56,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFavorites } from '../context/FavoritesContext.jsx';
 import { useSavedJobs } from '../context/SavedJobsContext.jsx';
+import { useAuthModal } from '../context/AuthModalContext.jsx';
 import CardShell from './CardShell.jsx';
 
 /**
@@ -341,14 +342,20 @@ export default function JobCard({
   const navigate = useNavigate();
   const { isSaved, toggleSave } = useFavorites();
   const { isSavedForLater, toggleSave: toggleSavedForLater } = useSavedJobs();
+  const { openAuth } = useAuthModal();
   const saved = isSaved(job.id);
   const savedForLater = isSavedForLater(job.id);
-  // Candidate-only surfaces. ONE flag drives match score,
-  // why-recommended checklist, heart, bookmark, and the Apply
-  // row — so a non-candidate viewer (employer / admin / guest)
-  // can never see a candidate-only affordance even if a stray
-  // prop slips through from a parent caller.
+  // Candidate-only surfaces — match score, why-recommended checklist,
+  // and the Apply row. ONE flag so a stray `viewer` mismatch can't
+  // leak the apply CTA onto an employer / admin card.
   const isCandidateView = viewer === 'candidate';
+  // Heart + bookmark icons live on candidate AND guest cards.
+  // Guests get the buttons but a click opens the sign-in modal
+  // rather than calling the candidate-only favourites API. This
+  // matches the public-jobs UX contract: heart visible, click
+  // never navigates the card away from /jobs.
+  const showSaveActions = viewer === 'candidate' || viewer === 'guest';
+  const isGuestView = viewer === 'guest';
   const showMatchUI = isCandidateView;
   const score = showMatchUI ? job.matchScore : null;
   const visibleSkills = (job.tags || []).slice(0, variant === 'row' ? 2 : 3);
@@ -406,35 +413,56 @@ export default function JobCard({
             <span className="featured-pill" aria-label="Featured job">★ Featured</span>
           )}
           {/*
-            * Heart + bookmark are candidate-only affordances —
-            * favourites and "save for later" rely on candidate-
-            * scoped APIs (under /candidates/*) that the backend
-            * rejects for any other role. Hiding the icons keeps
-            * the card honest for employer / admin / guest viewers
-            * who'd otherwise click a button that just bounces back
-            * with a 403.
+            * Heart + bookmark icons. Candidates get the real
+            * toggle behaviour (favourites / saved-for-later APIs).
+            * Guests get the same icons but a click opens the
+            * sign-in modal — staying on /jobs and never navigating
+            * the card away. Employer + admin viewers don't see the
+            * icons at all (they hit candidate-only APIs).
+            *
+            * Both handlers call e.stopPropagation() + e.preventDefault()
+            * so clicking either button never bubbles up to the
+            * whole-card click that would otherwise open /jobs/:id.
             */}
-          {isCandidateView && (
+          {showSaveActions && (
             <>
               <button
                 className={`job-icon-btn${saved ? ' is-active' : ''}`}
-                onClick={(e) => { e.stopPropagation(); toggleSave(job.id); }}
-                title={saved ? 'Remove from favourites' : 'Add to favourites'}
-                aria-label={saved ? 'Remove from favourites' : 'Add to favourites'}
-                aria-pressed={saved}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  if (isGuestView) { openAuth('signin'); return; }
+                  toggleSave(job.id);
+                }}
+                title={isGuestView
+                  ? 'Sign in to favourite'
+                  : (saved ? 'Remove from favourites' : 'Add to favourites')}
+                aria-label={isGuestView
+                  ? 'Sign in to favourite'
+                  : (saved ? 'Remove from favourites' : 'Add to favourites')}
+                aria-pressed={!isGuestView && saved}
                 type="button"
               >
-                <HeartIcon filled={saved} />
+                <HeartIcon filled={!isGuestView && saved} />
               </button>
               <button
                 className={`job-icon-btn${savedForLater ? ' is-active' : ''}`}
-                onClick={(e) => { e.stopPropagation(); toggleSavedForLater(job.id); }}
-                title={savedForLater ? 'Remove from saved' : 'Save for later'}
-                aria-label={savedForLater ? 'Remove from saved' : 'Save for later'}
-                aria-pressed={savedForLater}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  if (isGuestView) { openAuth('signin'); return; }
+                  toggleSavedForLater(job.id);
+                }}
+                title={isGuestView
+                  ? 'Sign in to save for later'
+                  : (savedForLater ? 'Remove from saved' : 'Save for later')}
+                aria-label={isGuestView
+                  ? 'Sign in to save for later'
+                  : (savedForLater ? 'Remove from saved' : 'Save for later')}
+                aria-pressed={!isGuestView && savedForLater}
                 type="button"
               >
-                <BookmarkIcon filled={savedForLater} />
+                <BookmarkIcon filled={!isGuestView && savedForLater} />
               </button>
             </>
           )}

@@ -132,21 +132,29 @@ export default function CandidateApplications() {
       // Applications" tab — this surface is for the active pipeline
       // only. `exclude_statuses: ['withdrawn']` is the contract the
       // backend honours so the candidate's active list stays clean.
-      const [list, dashStats] = await Promise.all([
-        candidatesApi.applications.list({
-          page: 1,
-          limit: 50,
-          exclude_statuses: ['withdrawn'],
-        }),
-        candidatesApi.dashboardStats().catch(() => null),
-      ]);
+      const list = await candidatesApi.applications.list({
+        page: 1,
+        limit: 50,
+        exclude_statuses: ['withdrawn'],
+      });
       setRecords(list?.records || list?.rows || []);
-      setStats(dashStats || null);
     } catch (err) {
       setError(err);
     } finally {
+      // Important: `loading` is gated on the LIST endpoint only.
+      // The summary counts come from a separate dashboard-stats
+      // call that we kick off below as fire-and-forget — a slow
+      // or hanging stats endpoint must NOT block the grid render,
+      // which was causing the page's Playwright spec to flake.
       setLoading(false);
     }
+    // Fire-and-forget stats refresh. Failures are silent — the
+    // summary tiles render rolled-up counts from `records` as a
+    // fallback when `stats` is null (see `rollupStats(stats)`),
+    // so the page stays usable even if this call never returns.
+    candidatesApi.dashboardStats()
+      .then((dashStats) => setStats(dashStats || null))
+      .catch(() => { /* leave stats null; rollup falls back to records */ });
   }, []);
 
   useEffect(() => { load(); }, [load]);
