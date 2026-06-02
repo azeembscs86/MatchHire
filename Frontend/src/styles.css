@@ -416,6 +416,29 @@
     background:rgba(232,93,60,.1);color:var(--coral-deep,#C73E1D);
     border-color:rgba(232,93,60,.2);font-weight:600;
   }
+  /* Live countdown — same coral tint as `meta-chip-warn` but flagged
+   * as a separate class so the styling can drift if we later want
+   * a subtle pulse / icon-spin animation on the ticker. */
+  .meta-chip-urgent{
+    background:rgba(232,93,60,.10);color:var(--coral-deep,#C73E1D);
+    border-color:rgba(232,93,60,.25);font-weight:600;
+  }
+  /* Competition tier chips — three soft tints so the gradient
+   * reads at a glance: sage (low → "go for it") → bone (moderate)
+   * → coral (high → crowded). Kept tight so they don't overpower
+   * the rest of the meta row. */
+  .meta-chip-comp-low{
+    background:rgba(122,153,108,.12);color:#3F5D33;
+    border-color:rgba(122,153,108,.25);font-weight:500;
+  }
+  .meta-chip-comp-mid{
+    background:rgba(14,17,22,.06);color:var(--ink-soft);
+    border-color:var(--line-soft);font-weight:500;
+  }
+  .meta-chip-comp-high{
+    background:rgba(232,93,60,.10);color:var(--coral-deep,#C73E1D);
+    border-color:rgba(232,93,60,.22);font-weight:500;
+  }
 
   /*
    * Skill tags row — fixed-height single line. Tags are no longer
@@ -3022,6 +3045,38 @@
 @media (max-width:480px){
   .overview-summary{grid-template-columns:1fr}
   .overview-summary-value{font-size:26px}
+}
+
+/* =============================================================================
+ * JobDetail — Related companies grid
+ * ---------------------------------------------------------------------------
+ * Compact 2-column tile grid below the similar-jobs rail. Each tile is a
+ * navigable Link to /companies/:id; the meta line shows industry + location;
+ * the count line hints at the company's hiring volume so a candidate can
+ * gauge follow-worthiness at a glance.
+ * ===========================================================================*/
+.related-companies-grid{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:8px;
+}
+.related-company-card{
+  display:flex;flex-direction:column;gap:6px;
+  background:var(--paper);border:1px solid var(--line);border-radius:14px;
+  padding:16px 18px;text-decoration:none;color:var(--ink);
+  transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.related-company-card:hover{
+  transform:translateY(-2px);box-shadow:var(--shadow);
+  border-color:var(--coral);
+}
+.related-company-name{
+  font-family:'Fraunces',serif;font-size:17px;font-weight:500;letter-spacing:-.01em;
+}
+.related-company-meta{font-size:12px;color:var(--muted)}
+.related-company-open{
+  margin-top:4px;font-size:12px;color:var(--coral-deep,#C73E1D);font-weight:600;
+}
+@media (max-width:720px){
+  .related-companies-grid{grid-template-columns:1fr}
 }
 
 /* =============================================================================

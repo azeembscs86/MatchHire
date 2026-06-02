@@ -52,10 +52,71 @@
  *                                       suitable for the dashboard
  *                                       matches rail.
  */
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFavorites } from '../context/FavoritesContext.jsx';
 import { useSavedJobs } from '../context/SavedJobsContext.jsx';
 import CardShell from './CardShell.jsx';
+
+/**
+ * Hook + helpers for the live application-deadline countdown.
+ *
+ * When the deadline is within 24 hours we re-render once per
+ * minute so the "2h 45m left" chip stays accurate without a page
+ * reload. Beyond 24 hours we render a static "Xd left" — there's
+ * no value in a per-second ticker for week-long deadlines.
+ *
+ * `iso` is the raw ISO timestamp on the job (deadlineRaw). The
+ * hook returns a tuple { label, urgent } so the caller can both
+ * render the text and apply a coral-warning style when the ticker
+ * is inside the last 24h.
+ */
+function formatCountdown(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return { label: 'Expired', urgent: true };
+  const totalSec = Math.floor(ms / 1000);
+  const days = Math.floor(totalSec / 86400);
+  if (days >= 1) return { label: `${days}d left`, urgent: days <= 3 };
+  const hours = Math.floor(totalSec / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+  return { label: `${hours}h ${minutes}m left`, urgent: true };
+}
+
+function useDeadlineCountdown(iso) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!iso) return undefined;
+    const target = new Date(iso).getTime();
+    if (!Number.isFinite(target)) return undefined;
+    const remaining = target - Date.now();
+    // Past deadlines or far-future ones don't benefit from a ticker.
+    // We schedule a refresh only inside the last 24h, once per minute.
+    if (remaining <= 0 || remaining > 24 * 3600 * 1000) return undefined;
+    const id = setInterval(() => setNow(Date.now()), 60 * 1000);
+    return () => clearInterval(id);
+  }, [iso]);
+  if (!iso) return null;
+  const target = new Date(iso).getTime();
+  if (!Number.isFinite(target)) return null;
+  return formatCountdown(target - now);
+}
+
+/**
+ * Competition level chip — derived from `applications_count`. Sits
+ * alongside the other meta chips so a candidate can gauge how
+ * crowded a posting is before applying.
+ *
+ *   <  5 applicants  → Low  (sage tint)
+ *   < 20 applicants  → Moderate
+ *   ≥ 20 applicants  → High (coral tint)
+ *
+ * Hidden when the count is null or zero (no signal yet).
+ */
+function competitionTier(count) {
+  if (!Number.isFinite(count) || count <= 0) return null;
+  if (count < 5) return { label: 'Low competition', cls: 'meta-chip-comp-low' };
+  if (count < 20) return { label: 'Moderate competition', cls: 'meta-chip-comp-mid' };
+  return { label: 'High competition', cls: 'meta-chip-comp-high' };
+}
 
 function HeartIcon({ filled }) {
   if (filled) {
@@ -294,6 +355,12 @@ export default function JobCard({
   const extraSkills = Math.max(0, (job.tags || []).length - visibleSkills.length);
   const missing = showMatchUI && Array.isArray(job.missing) ? job.missing : [];
   const reasons = showMatchUI && Array.isArray(job.reasons) ? job.reasons : [];
+  // Top-level hook call — `useDeadlineCountdown` returns a live
+  // ticker tuple for last-24h deadlines and null otherwise. The
+  // meta row reads `liveCountdown` and falls back to the static
+  // `job.deadline` label when the deadline isn't urgent.
+  const liveCountdown = useDeadlineCountdown(job.deadlineRaw);
+  const competition = isCandidateView ? competitionTier(job.applicationsCount) : null;
 
   function openDetail() { navigate(`/jobs/${job.id}`); }
 
@@ -428,12 +495,22 @@ export default function JobCard({
         <div className="job-meta-row">
           {job.experience && <span className="meta-chip" title={`Experience: ${job.experience}`}>{job.experience}</span>}
           {job.type && <span className="meta-chip" title={`Job type: ${job.type}`}>{job.type}</span>}
+          {/*
+            * Deadline chip — when the deadline is inside the
+            * countdown window (last 24h), the chip shows a LIVE
+            * ticker ("2h 45m left") that re-renders once per
+            * minute. Outside that window we fall back to the
+            * existing static "Closes in 5d" label so older
+            * deadlines don't churn the DOM.
+            */}
           {showDeadlineChip && (
             <span
-              className={`meta-chip${job.isExpired ? ' meta-chip-warn' : ''}`}
+              className={`meta-chip${job.isExpired ? ' meta-chip-warn' : ''}${liveCountdown && liveCountdown.urgent && !job.isExpired ? ' meta-chip-urgent' : ''}`}
               title={job.deadlineRaw ? new Date(job.deadlineRaw).toLocaleString() : 'Apply deadline'}
             >
-              {job.deadline}
+              {liveCountdown && liveCountdown.urgent && !job.isExpired
+                ? `⏱ ${liveCountdown.label}`
+                : job.deadline}
             </span>
           )}
           {/* Employer-side counters: applicants + views. Both opt-
@@ -442,6 +519,21 @@ export default function JobCard({
           {showApplicantsChip && (
             <span className="meta-chip meta-chip-applicants" title={`${job.applicationsCount} applicants`}>
               {job.applicationsCount} {job.applicationsCount === 1 ? 'applicant' : 'applicants'}
+            </span>
+          )}
+          {/*
+            * Competition tier — derived from `applications_count`
+            * so a candidate can gauge how crowded a posting is.
+            * Hidden for company viewers (the raw applicants count
+            * chip above is more useful to them) and for rows
+            * with zero applicants where the signal is noise.
+            */}
+          {competition && (
+            <span
+              className={`meta-chip ${competition.cls}`}
+              title={`${job.applicationsCount} applicant${job.applicationsCount === 1 ? '' : 's'} so far`}
+            >
+              {competition.label}
             </span>
           )}
           {showViewsChip && (

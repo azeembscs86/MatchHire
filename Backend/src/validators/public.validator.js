@@ -39,6 +39,17 @@ const jobsQuery = Joi.object({
   remote: Joi.boolean().truthy('true', '1').falsy('false', '0').allow(null),
   company_id: Joi.number().integer().positive().allow(null),
   is_featured: Joi.boolean().truthy('true', '1').falsy('false', '0').allow(null),
+  // Restrict to jobs posted by verified companies. Wires through to
+  // `jobRepo.listPublic`'s `c.verification_status = 'verified'` clause.
+  verified_only: Joi.boolean().truthy('true', '1').falsy('false', '0').allow(null),
+  // Optional skill filter (CSV or repeated). Forwarded as-is to the
+  // repository's `buildSkillsFilter` so the Jobs page sidebar can
+  // hit the same search path as the homepage skill rail.
+  skills: Joi.alternatives(
+    Joi.string().max(500),
+    Joi.array().items(Joi.string().max(60)).max(20),
+  ).allow('', null),
+  posted_within_days: Joi.number().integer().min(0).max(365).allow(null),
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(10),
   sort: Joi.string().valid('latest', 'salary_high', 'salary_low', 'featured').default('latest'),

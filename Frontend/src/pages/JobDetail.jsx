@@ -123,6 +123,11 @@ export default function JobDetail() {
 
   const [job, setJob] = useState(null);
   const [similar, setSimilar] = useState([]);
+  // Other companies hiring in the same industry as the anchor job's
+  // employer. Loaded lazily once the detail response lands (because
+  // we need `company_industry` from it). Best-effort: an empty
+  // response just hides the section.
+  const [relatedCompanies, setRelatedCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [applying, setApplying] = useState(false);
@@ -173,6 +178,25 @@ export default function JobDetail() {
         // can still render an expired anchor job (with the "no longer
         // available" message) because it uses `toJobCardShape` directly.
         setSimilar(filterActiveJobs(simResp?.records));
+
+        // Fan out one more best-effort request for "Related companies
+        // in this space" — same industry as the anchor job's employer,
+        // anchor company itself filtered out. Done after the main
+        // payload lands (rather than in parallel) because the industry
+        // string lives ON the detail response.
+        const industry = detail?.company_industry;
+        const anchorCompanyId = detail?.company_id;
+        if (industry) {
+          publicApi.companies({ industry, limit: 6 })
+            .then((res) => {
+              if (cancelled) return;
+              const filtered = (res?.records || [])
+                .filter((c) => Number(c.id) !== Number(anchorCompanyId))
+                .slice(0, 4);
+              setRelatedCompanies(filtered);
+            })
+            .catch(() => { /* section just hides on failure */ });
+        }
       } catch (err) {
         if (!cancelled) setError(err);
       } finally {
@@ -180,7 +204,13 @@ export default function JobDetail() {
       }
     }
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      // Reset related companies on navigation to a new job so we
+      // don't briefly show the previous job's neighbours during the
+      // refetch window.
+      setRelatedCompanies([]);
+    };
   }, [id]);
 
   const cardShape = useMemo(() => job ? toJobCardShape(job) : null, [job]);
@@ -653,6 +683,43 @@ export default function JobDetail() {
                 />
               ))}
             </div>
+          )}
+
+          {/*
+            * Related companies — companies in the same industry as
+            * the anchor employer. Drives discovery once the candidate
+            * has decided "I'm interested in this space, not just this
+            * role". Best-effort: the block only renders when the API
+            * returned at least one non-anchor company.
+            */}
+          {relatedCompanies.length > 0 && (
+            <section className="jd-section jd-related-companies" aria-labelledby="jd-related-title">
+              <h2 id="jd-related-title">Related companies in this space</h2>
+              <p className="muted" style={{ marginBottom: 16, fontSize: 14 }}>
+                Other employers hiring in {job?.company_industry?.toLowerCase() || 'this industry'} —
+                worth a follow if this role isn't the right fit.
+              </p>
+              <div className="related-companies-grid">
+                {relatedCompanies.map((c) => (
+                  <Link
+                    key={c.id}
+                    to={`/companies/${c.id}`}
+                    className="related-company-card"
+                    data-testid={`related-company-${c.id}`}
+                  >
+                    <div className="related-company-name">{c.name}</div>
+                    <div className="related-company-meta">
+                      {[c.industry, c.location].filter(Boolean).join(' · ')}
+                    </div>
+                    {c.open_jobs > 0 && (
+                      <div className="related-company-open">
+                        {c.open_jobs} open role{c.open_jobs === 1 ? '' : 's'} →
+                      </div>
+                    )}
+                  </Link>
+                ))}
+              </div>
+            </section>
           )}
         </div>
 

@@ -336,6 +336,12 @@ async function listPublic(filters) {
     // here so we can hide jobs they've already applied to. Guests pass
     // `undefined` and see the unfiltered list.
     exclude_applied_for_user_id,
+    // Restrict the list to jobs posted by verified companies only.
+    // Reads `companies.verification_status = 'verified'` — the same
+    // signal the admin moderation panel writes when an employer
+    // clears the verification check. Defaults to false so the
+    // standard feed stays unchanged for callers that don't opt in.
+    verified_only,
   } = filters;
 
   const where = [...activeJobWhere()];
@@ -404,6 +410,7 @@ async function listPublic(filters) {
   }
   if (company_id) { where.push('j.company_id = ?'); params.push(company_id); }
   if (parseBoolish(is_featured) === true) where.push('j.is_featured = 1');
+  if (parseBoolish(verified_only) === true) where.push("c.verification_status = 'verified'");
 
   let orderBy = 'j.is_featured DESC, j.published_at DESC, j.id DESC';
   if (sort === 'salary_high') orderBy = 'j.salary_max DESC, j.salary_min DESC';
@@ -581,6 +588,10 @@ async function listLocationBased({
   // viewer is a guest (listPublic) or signed in (listLocationBased +
   // ranking).
   job_type, work_mode, remote, salary_min, salary_max, posted_within_days,
+  // Restrict to jobs posted by verified companies (parallel to
+  // listPublic so the Jobs page sidebar's "Verified employers only"
+  // toggle works for candidates AND guests).
+  verified_only,
 }) {
   const where = [...activeJobWhere()];
   const params = [];
@@ -612,6 +623,7 @@ async function listLocationBased({
     where.push('j.published_at >= (NOW() - INTERVAL ? DAY)');
     params.push(postedDays);
   }
+  if (parseBoolish(verified_only) === true) where.push("c.verification_status = 'verified'");
 
   const skillsFilter = buildSkillsFilter(skills);
   if (skillsFilter) {

@@ -51,6 +51,10 @@ const jobsQuery = Joi.object({
   ).default('latest'),
   include_below_threshold: Joi.boolean().truthy('true', '1').falsy('false', '0').default(false),
   threshold: Joi.number().min(0).max(100).allow(null),
+  // Restrict the smart-feed to jobs posted by verified companies.
+  // Mirrors `public.validator.jobsQuery#verified_only`; reads
+  // `companies.verification_status = 'verified'` at the repo layer.
+  verified_only: Joi.boolean().truthy('true', '1').falsy('false', '0').allow(null),
 }).unknown(false);
 
 const recommendedQuery = Joi.object({

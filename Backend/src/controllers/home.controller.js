@@ -85,6 +85,7 @@ exports.listJobs = async (req, res) => {
     salary_min: req.query.salary_min,
     salary_max: req.query.salary_max,
     posted_within_days: req.query.posted_within_days ?? req.query.posted_within,
+    verified_only: req.query.verified_only,
     job_scope: candidate.job_scope || 'hybrid',
     page: 1,
     limit: oversample,

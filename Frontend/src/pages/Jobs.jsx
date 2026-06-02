@@ -177,6 +177,11 @@ const SALARY_BANDS = [
  */
 const SORTS_AUTHED = [
   { value: 'best_match',    label: 'Best match' },
+  // "AI Recommended" is best_match + a 70% match-threshold floor —
+  // narrows the feed to roles the matching service rated as Strong
+  // or Good fit only. Pure sort hint client-side; the `threshold`
+  // raise is applied in `commitSearch()` when this sort is picked.
+  { value: 'ai_recommended', label: '★ AI Recommended (70%+)' },
   { value: 'latest',        label: 'Most recent' },
   { value: 'salary_high',   label: 'Highest salary' },
   { value: 'closing_soon',  label: 'Closing soon' },
@@ -197,6 +202,12 @@ const DEFAULT_FILTERS = {
   job_type: '', experience_level: '',
   work_mode: '', salary_min: undefined, salary_max: undefined,
   posted_within: 0, match_threshold: 40, sort: 'best_match',
+  // `verified_only` wires through to the backend
+  // (`companies.verification_status = 'verified'`). Candidate-side
+  // location bias is already enforced server-side by
+  // listLocationBased (it reads profile country/city) so a
+  // separate "Near me" toggle would be a no-op there.
+  verified_only: false,
 };
 
 /**
@@ -226,6 +237,7 @@ function filtersFromSearchParams(params, isCandidate) {
     salary_min: num('salary_min', undefined),
     salary_max: num('salary_max', undefined),
     sort: params.get('sort') || (isCandidate ? 'best_match' : 'latest'),
+    verified_only: params.get('verified_only') === '1' || params.get('verified_only') === 'true',
   };
 }
 
@@ -530,6 +542,7 @@ export default function Jobs() {
     }
     const defaultSort = isCandidate ? 'best_match' : 'latest';
     if (filters.sort && filters.sort !== defaultSort) next.set('sort', filters.sort);
+    if (filters.verified_only) next.set('verified_only', '1');
     setSearchParams(next, { replace: true });
   }, [filters, isCandidate, setSearchParams]);
 
@@ -615,10 +628,19 @@ export default function Jobs() {
           posted_within_days: filters.posted_within > 0 ? filters.posted_within : undefined,
           // AI match minimum — meaningful only for signed-in candidates.
           // Sent as `threshold` to align with the existing backend param.
+          // The `ai_recommended` sort is a preset that bumps the floor
+          // to 70 (Strong + Good fit only) and falls back to best_match
+          // server-side, which the backend already understands.
           threshold: isCandidate && Number.isFinite(filters.match_threshold)
-            ? filters.match_threshold
-            : undefined,
-          sort: filters.sort,
+            ? Math.max(filters.match_threshold, filters.sort === 'ai_recommended' ? 70 : 0)
+            : (filters.sort === 'ai_recommended' ? 70 : undefined),
+          // `ai_recommended` is a client-side preset — the backend only
+          // honours canonical sort keys, so we translate before sending.
+          sort: filters.sort === 'ai_recommended' ? 'best_match' : filters.sort,
+          // Verified employer filter — backend reads
+          // `companies.verification_status='verified'`. Omitting the
+          // param entirely (vs sending `false`) keeps the URL clean.
+          verified_only: filters.verified_only ? true : undefined,
         };
         const res = await homeApi.jobs(params);
         if (cancelled) return;
@@ -855,6 +877,28 @@ export default function Jobs() {
            * row stays here as a quick chip filter that complements
            * the location text input.
            */}
+          {/*
+            * Trust filter — narrows the feed to companies whose
+            * `verification_status='verified'`. Sits at the top of
+            * the sidebar so it reads as a quality gate rather than
+            * a typical attribute filter. Toggle-style chip so the
+            * state is obvious at a glance.
+            */}
+          <div className="filter-group">
+            <h4>Trust signals</h4>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={!!filters.verified_only}
+              className={`seg-btn${filters.verified_only ? ' active' : ''}`}
+              onClick={() => update({ verified_only: !filters.verified_only })}
+              data-testid="filter-verified-only"
+              style={{ width: '100%', justifyContent: 'flex-start' }}
+              title="Show only jobs posted by verified employers"
+            >
+              {filters.verified_only ? '✓ ' : ''}Verified employers only
+            </button>
+          </div>
           <div className="filter-group">
             <h4>Work mode</h4>
             <div className="seg-row" role="group" aria-label="Work mode">
