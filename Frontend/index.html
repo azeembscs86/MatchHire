@@ -3,7 +3,78 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>MatchHire — Where Careers Find Their Calling</title>
+<meta name="theme-color" content="#E86A52" />
+
+<!--
+  SEO + social-share surface.
+  ---------------------------
+  Tags are static here rather than injected at runtime because the
+  app is a single-page Vite build; crawlers that don't execute JS
+  (most of them) still need the homepage's metadata to land on
+  something useful. Page-level overrides (Job Detail, Company
+  Detail) can later layer dynamic tags via react-helmet — they
+  inherit these defaults unless overridden.
+-->
+<title>MatchHire — AI-powered job matching for candidates and companies</title>
+<meta name="description" content="MatchHire is the AI-powered hiring marketplace where talent and companies meet on merit. Get ranked by match score, see your missing skills, and apply to roles that actually fit." />
+<meta name="keywords" content="jobs, hiring, AI matching, careers, recruitment, remote work, tech jobs, Pakistan jobs, hire talent, job board" />
+<meta name="author" content="MatchHire" />
+<meta name="robots" content="index, follow, max-image-preview:large" />
+<link rel="canonical" href="https://matchhire.app/" />
+
+<!-- OpenGraph (Facebook, LinkedIn, Slack, WhatsApp link previews) -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="MatchHire" />
+<meta property="og:title" content="MatchHire — AI-powered job matching" />
+<meta property="og:description" content="Get ranked by match score, see your missing skills, and apply to roles that actually fit. The hiring marketplace where talent meets opportunity on merit." />
+<meta property="og:url" content="https://matchhire.app/" />
+<meta property="og:locale" content="en_US" />
+<meta property="og:image" content="https://matchhire.app/og-cover.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="MatchHire — AI-powered job matching" />
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="MatchHire — AI-powered job matching" />
+<meta name="twitter:description" content="Get ranked by match score, see your missing skills, and apply to roles that actually fit." />
+<meta name="twitter:image" content="https://matchhire.app/og-cover.png" />
+<meta name="twitter:image:alt" content="MatchHire — AI-powered job matching" />
+
+<!--
+  Structured data — Organization + WebSite schema so search engines
+  can render rich snippets (logo, site search box). The Organization
+  block also feeds LinkedIn's company knowledge panel when scraped.
+-->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://matchhire.app/#organization",
+      "name": "MatchHire",
+      "url": "https://matchhire.app/",
+      "logo": "https://matchhire.app/logo.png",
+      "description": "AI-powered hiring marketplace where talent and companies meet on merit.",
+      "sameAs": []
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://matchhire.app/#website",
+      "url": "https://matchhire.app/",
+      "name": "MatchHire",
+      "publisher": { "@id": "https://matchhire.app/#organization" },
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": "https://matchhire.app/jobs?keyword={search_term_string}",
+        "query-input": "required name=search_term_string"
+      }
+    }
+  ]
+}
+</script>
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">

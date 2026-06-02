@@ -455,6 +455,162 @@ function CtaBand({ block, tone = 'light' }) {
   );
 }
 
+/**
+ * AIMatchPreview
+ *
+ * Marketing demo of the AI match score — guest-only, since
+ * signed-in candidates already see live match scores on every
+ * JobCard they hover. Three hand-tuned sample role + score tiles
+ * sit above the LiveStatsBand so a first-time visitor immediately
+ * understands what makes this product different from a search
+ * engine: ranked-by-fit, not ranked-by-recency.
+ *
+ * Pure presentation. No API calls. Numbers are deliberately
+ * representative, not random — they map to the same Strong /
+ * Good / Moderate tiers JobCard renders for real matches, so
+ * the visual idiom carries through when a candidate signs up.
+ */
+function AIMatchPreview() {
+  const SAMPLES = [
+    {
+      role: 'Senior Frontend Engineer',
+      company: 'Vector Labs',
+      score: 95,
+      tier: 'Strong fit',
+      reasons: ['React + TypeScript expertise', 'Remote-friendly schedule', 'Salary band matches your target'],
+      cls: 'match-badge-strong',
+    },
+    {
+      role: 'Product Manager',
+      company: 'Northwind',
+      score: 88,
+      tier: 'Strong fit',
+      reasons: ['B2B SaaS background', 'Mid-stage startup fit', 'Hybrid in Karachi'],
+      cls: 'match-badge-strong',
+    },
+    {
+      role: 'DevOps Engineer',
+      company: 'Helios Cloud',
+      score: 72,
+      tier: 'Good fit',
+      reasons: ['AWS + Kubernetes overlap', 'Open to remote', 'Senior level alignment'],
+      cls: 'match-badge-good',
+    },
+  ];
+  return (
+    <section className="block ai-preview" id="ai-match-preview" aria-labelledby="ai-preview-title">
+      <div className="container">
+        <div className="section-head">
+          <div>
+            <span className="eyebrow" style={{ display: 'block', marginBottom: 14 }}>
+              ⚡ Before you even sign up
+            </span>
+            <h2 id="ai-preview-title" className="display" style={{ fontSize: 36 }}>
+              See how our AI ranks jobs <span className="ital" style={{ fontStyle: 'italic', color: 'var(--coral)' }}>by fit</span>.
+            </h2>
+          </div>
+          <Link to="/jobs" className="section-link">Browse all jobs →</Link>
+        </div>
+        <p className="ai-preview-sub muted">
+          Every job gets a 0–100 score against your profile — based on skills, role, experience,
+          location, and work mode. Below are sample roles to show you the idea; sign up to see
+          how YOUR profile scores against every active posting.
+        </p>
+        <div className="ai-preview-grid">
+          {SAMPLES.map((s) => (
+            <div key={s.role} className="ai-preview-card">
+              <div className={`match-badge ${s.cls}`} style={{ marginBottom: 14 }}>
+                <div className="match-badge-row">
+                  <div className="match-badge-score">
+                    <strong>{s.score}%</strong>
+                    <span>match</span>
+                  </div>
+                  <div className="match-badge-meta">
+                    <span className="match-badge-label">{s.tier}</span>
+                    <span className="match-badge-sub">Sample score</span>
+                  </div>
+                </div>
+                <div className="match-badge-track" aria-hidden="true">
+                  <div className="match-badge-fill" style={{ width: `${s.score}%` }} />
+                </div>
+              </div>
+              <h3 className="ai-preview-role">{s.role}</h3>
+              <div className="ai-preview-company">{s.company}</div>
+              <ul className="why-list" aria-label="Why this matches">
+                {s.reasons.map((r, i) => (
+                  <li key={i} className="why-item why-item-yes">
+                    <span className="why-icon" aria-hidden="true">✓</span>
+                    <span className="why-text">{r}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * MobileAppPromo
+ *
+ * Always-visible promo for the iOS + Android apps. Placeholder
+ * store links — the real ones plug in once the app ships. The
+ * surface uses the same `.cta-band` shell as the existing
+ * employer + candidate CTA bands so the page rhythm stays
+ * consistent.
+ *
+ * Two-column on desktop (copy + badges); stacks on mobile via
+ * the existing responsive grid rules.
+ */
+function MobileAppPromo() {
+  return (
+    <section className="block mobile-promo" aria-labelledby="mobile-promo-title">
+      <div className="container">
+        <div className="mobile-promo-card">
+          <div className="mobile-promo-text">
+            <span className="eyebrow" style={{ display: 'block', marginBottom: 12, color: 'rgba(245,240,230,.7)' }}>
+              📱 MatchHire on the go
+            </span>
+            <h2 id="mobile-promo-title" className="display" style={{ fontSize: 34, color: 'var(--bone)' }}>
+              Take your <span className="ital" style={{ fontStyle: 'italic', color: 'var(--coral)' }}>matches</span> with you.
+            </h2>
+            <p style={{ color: 'rgba(245,240,230,.8)', marginTop: 12, maxWidth: 540 }}>
+              Get push notifications the moment a role above your match threshold goes live.
+              Apply, save, and message recruiters straight from your phone.
+            </p>
+          </div>
+          <div className="mobile-promo-badges" role="group" aria-label="App store links">
+            <a
+              href="https://apps.apple.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="app-badge"
+              aria-label="Download MatchHire on the App Store"
+              data-testid="mobile-app-ios"
+            >
+              <span className="app-badge-eyebrow">Download on the</span>
+              <span className="app-badge-store">App Store</span>
+            </a>
+            <a
+              href="https://play.google.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="app-badge"
+              aria-label="Get MatchHire on Google Play"
+              data-testid="mobile-app-android"
+            >
+              <span className="app-badge-eyebrow">Get it on</span>
+              <span className="app-badge-store">Google Play</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function Home() {
   const { user, role } = useAuth();
   const navigate = useNavigate();
@@ -579,6 +735,37 @@ export default function Home() {
               </button>
             </form>
 
+            {/*
+              * Hero shortcut CTAs — three role-honest entry points
+              * that complement the search bar. The buttons surface
+              * the same destinations the top nav already exposes,
+              * but in the hero where a first-time visitor's eye
+              * lands. Roles see what they can actually act on:
+              *
+              *   Candidate: Find Jobs (primary) · Upload Resume
+              *   Employer:  Find Jobs · Hire Talent (primary)
+              *   Guest:     Find Jobs · Hire Talent · Upload Resume
+              *
+              * "Upload Resume" routes to /profile (the resume upload
+              * card lives in the profile editor); guests are gated
+              * through the existing auth modal by ProtectedRoute.
+              */}
+            <div className="hero-ctas" aria-label="Quick links">
+              <Link to="/jobs" className={`btn ${isEmployer ? 'btn-outline' : 'btn-coral'}`} data-testid="hero-cta-find-jobs">
+                Find Jobs
+              </Link>
+              {!isCandidate && (
+                <Link to="/employer-onboarding" className={`btn ${isEmployer ? 'btn-coral' : 'btn-outline'}`} data-testid="hero-cta-hire-talent">
+                  Hire Talent
+                </Link>
+              )}
+              {!isEmployer && (
+                <Link to="/profile" className="btn btn-outline" data-testid="hero-cta-upload-resume">
+                  Upload Resume
+                </Link>
+              )}
+            </div>
+
             <div className="hero-stats">
               {heroStats.map((s) => (
                 <div key={s.lbl}>
@@ -611,6 +798,11 @@ export default function Home() {
           </div>
         </div>
       </div>
+
+      {/* AI Match Preview — guest-only marketing demo. Signed-in
+          candidates already see live match scores on every JobCard
+          they hover, so showing them sample scores would be noise. */}
+      {!user && <AIMatchPreview />}
 
       {/* Live hiring statistics — visible to everyone (guests, candidates, employers). */}
       <LiveStatsBand liveStats={liveStats} />
@@ -793,6 +985,10 @@ export default function Home() {
       {/* Two CTA bands — one for employers, one for candidates. */}
       <CtaBand block={cta?.forEmployers} tone="dark" />
       {!isCandidate && <CtaBand block={cta?.forCandidates} tone="light" />}
+
+      {/* Mobile app promo — last band before the footer so the
+          app-install ask is the final invitation on the page. */}
+      <MobileAppPromo />
     </section>
   );
 }
