@@ -3048,6 +3048,68 @@
 }
 
 /* =============================================================================
+ * Candidate Dashboard — AI Career Score Band
+ * ---------------------------------------------------------------------------
+ * Four-up score grid that frames the workflow summary tiles below it.
+ * Each tile carries a tier-coloured edge (developing → coral) so the
+ * gradient is legible without overpowering the rest of the page.
+ * ===========================================================================*/
+.career-band{
+  background:var(--paper);border:1px solid var(--line);border-radius:18px;
+  padding:24px 24px 22px;margin-bottom:18px;
+}
+.career-band-head{margin-bottom:14px}
+.career-band-grid{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:14px;
+}
+.career-tile{
+  position:relative;
+  background:var(--bone);border:1px solid var(--line-soft);border-radius:14px;
+  padding:16px 16px 14px;display:flex;flex-direction:column;gap:4px;
+  border-left:3px solid var(--line);
+  transition:transform .15s ease, box-shadow .15s ease;
+}
+.career-tile:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+.career-tile-excellent{border-left-color:#5C8A4E}
+.career-tile-strong{border-left-color:#7A996C}
+.career-tile-good{border-left-color:#C9A23B}
+.career-tile-developing{border-left-color:var(--coral)}
+.career-tile-head{display:flex;align-items:center;gap:8px}
+.career-tile-icon{font-size:14px;color:var(--muted)}
+.career-tile-label{
+  font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--muted);font-weight:600;
+}
+.career-tile-value{
+  font-family:'Fraunces',serif;font-size:30px;font-weight:500;
+  letter-spacing:-.02em;line-height:1;color:var(--ink);margin-top:2px;
+}
+.career-tile-tier{font-size:12px;color:var(--ink-soft);font-weight:500;margin-bottom:6px}
+.career-tile-track{
+  height:4px;background:rgba(14,17,22,.06);border-radius:100px;overflow:hidden;
+  margin-top:2px;
+}
+.career-tile-fill{
+  height:100%;border-radius:100px;background:var(--coral);
+  transition:width .4s ease;
+}
+.career-tile-excellent .career-tile-fill{background:#5C8A4E}
+.career-tile-strong .career-tile-fill{background:#7A996C}
+.career-tile-good .career-tile-fill{background:#C9A23B}
+.career-tile-hint{
+  font-size:11px;color:var(--muted);margin-top:8px;
+  min-height:28px;line-height:1.4;
+}
+@media (max-width:960px){
+  .career-band-grid{grid-template-columns:repeat(2,1fr)}
+}
+@media (max-width:480px){
+  .career-band-grid{grid-template-columns:1fr}
+  .career-band{padding:18px}
+  .career-tile-value{font-size:26px}
+}
+
+/* =============================================================================
  * JobDetail — Related companies grid
  * ---------------------------------------------------------------------------
  * Compact 2-column tile grid below the similar-jobs rail. Each tile is a

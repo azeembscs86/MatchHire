@@ -715,6 +715,26 @@ router.post('/dashboard/stats', asyncHandler(controller.dashboardStats));
 
 /**
  * @swagger
+ * /candidates/employability-snapshot:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: AI Career-dashboard score band (4 derived scores)
+ *     description: |
+ *       Returns four 0–100 scores composed from existing tables:
+ *       Profile (section-completeness), AI Match (avg of top-10
+ *       recommended jobs), Interview Readiness (composite from
+ *       profile/resume/portfolio/applications/interviews),
+ *       and Salary Potential (% uplift between expected and
+ *       market median for qualified roles). Each score carries
+ *       a tier label (`excellent` / `strong` / `good` / `developing`).
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       '200': { description: Snapshot, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ */
+router.post('/employability-snapshot', asyncHandler(controller.employabilitySnapshot));
+
+/**
+ * @swagger
  * /candidates/jobs/match:
  *   post:
  *     tags: [Candidates]

@@ -283,6 +283,151 @@ async function withdrawApplication(user_id, application_id) {
   return appRepo.findById(application_id);
 }
 
+/**
+ * Career-dashboard score band: four AI-derived scores per candidate.
+ *
+ * Pure derivation from existing tables — no schema migration, no
+ * external API. Each score is 0–100 with an attached tier label so
+ * the UI can render a consistent badge style across the four tiles.
+ *
+ * Components
+ *   profile_score        candidate_profiles.profile_strength
+ *                        (already-section-weighted, kept as-is).
+ *
+ *   ai_match_score       Average match score across the top-10
+ *                        recommendedForUser() jobs. Falls back to
+ *                        null when the candidate has no skills /
+ *                        no eligible jobs (UI hides the tile).
+ *
+ *   interview_readiness  Composite, capped 0–100:
+ *                          profile_strength      × 0.40   (0–40)
+ *                          primary resume on file × 20    (0/20)
+ *                          portfolio items count × 5     (0–15)
+ *                          applications submitted × 3    (0–15)
+ *                          interviews attended × 2       (0–10)
+ *                        Designed so a fully-built profile + 1
+ *                        resume + 3 portfolio items + 5 apps
+ *                        + 5 interviews lands at exactly 100.
+ *
+ *   salary_potential     % uplift between candidate's
+ *                        expected_salary_min and the median
+ *                        salary_max of the same scored top-10
+ *                        feed. Caps at 100. Null when the
+ *                        candidate hasn't set an expected salary
+ *                        OR no recommendedJobs returned.
+ *
+ * The endpoint is cached per-user for `DASHBOARD_STATS` TTL so the
+ * scoring fanout doesn't run on every dashboard mount.
+ */
+const SCORE_TIERS = [
+  { min: 80, key: 'excellent', label: 'Excellent' },
+  { min: 65, key: 'strong',    label: 'Strong' },
+  { min: 50, key: 'good',      label: 'Good' },
+  { min:  0, key: 'developing', label: 'Developing' },
+];
+function tierFor(score) {
+  if (score == null || !Number.isFinite(score)) return null;
+  const tier = SCORE_TIERS.find((t) => score >= t.min);
+  return tier ? { key: tier.key, label: tier.label } : null;
+}
+
+async function employabilitySnapshot(user_id) {
+  const key = `${cache.Keys.dashboardStats('candidate', user_id)}:employability`;
+  return cache.rememberCache(key, cache.TTL.DASHBOARD_STATS, async () => {
+    const profile = await candidateRepo.findProfileByUserId(user_id);
+    const profileScore = Math.max(0, Math.min(100, Number(profile?.profile_strength || 0)));
+
+    // AI match score — average over top-10 recommended jobs. The
+    // recommendedForUser path already runs the same match scorer
+    // the apply-validate flow uses, so the average matches what
+    // the candidate sees on their job cards.
+    let aiMatchScore = null;
+    let marketSalaryMedian = null;
+    try {
+      const recRes = await jobRepo.recommendedForUser(user_id, 10);
+      const recRows = recRes?.rows || recRes?.records || recRes || [];
+      const scores = recRows
+        .map((r) => Number(r.match_score))
+        .filter((s) => Number.isFinite(s));
+      if (scores.length > 0) {
+        aiMatchScore = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+      }
+      // Salary potential — median of the same job set's salary_max,
+      // since those are the roles the candidate qualifies for.
+      const salaryMaxes = recRows
+        .map((r) => Number(r.salary_max))
+        .filter((n) => Number.isFinite(n) && n > 0)
+        .sort((a, b) => a - b);
+      if (salaryMaxes.length > 0) {
+        const mid = Math.floor(salaryMaxes.length / 2);
+        marketSalaryMedian = salaryMaxes.length % 2 === 0
+          ? Math.round((salaryMaxes[mid - 1] + salaryMaxes[mid]) / 2)
+          : salaryMaxes[mid];
+      }
+    } catch (_e) { /* leave aiMatchScore null on best-effort failure */ }
+
+    // Interview readiness components.
+    const apps = await appRepo.statsForCandidate(user_id);
+    const appsCount = Number(apps?.total || 0);
+    const interviewsCount = Number(apps?.by_status?.interview || 0)
+      + Number(apps?.by_status?.offered || 0)
+      + Number(apps?.by_status?.hired || 0);
+    const primaryResume = await db.queryOne(
+      `SELECT 1 AS yes FROM resumes
+        WHERE candidate_user_id = ? AND is_primary = 1 AND deleted_at IS NULL
+        LIMIT 1`,
+      [user_id]
+    );
+    const portfolioRow = await db.queryOne(
+      `SELECT COUNT(*) AS n FROM candidate_portfolio_items
+        WHERE candidate_user_id = ? AND deleted_at IS NULL`,
+      [user_id]
+    );
+    const portfolioCount = Number(portfolioRow?.n || 0);
+
+    const interviewReadiness = Math.min(100, Math.round(
+      profileScore * 0.40
+      + (primaryResume ? 20 : 0)
+      + Math.min(portfolioCount, 3) * 5
+      + Math.min(appsCount, 5) * 3
+      + Math.min(interviewsCount, 5) * 2
+    ));
+
+    // Salary potential — % uplift the candidate could chase. If they
+    // haven't set an expected salary, or no market data, return null
+    // (UI hides the tile rather than showing a meaningless 0%).
+    const expected = Number(profile?.expected_salary_min || 0);
+    let salaryPotential = null;
+    if (expected > 0 && marketSalaryMedian && marketSalaryMedian > 0) {
+      const upliftPct = ((marketSalaryMedian - expected) / expected) * 100;
+      salaryPotential = Math.max(0, Math.min(100, Math.round(upliftPct)));
+    }
+
+    return {
+      profile_score: profileScore,
+      profile_tier: tierFor(profileScore),
+      ai_match_score: aiMatchScore,
+      ai_match_tier: tierFor(aiMatchScore),
+      interview_readiness: interviewReadiness,
+      interview_readiness_tier: tierFor(interviewReadiness),
+      salary_potential: salaryPotential,
+      salary_potential_tier: tierFor(salaryPotential),
+      // Diagnostic counts so the UI can render context tooltips
+      // ("Based on N recommended roles", "5 applications") without
+      // an extra request.
+      meta: {
+        recommended_count: aiMatchScore != null ? 10 : 0,
+        applications_count: appsCount,
+        interviews_count: interviewsCount,
+        portfolio_count: portfolioCount,
+        has_primary_resume: !!primaryResume,
+        market_salary_median: marketSalaryMedian,
+        expected_salary_min: expected || null,
+      },
+    };
+  });
+}
+
 async function dashboardStats(user_id) {
   const key = cache.Keys.dashboardStats('candidate', user_id);
   return cache.rememberCache(key, cache.TTL.DASHBOARD_STATS, async () => {
@@ -606,6 +751,7 @@ module.exports = {
   listApplications,
   withdrawApplication,
   dashboardStats,
+  employabilitySnapshot,
   matchJobs,
   similarCandidates,
   sendCandidateMessage,

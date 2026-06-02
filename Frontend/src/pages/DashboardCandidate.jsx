@@ -45,6 +45,108 @@ const STATUS_PILL = {
   withdrawn:    { cls: 'pill-rejected',    label: 'Withdrawn' },
 };
 
+/**
+ * CareerScoreBand
+ *
+ * AI Career-dashboard score band — four 0–100 tiles derived from
+ * existing tables by the backend's `employability-snapshot`
+ * endpoint:
+ *
+ *   Profile Score       section-completion of the candidate profile
+ *   AI Match Score      avg match across top-10 recommended jobs
+ *   Interview Ready     composite (profile, resume, portfolio,
+ *                        applications, interviews)
+ *   Salary Potential    % uplift vs market median for qualified roles
+ *
+ * Each tile carries a tier label (Excellent / Strong / Good /
+ * Developing) and a coloured progress ring driven by the score.
+ * Tiles with a `null` score hide themselves so a brand-new
+ * candidate doesn't see misleading zeroes.
+ */
+function CareerScoreBand({ data }) {
+  if (!data) return null;
+  const tiles = [
+    {
+      key: 'profile',
+      icon: '◧',
+      label: 'Profile Score',
+      hint: 'Completeness of your profile sections',
+      score: data.profile_score,
+      tier: data.profile_tier,
+      suffix: '%',
+    },
+    {
+      key: 'ai',
+      icon: '⚡',
+      label: 'AI Match Score',
+      hint: data.meta?.recommended_count
+        ? `Avg across ${data.meta.recommended_count} matched roles`
+        : 'Add skills to unlock matches',
+      score: data.ai_match_score,
+      tier: data.ai_match_tier,
+      suffix: '%',
+    },
+    {
+      key: 'interview',
+      icon: '☎',
+      label: 'Interview Ready',
+      hint: data.meta?.has_primary_resume
+        ? `${data.meta?.applications_count || 0} app${data.meta?.applications_count === 1 ? '' : 's'} · ${data.meta?.interviews_count || 0} interview${data.meta?.interviews_count === 1 ? '' : 's'}`
+        : 'Upload a primary resume to boost this',
+      score: data.interview_readiness,
+      tier: data.interview_readiness_tier,
+      suffix: '%',
+    },
+    {
+      key: 'salary',
+      icon: '⌖',
+      label: 'Salary Potential',
+      hint: data.meta?.market_salary_median && data.meta?.expected_salary_min
+        ? 'Uplift vs market median for your role'
+        : 'Set your expected salary to unlock',
+      score: data.salary_potential,
+      tier: data.salary_potential_tier,
+      suffix: '%',
+    },
+  ];
+  const visible = tiles.filter((t) => Number.isFinite(t.score));
+  if (visible.length === 0) return null;
+  return (
+    <section className="career-band" data-testid="career-score-band" aria-label="AI career dashboard">
+      <header className="career-band-head">
+        <span className="eyebrow" style={{ display: 'block', marginBottom: 6 }}>★ AI Career snapshot</span>
+        <p className="muted" style={{ fontSize: 13, margin: 0 }}>
+          Four signals computed from your profile, matches, and pipeline. Updated live.
+        </p>
+      </header>
+      <div className="career-band-grid">
+        {visible.map((t) => {
+          const tierKey = t.tier?.key || 'developing';
+          const display = `${Math.round(t.score)}${t.suffix}`;
+          return (
+            <div
+              key={t.key}
+              className={`career-tile career-tile-${tierKey}`}
+              data-testid={`career-tile-${t.key}`}
+            >
+              <div className="career-tile-head">
+                <span className="career-tile-icon" aria-hidden="true">{t.icon}</span>
+                <span className="career-tile-label">{t.label}</span>
+              </div>
+              <div className="career-tile-value">{display}</div>
+              <div className="career-tile-tier">{t.tier?.label || '—'}</div>
+              <div className="career-tile-track" aria-hidden="true">
+                <div className="career-tile-fill" style={{ width: `${Math.max(4, Math.min(100, t.score))}%` }} />
+              </div>
+              <div className="career-tile-hint">{t.hint}</div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function relative(iso) {
   if (!iso) return '';
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -62,6 +164,10 @@ export default function DashboardCandidate() {
   const [matches, setMatches] = useState([]);
   // Per-section completion breakdown for the ProfileCompletionCard.
   const [completion, setCompletion] = useState(null);
+  // AI Career-dashboard score band — four derived 0–100 scores.
+  // Loaded best-effort alongside the other dashboard payloads;
+  // if the snapshot endpoint errors the band just hides itself.
+  const [employability, setEmployability] = useState(null);
   // Onboarding wizard state — surfaces a "Continue setup" banner
   // when the user hasn't completed the 7-step wizard yet.
   const [onboarding, setOnboarding] = useState(null);
@@ -97,13 +203,16 @@ export default function DashboardCandidate() {
       setLoading(true);
       setError(null);
       try {
-        const [statsData, appsData, matchesData, completionData] = await Promise.all([
+        const [statsData, appsData, matchesData, completionData, snapshotData] = await Promise.all([
           candidatesApi.dashboardStats(),
           candidatesApi.applications.list({ page: 1, limit: 6 }),
           candidatesApi.recommendedJobs(4).catch(() => ({ records: [] })),
           // Per-section completion breakdown — non-fatal if it errors,
           // so the rest of the dashboard still renders.
           candidatesApi.profileCompletion().catch(() => null),
+          // AI Career-dashboard score band — best-effort; falls back
+          // to a hidden band on any backend error.
+          candidatesApi.employabilitySnapshot().catch(() => null),
         ]);
         if (cancelled) return;
         setStats(statsData || null);
@@ -112,6 +221,7 @@ export default function DashboardCandidate() {
         // candidate never sees a match they can't act on.
         setMatches(filterActiveJobs(matchesData?.records));
         setCompletion(completionData || null);
+        setEmployability(snapshotData || null);
         // Non-blocking — banner just hides if this fails.
         candidatesApi.onboarding.state()
           .then((d) => !cancelled && setOnboarding(d))
@@ -231,6 +341,15 @@ export default function DashboardCandidate() {
               </Link>
             </div>
           )}
+
+          {/*
+            * AI Career-snapshot band. Sits above the workflow
+            * summary tiles so the four derived scores frame the
+            * rest of the dashboard. Hides itself when the snapshot
+            * endpoint returned null OR every individual score is
+            * unset (brand-new candidate with no profile data).
+            */}
+          <CareerScoreBand data={employability} />
 
           {/*
            * Six clickable summary cards (June 2031 redesign).

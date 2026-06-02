@@ -78,6 +78,16 @@ export const candidatesApi = {
 
   dashboardStats() { return call(api.post('/candidates/dashboard/stats')); },
 
+  /**
+   * AI Career-dashboard score band. Returns four derived 0–100
+   * scores (profile / AI match / interview readiness / salary
+   * potential) plus tier labels and diagnostic counts. Cached
+   * server-side for `DASHBOARD_STATS` TTL.
+   */
+  employabilitySnapshot() {
+    return call(api.post('/candidates/employability-snapshot'));
+  },
+
   /** Skill-based ranked recommendations. */
   matchJobs(body = {}) { return call(api.post('/candidates/jobs/match', body)); },
 

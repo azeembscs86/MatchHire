@@ -249,6 +249,19 @@ exports.dashboardStats = async (req, res) => {
   return response.success(res, data, 'Dashboard stats returned');
 };
 
+/**
+ * AI Career-dashboard score band.
+ *
+ * Returns four derived 0–100 scores (profile / ai-match / interview-
+ * readiness / salary-potential) plus tier labels and diagnostic
+ * counts. Composed purely from existing tables — no migration.
+ * See `candidate.service.employabilitySnapshot()` for the maths.
+ */
+exports.employabilitySnapshot = async (req, res) => {
+  const data = await service.employabilitySnapshot(req.user.id);
+  return response.success(res, data, 'Employability snapshot returned');
+};
+
 /** POST /candidates/jobs/match - skill-based ranked recommendations. */
 exports.matchJobs = async (req, res) => {
   const data = await service.matchJobs(req.user.id, req.body || {});
