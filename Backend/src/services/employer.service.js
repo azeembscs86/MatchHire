@@ -90,10 +90,68 @@ async function listMyJobs(user_id, paging) {
   return jobRepo.listByCompany(company.id, paging);
 }
 
+/**
+ * Engagement tier per applicant.
+ *
+ *   hot   — actively in the employer's hands: shortlisted, interview,
+ *           offered, hired, OR the application landed in the last 7 days.
+ *   cold  — > 30 days since the latest activity and the row is still
+ *           in the early-funnel statuses (applied / reviewing).
+ *   warm  — everything in between.
+ *
+ * Pure derivation from `status` + `applied_at` / `updated_at` — no
+ * new column. Drives the Hot / Warm / Cold chip on the company
+ * applicants table so the recruiter can triage at a glance without
+ * sorting by date.
+ */
+function applicantEngagement(row) {
+  const status = String(row.status || '').toLowerCase();
+  const ACTIVE = new Set(['shortlisted', 'interview', 'offered', 'hired']);
+  const EARLY = new Set(['applied', 'reviewing', 'under_review']);
+  const latest = row.applied_at || row.updated_at || null;
+  const ageDays = latest ? Math.floor((Date.now() - new Date(latest).getTime()) / 86400000) : null;
+  if (ACTIVE.has(status)) return 'hot';
+  if (Number.isFinite(ageDays) && ageDays <= 7) return 'hot';
+  if (EARLY.has(status) && Number.isFinite(ageDays) && ageDays > 30) return 'cold';
+  return 'warm';
+}
+
 async function listApplicants(user_id, jobId, paging) {
   const owns = await jobRepo.ownsJob(jobId, user_id);
   if (!owns) throw new AppError('Job not found or access denied', 404);
-  return appRepo.listApplicantsForJob(jobId, paging);
+
+  const { rows, total } = await appRepo.listApplicantsForJob(jobId, paging);
+  if (rows.length === 0) return { rows, total };
+
+  // Decorate each applicant with:
+  //   - `match_score` — live score vs. THIS job using the same scorer
+  //     the apply-validate path uses. Lets the employer-side table
+  //     render the same "Match" column the auto-shortlist uses.
+  //   - `engagement` — Hot / Warm / Cold tier derived from status +
+  //     time-since-activity. Pure UI hint; no schema change.
+  //
+  // The match-score fanout is one `loadCandidateContext` per
+  // applicant (small queries). At the cap of 100 rows per page that
+  // costs ~100 round-trips, which the typical employer dashboard
+  // tolerates; if we ever cross that threshold the right fix is a
+  // batched candidate-context loader, not a column on `applications`.
+  let job = null;
+  try { job = await jobRepo.findById(jobId); } catch (_e) { /* leave match_score null */ }
+
+  const decorated = await Promise.all(rows.map(async (row) => {
+    const engagement = applicantEngagement(row);
+    if (!job) return { ...row, engagement };
+    try {
+      const candidate = await jobRepo.loadCandidateContext(row.candidate_id);
+      if (!candidate) return { ...row, engagement };
+      const { score } = matchService.scoreJob(job, candidate);
+      return { ...row, engagement, match_score: Number.isFinite(score) ? Math.round(score) : null };
+    } catch (_e) {
+      return { ...row, engagement };
+    }
+  }));
+
+  return { rows: decorated, total };
 }
 
 async function shortlistApplication(user_id, applicationId) {
@@ -220,11 +278,34 @@ async function dashboardStats(user_id) {
     const apps = await appRepo.statsForCompany(company.id);
     const interviews = await interviewRepo.statsForCompany(company.id);
     const jobs = await jobRepo.listByCompany(company.id, { page: 1, limit: 1 });
+
+    // Time-to-Hire (days). Average of `applied_at → updated_at` deltas
+    // for every application currently in `status='hired'`. Updated_at
+    // is a reasonable proxy for the moment the row landed in hired
+    // because the only employer write that flips an application to
+    // hired (`shortlistApplication`/`scheduleInterview`/etc. all
+    // touch `updated_at`) sets that timestamp. Returns null when no
+    // hires exist yet so the UI hides the tile rather than showing
+    // a misleading zero.
+    let time_to_hire_days = null;
+    try {
+      const row = await require('../config/database').queryOne(
+        `SELECT AVG(TIMESTAMPDIFF(DAY, applied_at, updated_at)) AS d
+           FROM applications
+          WHERE company_id = ? AND status = 'hired'
+            AND applied_at IS NOT NULL AND updated_at IS NOT NULL`,
+        [company.id]
+      );
+      const n = Number(row?.d);
+      if (Number.isFinite(n)) time_to_hire_days = Math.max(0, Math.round(n));
+    } catch (_e) { /* leave null on best-effort failure */ }
+
     return {
       company: { id: company.id, name: company.name, verification_status: company.verification_status },
       applications: apps,
       interviews,
       jobs_total: jobs.total,
+      time_to_hire_days,
     };
   });
 }

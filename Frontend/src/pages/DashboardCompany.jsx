@@ -220,6 +220,20 @@ export default function DashboardCompany() {
           <div className="stat-value">{hired}</div>
           <div className="stat-trend">All-time</div>
         </div>
+        {/*
+          * Time-to-Hire — average days from applied_at to the hired
+          * status flip, computed server-side and exposed on
+          * `dashboardStats`. Hides itself when there are zero hires
+          * (the value comes back null) so a brand-new company
+          * doesn't see a misleading 0d card.
+          */}
+        {stats?.time_to_hire_days != null && (
+          <div className="stat-card" data-testid="company-time-to-hire">
+            <div className="stat-label">Time to hire<div className="stat-icon">⏱</div></div>
+            <div className="stat-value">{stats.time_to_hire_days}<small style={{ fontSize: 16, marginLeft: 4 }}>d</small></div>
+            <div className="stat-trend">Avg across all hires</div>
+          </div>
+        )}
       </div>
 
       <div className="dash-panel" style={{ marginBottom: 24 }}>

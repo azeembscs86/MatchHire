@@ -333,6 +333,7 @@ export default function CompanyApplications({ mode = 'all' }) {
                 <th>Candidate</th>
                 <th>Applied for</th>
                 <th>Match</th>
+                <th>Engagement</th>
                 <th>Status</th>
                 {mode === 'rejected' && <th>Reason</th>}
                 <th></th>
@@ -364,6 +365,32 @@ export default function CompanyApplications({ mode = 'all' }) {
                       {Number.isFinite(Number(a.match_score))
                         ? <strong style={{ fontFamily: "'Fraunces',serif" }}>{Math.round(Number(a.match_score))}%</strong>
                         : <span className="muted" style={{ fontSize: 11 }}>—</span>}
+                    </td>
+                    <td>
+                      {/*
+                        * Engagement tier from backend — drives at-a-glance
+                        * triage. `hot` flips to coral; `cold` to muted ink.
+                        * Hidden for terminal rows (rejected / hired etc.)
+                        * since "engagement" stops being a useful signal
+                        * once the candidate has exited the pipeline.
+                        */}
+                      {a.engagement && !isTerminal ? (
+                        <span
+                          className={`engagement-chip engagement-${a.engagement}`}
+                          data-testid={`engagement-${a.engagement}`}
+                          title={
+                            a.engagement === 'hot' ? 'Active in your pipeline or applied within 7 days'
+                            : a.engagement === 'cold' ? '> 30 days with no movement — re-engage or close out'
+                            : 'In review — moving through the funnel'
+                          }
+                        >
+                          {a.engagement === 'hot' ? '🔥 Hot'
+                            : a.engagement === 'cold' ? '❄ Cold'
+                            : '◉ Warm'}
+                        </span>
+                      ) : (
+                        <span className="muted" style={{ fontSize: 11 }}>—</span>
+                      )}
                     </td>
                     <td>
                       <span className={`pill ${s.cls}`} data-testid="applicant-status">{s.label}</span>

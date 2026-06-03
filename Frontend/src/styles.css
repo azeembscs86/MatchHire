@@ -3048,6 +3048,32 @@
 }
 
 /* =============================================================================
+ * Company Applicants — Engagement chips (Hot / Warm / Cold)
+ * ---------------------------------------------------------------------------
+ * Quick-triage chip rendered in the Engagement column of the company
+ * applicants table. Coral for hot (action needed), neutral bone for
+ * warm (in review), muted ink for cold (re-engage or close out).
+ * ===========================================================================*/
+.engagement-chip{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:11px;padding:3px 9px;border-radius:100px;
+  border:1px solid var(--line-soft);background:var(--bone);
+  color:var(--ink-soft);font-weight:500;white-space:nowrap;
+}
+.engagement-hot{
+  background:rgba(232,93,60,.12);color:var(--coral-deep,#C73E1D);
+  border-color:rgba(232,93,60,.25);font-weight:600;
+}
+.engagement-warm{
+  background:rgba(122,153,108,.10);color:#3F5D33;
+  border-color:rgba(122,153,108,.22);
+}
+.engagement-cold{
+  background:rgba(14,17,22,.05);color:var(--muted);
+  border-color:var(--line-soft);
+}
+
+/* =============================================================================
  * Candidate Dashboard — AI Career Score Band
  * ---------------------------------------------------------------------------
  * Four-up score grid that frames the workflow summary tiles below it.
