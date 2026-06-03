@@ -59,20 +59,24 @@ export default function CandidateDashboardLayout() {
         <CandidateDashSidebar
           user={user}
           /*
-           * Apps badge is the active-pipeline total (everything EXCEPT
-           * withdrawn). Withdrawn rows have their own badge below.
-           * Both numbers come from the same `/candidates/dashboard/stats`
-           * by_status map; the layout owns the rollup so every tab
-           * mounted under it sees a consistent count.
+           * Apps badge is the ACTIVE-pipeline total — every status
+           * except withdrawn, rejected, and shortlisted, all of
+           * which have their own dedicated sidebar tabs + badges.
+           * Layout owns the rollup so every tab mounted underneath
+           * sees a consistent count from the shared dashboard-stats
+           * fetch.
            */
           appsTotal={(() => {
             const total = stats?.applications?.total ?? null;
-            const withdrawn = stats?.applications?.by_status?.withdrawn ?? 0;
-            return total == null ? null : Math.max(0, total - withdrawn);
+            if (total == null) return null;
+            const by = stats?.applications?.by_status || {};
+            const sidelined = (by.withdrawn || 0) + (by.rejected || 0) + (by.shortlisted || 0);
+            return Math.max(0, total - sidelined);
           })()}
           favoritesTotal={stats?.favorites?.total ?? null}
           withdrawnTotal={stats?.applications?.by_status?.withdrawn ?? null}
           rejectedTotal={stats?.applications?.by_status?.rejected ?? null}
+          shortlistedTotal={stats?.applications?.by_status?.shortlisted ?? null}
           profileStrength={stats?.profile_strength ?? null}
           onSignOut={handleSignOut}
         />

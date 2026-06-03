@@ -80,6 +80,7 @@ function NavRow({ to, icon, label, badge, match }) {
 export default function CandidateDashSidebar({
   user,
   appsTotal,
+  shortlistedTotal,
   favoritesTotal,
   withdrawnTotal,
   rejectedTotal,
@@ -150,6 +151,20 @@ export default function CandidateDashSidebar({
         />
         <NavRow to="/saved-jobs" icon="⌘" label="Saved Jobs" />
         <NavRow to="/favorites" icon="♥" label="Favourites" badge={favoritesTotal} />
+        {/*
+         * Shortlisted Applications — sibling tab to My Applications.
+         * Surfaces rows the employer has moved to the shortlist
+         * stage so the candidate can read the strongest active
+         * conversations in one focused list. My Applications
+         * intentionally excludes these (along with withdrawn +
+         * rejected) so the three piles each have their own surface.
+         */}
+        <NavRow
+          to="/dashboard/candidate/shortlisted"
+          icon="★"
+          label="Shortlisted Applications"
+          badge={shortlistedTotal}
+        />
         {/*
          * Withdrawn Applications is a sibling tab to My Applications.
          * Active applications live in the main Applications tab;

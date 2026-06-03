@@ -85,14 +85,16 @@ function statusBadge(status) {
  */
 function rollupStats(stats) {
   const by = stats?.applications?.by_status || {};
+  const applied = by.applied || 0;
   const review = (by.reviewing || 0) + (by.under_review || 0);
-  const shortlisted = by.shortlisted || 0;
   const interview = by.interview || 0;
   const accepted = (by.accepted || 0) + (by.offered || 0) + (by.hired || 0);
-  const rejected = by.rejected || 0;
-  const applied = by.applied || 0;
-  const total = applied + review + shortlisted + interview + accepted + rejected;
-  return { total, review, shortlisted, interview, accepted, rejected };
+  // Total reflects the ACTIVE pipeline only — applied + under-review
+  // + interview + accepted. Shortlisted, Rejected, and Withdrawn
+  // have their own dedicated tabs with their own counts, so they're
+  // excluded from this page's headline summary.
+  const total = applied + review + interview + accepted;
+  return { total, applied, review, interview, accepted };
 }
 
 /**
@@ -121,14 +123,16 @@ export default function CandidateApplications() {
     setLoading(true);
     setError(null);
     try {
-      // Withdrawn applications live on the dedicated "Withdrawn
-      // Applications" tab — this surface is for the active pipeline
-      // only. `exclude_statuses: ['withdrawn']` is the contract the
-      // backend honours so the candidate's active list stays clean.
+      // My Applications surfaces the ACTIVE pipeline only — applied,
+      // under-review, interview-scheduled, accepted/offered/hired.
+      // Withdrawn, Rejected, and Shortlisted each live on their own
+      // dedicated sidebar tabs (Withdrawn / Rejected / Shortlisted)
+      // so each pile reads as one focused list. The backend's
+      // `exclude_statuses` contract accepts the full set in one call.
       const list = await candidatesApi.applications.list({
         page: 1,
         limit: 50,
-        exclude_statuses: ['withdrawn'],
+        exclude_statuses: ['withdrawn', 'rejected', 'shortlisted'],
       });
       setRecords(list?.records || list?.rows || []);
     } catch (err) {
@@ -221,13 +225,12 @@ export default function CandidateApplications() {
         )}
 
         {/*
-         * Six summary cards covering every stage of the active
-         * pipeline (withdrawn rows have their own dedicated tab so
-         * they're not counted here). Numbers come from the same
-         * `/candidates/dashboard/stats` endpoint as the sidebar
-         * badge, rolled into the user-facing buckets by
-         * `rollupStats` above. Each card renders even when the
-         * count is 0 so the row stays visible from day one.
+         * Active-pipeline summary cards. Shortlisted, Rejected, and
+         * Withdrawn have their own dedicated sidebar tabs with their
+         * own counts, so they're intentionally not surfaced here —
+         * keeps this page focused on the rows the candidate can
+         * still act on. Tiles render at 0 from day one so the row
+         * never collapses.
          */}
         <div className="applications-summary" data-testid="applications-summary">
           <div className="fav-stat coral">
@@ -236,14 +239,14 @@ export default function CandidateApplications() {
             <div className="fav-stat-label">Total Applications</div>
           </div>
           <div className="fav-stat">
+            <div className="fav-stat-icon">↗</div>
+            <div className="fav-stat-value">{roll.applied}</div>
+            <div className="fav-stat-label">Applied</div>
+          </div>
+          <div className="fav-stat">
             <div className="fav-stat-icon">⌕</div>
             <div className="fav-stat-value">{roll.review}</div>
             <div className="fav-stat-label">Under Review</div>
-          </div>
-          <div className="fav-stat">
-            <div className="fav-stat-icon">★</div>
-            <div className="fav-stat-value">{roll.shortlisted}</div>
-            <div className="fav-stat-label">Shortlisted</div>
           </div>
           <div className="fav-stat">
             <div className="fav-stat-icon">☎</div>
@@ -254,11 +257,6 @@ export default function CandidateApplications() {
             <div className="fav-stat-icon">✓</div>
             <div className="fav-stat-value">{roll.accepted}</div>
             <div className="fav-stat-label">Accepted</div>
-          </div>
-          <div className="fav-stat">
-            <div className="fav-stat-icon">✕</div>
-            <div className="fav-stat-value">{roll.rejected}</div>
-            <div className="fav-stat-label">Rejected</div>
           </div>
         </div>
 
