@@ -32,11 +32,112 @@ async function dashboardStats() {
     const totalJobs = await jobRepo.totalCount();
     const totalCompanies = await companyRepo.totalCount();
     const totalApplications = await appRepo.totalCount();
+
+    // Hiring rate — what fraction of applications convert into a
+    // hired status. Computed in one round-trip so the dashboard tile
+    // updates with the same TTL as the rest of the stats.
+    const hiredRow = await db.queryOne(
+      `SELECT COUNT(*) AS n FROM applications WHERE status = 'hired'`
+    );
+    const hiredTotal = Number(hiredRow?.n || 0);
+    const hiringRate = totalApplications > 0
+      ? Math.round((hiredTotal / totalApplications) * 1000) / 10  // one decimal
+      : 0;
+
+    // User activity counters — drives the "Active users" tile on the
+    // admin dashboard and is the cheapest signal for User Activity
+    // Monitoring. Reads existing `users.last_login_at` so no new
+    // column or session table is required.
+    const activity24h = Number((await db.queryOne(
+      `SELECT COUNT(*) AS n FROM users
+        WHERE deleted_at IS NULL
+          AND last_login_at IS NOT NULL
+          AND last_login_at >= (NOW() - INTERVAL 24 HOUR)`
+    ))?.n || 0);
+    const activity7d = Number((await db.queryOne(
+      `SELECT COUNT(*) AS n FROM users
+        WHERE deleted_at IS NULL
+          AND last_login_at IS NOT NULL
+          AND last_login_at >= (NOW() - INTERVAL 7 DAY)`
+    ))?.n || 0);
+    const activity30d = Number((await db.queryOne(
+      `SELECT COUNT(*) AS n FROM users
+        WHERE deleted_at IS NULL
+          AND last_login_at IS NOT NULL
+          AND last_login_at >= (NOW() - INTERVAL 30 DAY)`
+    ))?.n || 0);
+
     return {
       users: { total: totalUsers, by_role: usersByRole },
       jobs: { total: totalJobs },
       companies: { total: totalCompanies },
-      applications: { total: totalApplications },
+      applications: { total: totalApplications, hired: hiredTotal },
+      hiring_rate: hiringRate,
+      activity: { last_24h: activity24h, last_7d: activity7d, last_30d: activity30d },
+    };
+  });
+}
+
+/**
+ * Aggregated search-event trends for the admin dashboard.
+ *
+ * Reads from the existing `search_events` table (migration 027) —
+ * already capturing every front-end search with keyword, result
+ * count, click, and conversion data. The endpoint surfaces the
+ * three numbers most useful for moderation triage:
+ *
+ *   top_keywords         the 10 most-searched terms in the window
+ *   zero_result_rate     % of searches that returned no rows
+ *   conversion_rate      % of searches that led to an application
+ *   total_searches       window total — frames the percentages
+ *
+ * Window defaults to the last 7 days; callers may pass a custom
+ * `days` filter (clamped to 1–90). Cached briefly so dashboard
+ * loads don't hammer the analytics index.
+ */
+async function searchTrends({ days = 7 } = {}) {
+  const window = Math.max(1, Math.min(90, Number(days) || 7));
+  const key = `admin:search-trends:${window}`;
+  return cache.rememberCache(key, cache.TTL.DASHBOARD_STATS, async () => {
+    const params = [window];
+    const top = await db.query(
+      `SELECT LOWER(keyword) AS keyword, COUNT(*) AS searches,
+              SUM(CASE WHEN no_results = 1 THEN 1 ELSE 0 END) AS dry_runs,
+              SUM(CASE WHEN converted_application_id IS NOT NULL THEN 1 ELSE 0 END) AS conversions
+         FROM search_events
+        WHERE keyword IS NOT NULL AND keyword <> ''
+          AND created_at >= (NOW() - INTERVAL ? DAY)
+        GROUP BY LOWER(keyword)
+        ORDER BY searches DESC
+        LIMIT 10`,
+      params
+    );
+    const totals = await db.queryOne(
+      `SELECT COUNT(*) AS total,
+              SUM(CASE WHEN no_results = 1 THEN 1 ELSE 0 END) AS dry_runs,
+              SUM(CASE WHEN converted_application_id IS NOT NULL THEN 1 ELSE 0 END) AS conversions
+         FROM search_events
+        WHERE created_at >= (NOW() - INTERVAL ? DAY)`,
+      params
+    );
+    const total = Number(totals?.total || 0);
+    const zeroResultRate = total > 0
+      ? Math.round((Number(totals.dry_runs || 0) / total) * 1000) / 10
+      : 0;
+    const conversionRate = total > 0
+      ? Math.round((Number(totals.conversions || 0) / total) * 1000) / 10
+      : 0;
+    return {
+      window_days: window,
+      total_searches: total,
+      zero_result_rate: zeroResultRate,
+      conversion_rate: conversionRate,
+      top_keywords: (top || []).map((r) => ({
+        keyword: r.keyword,
+        searches: Number(r.searches || 0),
+        dry_runs: Number(r.dry_runs || 0),
+        conversions: Number(r.conversions || 0),
+      })),
     };
   });
 }
@@ -143,6 +244,7 @@ async function healthSummary() {
 
 module.exports = {
   dashboardStats,
+  searchTrends,
   listUsers,
   updateUserStatus,
   pendingCompanies,

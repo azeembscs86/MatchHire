@@ -11,6 +11,13 @@ import { api, call } from './client.js';
 export const adminApi = {
   dashboardStats() { return call(api.post('/admin/dashboard/stats')); },
 
+  /**
+   * Aggregated search-event trends (top keywords + zero-result rate
+   * + conversion rate). Defaults to a 7-day window server-side;
+   * pass `{ days: N }` to widen it (clamped 1–90 server-side).
+   */
+  searchTrends(body = {}) { return call(api.post('/admin/search-trends', body)); },
+
   users: {
     list(body = {}) { return call(api.post('/admin/users', body)); },
     setStatus(id, payload) { return call(api.post(`/admin/users/${id}/status`, payload)); },

@@ -25,6 +25,18 @@ exports.dashboardStats = async (req, res) => {
   return response.success(res, data, 'Admin dashboard stats');
 };
 
+/**
+ * Aggregated search trends (top keywords, zero-result rate,
+ * conversion rate) for the admin moderation dashboard. Reads from
+ * the existing `search_events` table; no new schema. Defaults to a
+ * 7-day window; pass `{ days: N }` in the body to widen it (clamped
+ * to 1–90 server-side).
+ */
+exports.searchTrends = async (req, res) => {
+  const data = await service.searchTrends({ days: req.body?.days });
+  return response.success(res, data, 'Search trends');
+};
+
 /** Paginated list of platform users, filterable by keyword/role/status. */
 exports.listUsers = async (req, res) => {
   const data = await service.listUsers(req.body);

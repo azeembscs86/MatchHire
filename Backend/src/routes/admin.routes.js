@@ -34,6 +34,31 @@ router.post('/dashboard/stats', asyncHandler(controller.dashboardStats));
 
 /**
  * @swagger
+ * /admin/search-trends:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Aggregated search-event trends (top keywords + rates)
+ *     description: |
+ *       Reads from `search_events`. Returns the top 10 keywords in
+ *       the window plus overall zero-result and conversion rates.
+ *       Window defaults to 7 days; pass `{ days: N }` to widen it
+ *       (clamped 1–90 server-side).
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               days: { type: integer, minimum: 1, maximum: 90, default: 7 }
+ *     responses:
+ *       '200': { description: Trends, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ */
+router.post('/search-trends', asyncHandler(controller.searchTrends));
+
+/**
+ * @swagger
  * /admin/users:
  *   post:
  *     tags: [Admin]

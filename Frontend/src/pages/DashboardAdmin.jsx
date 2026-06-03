@@ -48,6 +48,9 @@ export default function DashboardAdmin() {
   const [users, setUsers] = useState([]);
   const [audit, setAudit] = useState([]);
   const [health, setHealth] = useState(null);
+  // Aggregated search trends — feeds the "Search trends (7d)" panel.
+  // Best-effort: a null fetch result just hides the panel.
+  const [searchTrends, setSearchTrends] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [busyCompanyId, setBusyCompanyId] = useState(null);
@@ -58,12 +61,13 @@ export default function DashboardAdmin() {
       setLoading(true);
       setError(null);
       try {
-        const [statsData, pendingData, usersData, auditData, healthData] = await Promise.all([
+        const [statsData, pendingData, usersData, auditData, healthData, trendsData] = await Promise.all([
           adminApi.dashboardStats(),
           adminApi.companies.pending({ page: 1, limit: 6 }),
           adminApi.users.list({ page: 1, limit: 6 }),
           adminApi.auditLogs({ page: 1, limit: 6 }).catch(() => ({ records: [] })),
           adminApi.healthSummary().catch(() => null),
+          adminApi.searchTrends({ days: 7 }).catch(() => null),
         ]);
         if (cancelled) return;
         setStats(statsData || null);
@@ -71,6 +75,7 @@ export default function DashboardAdmin() {
         setUsers(usersData?.records || []);
         setAudit(auditData?.records || []);
         setHealth(healthData || null);
+        setSearchTrends(trendsData || null);
       } catch (err) {
         if (!cancelled) setError(err);
       } finally {
@@ -174,6 +179,35 @@ export default function DashboardAdmin() {
               <div className="stat-label">Applications<div className="stat-icon">$</div></div>
               <div className="stat-value">{Number(totalApps).toLocaleString()}</div>
               <div className="stat-trend">Platform-wide</div>
+            </div>
+            {/*
+              * Hiring Rate — share of all-time applications that
+              * reached `status='hired'`. Renders even at 0% so an
+              * early-stage platform doesn't see a "missing" tile;
+              * the trend line carries the absolute hire count.
+              */}
+            <div className="stat-card" data-testid="admin-hiring-rate">
+              <div className="stat-label">Hiring rate<div className="stat-icon">✓</div></div>
+              <div className="stat-value">
+                {Number(stats?.hiring_rate ?? 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                <small style={{ fontSize: 18, marginLeft: 2 }}>%</small>
+              </div>
+              <div className="stat-trend">
+                {Number(stats?.applications?.hired ?? 0).toLocaleString()} hires of {Number(totalApps).toLocaleString()}
+              </div>
+            </div>
+            {/*
+              * User Activity — last-login signal aggregated server-
+              * side. The 7-day number is the headline; the 24h
+              * count rides in the trend slot so the recruiter can
+              * gauge stickiness at a glance.
+              */}
+            <div className="stat-card" data-testid="admin-active-users">
+              <div className="stat-label">Active users (7d)<div className="stat-icon">⚡</div></div>
+              <div className="stat-value">{Number(stats?.activity?.last_7d ?? 0).toLocaleString()}</div>
+              <div className="stat-trend">
+                {Number(stats?.activity?.last_24h ?? 0).toLocaleString()} active in last 24h
+              </div>
             </div>
           </div>
 
@@ -302,6 +336,62 @@ export default function DashboardAdmin() {
               )}
             </div>
           </div>
+
+          {/*
+            * Search trends panel — aggregated from `search_events`
+            * over the trailing 7 days. Pulls the three signals the
+            * moderation team cares about most:
+            *   - top keywords (where demand is concentrating)
+            *   - zero-result rate (search experience health)
+            *   - conversion rate (search → application)
+            * Hidden when the analytics call returns null (DB / cache
+            * miss) rather than rendering an empty card.
+            */}
+          {searchTrends && (
+            <div className="dash-panel" style={{ marginTop: 24 }} data-testid="admin-search-trends">
+              <div className="dash-panel-head">
+                <h3>Search trends <small>· last {searchTrends.window_days || 7} days · {Number(searchTrends.total_searches || 0).toLocaleString()} searches</small></h3>
+                <div style={{ display: 'flex', gap: 14, fontSize: 12, color: 'var(--muted)' }}>
+                  <span>Zero-result rate · <strong style={{ color: 'var(--ink)' }}>{searchTrends.zero_result_rate}%</strong></span>
+                  <span>Conversion rate · <strong style={{ color: 'var(--ink)' }}>{searchTrends.conversion_rate}%</strong></span>
+                </div>
+              </div>
+              {(searchTrends.top_keywords || []).length === 0 ? (
+                <p className="muted" style={{ padding: '12px 0' }}>No searches recorded in this window.</p>
+              ) : (
+                <table className="dash-table">
+                  <thead>
+                    <tr>
+                      <th>Keyword</th>
+                      <th style={{ textAlign: 'right' }}>Searches</th>
+                      <th style={{ textAlign: 'right' }}>Zero results</th>
+                      <th style={{ textAlign: 'right' }}>Conversions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {searchTrends.top_keywords.map((kw) => (
+                      <tr key={kw.keyword}>
+                        <td><strong style={{ fontFamily: "'Fraunces',serif" }}>{kw.keyword}</strong></td>
+                        <td style={{ textAlign: 'right' }}>{kw.searches.toLocaleString()}</td>
+                        <td style={{ textAlign: 'right' }}>
+                          {kw.dry_runs.toLocaleString()}
+                          <small className="muted" style={{ marginLeft: 6 }}>
+                            ({kw.searches ? Math.round((kw.dry_runs / kw.searches) * 100) : 0}%)
+                          </small>
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          {kw.conversions.toLocaleString()}
+                          <small className="muted" style={{ marginLeft: 6 }}>
+                            ({kw.searches ? Math.round((kw.conversions / kw.searches) * 100) : 0}%)
+                          </small>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </section>
