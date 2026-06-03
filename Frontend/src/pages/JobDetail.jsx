@@ -47,6 +47,7 @@ import { useFavorites } from '../context/FavoritesContext.jsx';
 import { useSavedJobs } from '../context/SavedJobsContext.jsx';
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.jsx';
 import JobCard from '../components/JobCard.jsx';
+import { parseRejectionReason } from '../data/rejection-reasons.js';
 
 const STATUS_LABEL = {
   applied:      'Applied',
@@ -543,6 +544,51 @@ export default function JobDetail() {
         {/* TWO-COLUMN BODY */}
         <div className="jd-grid">
           <div className="jd-main">
+            {/*
+              * Rejection feedback panel. Renders ONLY when the
+              * viewer's application on this job is in `rejected`
+              * status. Replaces the inline panel that previously
+              * sat beside each card on My Applications / Rejected
+              * tabs — those cards are now lean, and this is the
+              * canonical place to read the full rejection
+              * feedback (reason + improvement suggestions).
+              *
+              * `parseRejectionReason` handles both stored shapes:
+              *   - canonical key (e.g. "skills_mismatch")
+              *   - "other:<custom text>" — preserves the employer's
+              *     free-text reason verbatim.
+              */}
+            {applicationStatus === 'rejected' && job.rejection_reason && (() => {
+              const meta = parseRejectionReason(job.rejection_reason);
+              if (!meta) return null;
+              const rejectedDate = job.application_updated_at
+                ? new Date(job.application_updated_at).toLocaleDateString()
+                : null;
+              return (
+                <section
+                  className="jd-section rejection-feedback"
+                  data-testid="rejection-feedback"
+                  aria-label="Rejection feedback"
+                >
+                  <div className="rejection-feedback-head">
+                    <span className="rejection-feedback-label">Reason</span>
+                    <span className="rejection-feedback-value">{meta.label}</span>
+                    {rejectedDate && (
+                      <span className="rejection-feedback-date">· {rejectedDate}</span>
+                    )}
+                  </div>
+                  {meta.suggestions && meta.suggestions.length > 0 && (
+                    <div className="rejection-feedback-body">
+                      <div className="rejection-feedback-title">Suggested improvements</div>
+                      <ul className="rejection-feedback-list">
+                        {meta.suggestions.map((s, i) => <li key={i}>{s}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                </section>
+              );
+            })()}
+
             {job.description && (
               <section className="jd-section">
                 <h2>About the role</h2>

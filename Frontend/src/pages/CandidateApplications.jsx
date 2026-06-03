@@ -29,18 +29,11 @@ import JobCard from '../components/JobCard.jsx';
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.jsx';
 import { candidatesApi } from '../api/index.js';
 import { toJobCardShape } from '../api/adapters.js';
-import { parseRejectionReason } from '../data/rejection-reasons.js';
-
-/** Format the date the employer rejected an application. The
- * underlying column is `updated_at` because we don't (yet) store a
- * dedicated `rejected_at` — the status flip is the most recent
- * change on a rejected row, so updated_at is the correct proxy. */
-function formatRejectedDate(iso) {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-}
+// Rejection-reason decode helpers (parseRejectionReason / formatRejectedDate)
+// were used by the inline rejection-feedback panel that previously sat
+// beside each rejected card on this tab. The panel has moved to the Job
+// Detail page (canonical "application detail" surface for the
+// candidate), so those helpers are no longer imported here.
 
 /**
  * Application status → display chip. Mirrors the candidate
@@ -321,14 +314,6 @@ export default function CandidateApplications() {
               });
               if (!view) return null;
               const badge = statusBadge(row.status);
-              const isRejected = String(row.status || '').toLowerCase() === 'rejected';
-              // Decode the canonical rejection reason + improvement
-              // suggestions for the rejected-application feedback
-              // panel. Returns null for non-rejected rows or rejected
-              // rows where the employer hasn't supplied a reason yet
-              // (pre-validator legacy rows).
-              const rejectionMeta = isRejected ? parseRejectionReason(row.rejection_reason) : null;
-              const rejectedDate = isRejected ? formatRejectedDate(row.updated_at) : null;
               return (
                 <div key={row.id} className="application-card-wrap">
                   <div className="application-status-row">
@@ -356,38 +341,14 @@ export default function CandidateApplications() {
                     withdrawingId={withdrawing && withdrawTarget?.id === row.id ? view.id : null}
                   />
                   {/*
-                   * No withdraw button on the Applications tab — the
-                   * withdraw flow now lives on the Job Detail page
-                   * (open the job to withdraw). This keeps the list
-                   * surface focused on browsing active applications.
+                   * Rejection reason intentionally NOT rendered here.
+                   * Cards on My Applications stay lean (title /
+                   * company / location / salary / status / applied
+                   * date). The full rejection feedback panel —
+                   * reason + improvement suggestions — now lives on
+                   * the Job Detail page; clicking the card body or
+                   * the View Job action opens it.
                    */}
-                  {isRejected && (
-                    <div
-                      className="rejection-feedback"
-                      data-testid="rejection-feedback"
-                      aria-label="Rejection feedback"
-                    >
-                      <div className="rejection-feedback-head">
-                        <span className="rejection-feedback-label">Reason</span>
-                        <span className="rejection-feedback-value">
-                          {rejectionMeta?.label || 'Not specified'}
-                        </span>
-                        {rejectedDate && (
-                          <span className="rejection-feedback-date">· {rejectedDate}</span>
-                        )}
-                      </div>
-                      {rejectionMeta && rejectionMeta.suggestions.length > 0 && (
-                        <div className="rejection-feedback-body">
-                          <div className="rejection-feedback-title">Suggested improvements</div>
-                          <ul className="rejection-feedback-list">
-                            {rejectionMeta.suggestions.map((s, i) => (
-                              <li key={i}>{s}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                  )}
                 </div>
               );
             })}

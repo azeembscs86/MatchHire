@@ -38,7 +38,16 @@ async function findById(id) {
 
 async function findByJobAndCandidate(job_id, candidate_user_id) {
   return db.queryOne(
-    `SELECT id, status FROM applications WHERE job_id = ? AND candidate_user_id = ? LIMIT 1`,
+    // Include rejection_reason + updated_at so the Job Detail page
+    // can surface the rejection panel for a rejected applicant
+    // without a second round-trip. The candidate cards on My
+    // Applications / Rejected tabs deliberately don't show the
+    // reason any more — JobDetail is the canonical place to read
+    // the full rejection feedback.
+    `SELECT id, status, rejection_reason, updated_at
+       FROM applications
+      WHERE job_id = ? AND candidate_user_id = ?
+      LIMIT 1`,
     [job_id, candidate_user_id]
   );
 }

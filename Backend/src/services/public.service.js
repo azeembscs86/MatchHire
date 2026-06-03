@@ -78,6 +78,8 @@ async function getJob(id, viewerUserId = null) {
     is_saved_for_later: false,
     application_id: null,
     application_status: null,
+    rejection_reason: null,
+    application_updated_at: null,
   };
   const deadline = job.application_deadline ? new Date(job.application_deadline).getTime() : null;
   const isExpired = deadline != null && deadline < Date.now();
@@ -95,6 +97,12 @@ async function getJob(id, viewerUserId = null) {
       is_saved_for_later: !!saved,
       application_id: applied?.id || null,
       application_status: status,
+      // rejection_reason + application_updated_at are surfaced only
+      // when the row exists in a rejected state. Job Detail uses
+      // them to render the rejection panel that used to sit beside
+      // the card on My Applications / Rejected tabs.
+      rejection_reason: status === 'rejected' ? (applied?.rejection_reason || null) : null,
+      application_updated_at: status === 'rejected' ? (applied?.updated_at || null) : null,
     };
   }
   return { ...job, ...viewer, is_expired: isExpired };

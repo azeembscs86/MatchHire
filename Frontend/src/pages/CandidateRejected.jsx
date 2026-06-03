@@ -17,7 +17,10 @@ import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.j
 import JobCard from '../components/JobCard.jsx';
 import { candidatesApi } from '../api/index.js';
 import { toJobCardShape } from '../api/adapters.js';
-import { parseRejectionReason } from '../data/rejection-reasons.js';
+// parseRejectionReason was used by the inline rejection-feedback
+// panel that previously sat below each rejected card. That panel
+// has moved to the Job Detail page (the canonical application
+// detail surface), so the helper is no longer imported here.
 
 function formatDate(iso) {
   if (!iso) return '—';
@@ -122,7 +125,6 @@ export default function CandidateRejected() {
                 missing: row.missing,
               });
               if (!view) return null;
-              const rejectionMeta = parseRejectionReason(row.rejection_reason);
               return (
                 <div key={row.id} className="application-card-wrap" data-testid="rejected-application-row">
                   <div className="application-status-row">
@@ -136,28 +138,14 @@ export default function CandidateRejected() {
                     applied
                     featured={!!row.is_featured}
                   />
-                  <div
-                    className="rejection-feedback"
-                    data-testid="rejection-feedback"
-                    aria-label="Rejection feedback"
-                  >
-                    <div className="rejection-feedback-head">
-                      <span className="rejection-feedback-label">Reason</span>
-                      <span className="rejection-feedback-value">
-                        {rejectionMeta?.label || 'Not specified'}
-                      </span>
-                    </div>
-                    {rejectionMeta && rejectionMeta.suggestions.length > 0 && (
-                      <div className="rejection-feedback-body">
-                        <div className="rejection-feedback-title">Suggested improvements</div>
-                        <ul className="rejection-feedback-list">
-                          {rejectionMeta.suggestions.map((s, i) => (
-                            <li key={i}>{s}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
+                  {/*
+                    * Rejection reason intentionally NOT rendered here.
+                    * Cards on the Rejected tab now stay lean — title /
+                    * company / location / salary / status / applied
+                    * date. The full feedback panel (reason +
+                    * suggested improvements) moved to the Job Detail
+                    * page; clicking the card opens it.
+                    */}
                 </div>
               );
             })}
