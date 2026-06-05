@@ -162,6 +162,46 @@ router.post('/jobs/:jobId/close', validate(pubV.jobIdParam, 'params'), asyncHand
 
 /**
  * @swagger
+ * /employers/jobs/{jobId}/reactivate:
+ *   post:
+ *     tags: [Employers]
+ *     summary: Reactivate an expired or closed job posting
+ *     description: |
+ *       Body requires a future `application_deadline`. Optional
+ *       content fields (title, description, requirements, skills,
+ *       salary, location, work mode, etc.) follow the same shape
+ *       as `jobUpdate`. The service decides whether the
+ *       reactivation goes live instantly or needs admin re-approval:
+ *
+ *         - Date-only change → `admin_status='approved'`,
+ *           `status='open'`. Public feed picks it up immediately.
+ *         - Any content change → `admin_status='pending'`,
+ *           `status='open'`. Requires super-admin to flip back to
+ *           approved before the public feed includes it.
+ *
+ *       Ownership is enforced server-side; a 404 returns when the
+ *       calling employer doesn't own the job.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: jobId, in: path, required: true, schema: { type: integer } }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema: { $ref: '#/components/schemas/JobReactivate' }
+ *     responses:
+ *       '200': { description: Reactivated, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+ *       '400': { $ref: '#/components/responses/BadRequest' }
+ *       '404': { $ref: '#/components/responses/NotFoundError' }
+ */
+router.post(
+  '/jobs/:jobId/reactivate',
+  validate(pubV.jobIdParam, 'params'),
+  validate(v.jobReactivate),
+  asyncHandler(controller.reactivateJob)
+);
+
+/**
+ * @swagger
  * /employers/jobs/{jobId}/applicants:
  *   post:
  *     tags: [Employers]

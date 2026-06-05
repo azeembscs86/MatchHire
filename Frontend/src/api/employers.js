@@ -21,6 +21,19 @@ export const employersApi = {
     update(jobId, payload) { return call(api.post(`/employers/jobs/${jobId}/update`, payload)); },
     remove(jobId) { return call(api.post(`/employers/jobs/${jobId}/delete`)); },
     close(jobId) { return call(api.post(`/employers/jobs/${jobId}/close`)); },
+    /**
+     * Reactivate an expired or closed job. `payload` requires a
+     * future ISO `application_deadline`; optional content fields
+     * (title, description, requirements, skills_tags, salary_*,
+     * work_mode, etc.) flip the job into admin-pending state.
+     * Date-only reactivations go live immediately.
+     *
+     * Response Data shape:
+     *   { job, requires_approval: boolean, fields_changed: string[] }
+     */
+    reactivate(jobId, payload) {
+      return call(api.post(`/employers/jobs/${jobId}/reactivate`, payload));
+    },
     applicants(jobId, body = {}) { return call(api.post(`/employers/jobs/${jobId}/applicants`, body)); },
     /**
      * AI bulk-shortlist: backend walks every actionable applicant

@@ -3048,6 +3048,25 @@
 }
 
 /* =============================================================================
+ * Company My Jobs — Expired-row action strip
+ * ---------------------------------------------------------------------------
+ * Each company job card on My Jobs is wrapped in `.company-job-wrap`. When
+ * the underlying row's application_deadline has passed, a sibling action
+ * strip renders below the card with the Expired pill + Reactivate CTA.
+ * ===========================================================================*/
+.company-job-wrap{display:flex;flex-direction:column;gap:6px}
+.company-job-expired-actions{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:10px 14px;background:var(--bone);border:1px solid var(--line-soft);
+  border-radius:12px;
+}
+.company-job-expired-actions .btn{padding:6px 14px;font-size:13px}
+@media (max-width:520px){
+  .company-job-expired-actions{flex-direction:column;align-items:stretch}
+  .company-job-expired-actions .btn{width:100%}
+}
+
+/* =============================================================================
  * Company Applicants — Engagement chips (Hot / Warm / Cold)
  * ---------------------------------------------------------------------------
  * Quick-triage chip rendered in the Engagement column of the company

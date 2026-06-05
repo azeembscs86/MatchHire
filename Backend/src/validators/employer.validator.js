@@ -64,6 +64,21 @@ const jobUpdate = jobCreate.fork(
   (s) => s.optional()
 ).min(1);
 
+/**
+ * Body for POST /employers/jobs/:jobId/reactivate.
+ *
+ *   - `application_deadline` is REQUIRED and must be in the future.
+ *   - Every other field is the same shape as `jobUpdate` (optional).
+ *     The service compares each supplied field to the persisted
+ *     value to decide whether the reactivation needs admin
+ *     re-approval (`admin_status='pending'`) or can go live
+ *     instantly (`admin_status='approved'`).
+ */
+const jobReactivate = jobUpdate.fork(
+  ['application_deadline'],
+  (s) => s.required().greater('now'),
+);
+
 const interviewCreate = Joi.object({
   application_id: Joi.number().integer().positive().required(),
   scheduled_at: Joi.date().iso().required(),
@@ -125,6 +140,7 @@ module.exports = {
   companyUpdate,
   jobCreate,
   jobUpdate,
+  jobReactivate,
   interviewCreate,
   jobListFilters,
   applicantListFilters,

@@ -19,7 +19,23 @@ import { employersApi } from '../api/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.jsx';
 import CompanyJobCard from '../components/CompanyJobCard.jsx';
+import ReactivateJobModal from '../components/ReactivateJobModal.jsx';
 import { toJobCardShape } from '../api/adapters.js';
+
+/**
+ * Derive whether a company job is "expired" — i.e. its
+ * `application_deadline` has passed. We treat this as a soft state
+ * (the row stays `status='open'` until the company explicitly
+ * closes / archives it) so a reactivation is just "extend the
+ * deadline" + optional content edits. Mirrors the same `isExpired`
+ * computation toJobCardShape does for candidates.
+ */
+function isJobExpired(raw) {
+  if (!raw?.application_deadline) return false;
+  const ts = new Date(raw.application_deadline).getTime();
+  if (!Number.isFinite(ts)) return false;
+  return ts < Date.now();
+}
 
 const STATUS_FILTERS = [
   { key: '',         label: 'All' },
@@ -37,6 +53,11 @@ export default function CompanyJobs() {
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState('');
   const [companyName, setCompanyName] = useState(null);
+  // Reactivate-flow state. `target` is the raw job row (not the
+  // card view-model) so the modal can pre-fill its content
+  // fields from the persisted values.
+  const [reactivateTarget, setReactivateTarget] = useState(null);
+  const [notice, setNotice] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,10 +83,40 @@ export default function CompanyJobs() {
   }, [filter, user?.id]);
 
   const counts = useMemo(() => {
-    const out = { all: jobs.length, open: 0, draft: 0, closed: 0, archived: 0 };
-    jobs.forEach((j) => { if (out[j.status] != null) out[j.status] += 1; });
+    const out = { all: jobs.length, open: 0, draft: 0, closed: 0, archived: 0, expired: 0 };
+    jobs.forEach((j) => {
+      if (out[j.status] != null) out[j.status] += 1;
+      if (isJobExpired(j)) out.expired += 1;
+    });
     return out;
   }, [jobs]);
+
+  /**
+   * Reactivate handler. Calls the new /employers/jobs/:id/reactivate
+   * endpoint; the modal owns the payload shape so this just hands
+   * it over. On success we toast the message, close the modal,
+   * and refetch the jobs list so the row's deadline + admin_status
+   * reflect the latest server state.
+   */
+  async function handleReactivateConfirm(payload) {
+    if (!reactivateTarget) return;
+    const res = await employersApi.jobs.reactivate(reactivateTarget.id, payload);
+    setReactivateTarget(null);
+    setNotice({
+      ok: true,
+      text: res?.requires_approval
+        ? 'Reactivation submitted — super-admin will re-approve before the job goes live.'
+        : 'Job reactivated — back in the public feed now.',
+    });
+    // Refetch the jobs list so the card's deadline + admin_status
+    // update without a full page reload.
+    try {
+      const list = await employersApi.jobs.list({ page: 1, limit: 100, status: filter || undefined });
+      setJobs(list?.records || []);
+    } catch { /* keep existing rows on refetch failure */ }
+    // Auto-clear the toast after 6 seconds.
+    setTimeout(() => setNotice(null), 6000);
+  }
 
   if (loading) {
     return (
@@ -120,6 +171,24 @@ export default function CompanyJobs() {
         })}
       </div>
 
+      {/* Reactivation toast — appears for ~6s after a successful
+          reactivation, then auto-clears. Two-toned (sage for
+          live-immediately, coral for awaiting-approval). */}
+      {notice && (
+        <div
+          role="status"
+          style={{
+            margin: '0 0 14px', padding: '10px 14px', borderRadius: 10,
+            background: notice.ok ? '#e6f4ea' : '#fde9e3',
+            color: notice.ok ? '#0f5132' : '#b3361b',
+            fontSize: 13,
+          }}
+          data-testid="company-jobs-toast"
+        >
+          {notice.text}
+        </div>
+      )}
+
       {jobs.length === 0 ? (
         <div className="fav-empty">
           <div className="fav-empty-icon">▤</div>
@@ -135,19 +204,41 @@ export default function CompanyJobs() {
               company_name: companyName || j.company_name,
             });
             if (!view) return null;
+            const expired = isJobExpired(j);
             return (
-              <CompanyJobCard
-                key={j.id}
-                job={view}
-                featured={!!j.is_featured}
-                onManage={(target) => navigate(`/jobs/${target.id}`)}
-              />
+              <div key={j.id} className="company-job-wrap" data-testid={expired ? 'company-job-expired' : 'company-job'}>
+                <CompanyJobCard
+                  job={view}
+                  featured={!!j.is_featured}
+                  onManage={(target) => navigate(`/jobs/${target.id}`)}
+                />
+                {expired && (
+                  <div className="company-job-expired-actions" data-testid={`company-job-expired-actions-${j.id}`}>
+                    <span className="pill pill-rejected" data-testid="company-job-expired-badge">Expired</span>
+                    <button
+                      type="button"
+                      className="btn btn-coral btn-sm"
+                      onClick={() => setReactivateTarget(j)}
+                      data-testid={`reactivate-job-${j.id}`}
+                    >
+                      Reactivate job →
+                    </button>
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
       )}
 
       {!error && jobs.length === 0 && <EmptyState title="Nothing posted yet" />}
+
+      <ReactivateJobModal
+        open={!!reactivateTarget}
+        job={reactivateTarget}
+        onClose={() => setReactivateTarget(null)}
+        onConfirm={handleReactivateConfirm}
+      />
     </div>
   );
 }

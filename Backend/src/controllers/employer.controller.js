@@ -51,6 +51,24 @@ exports.closeJob = async (req, res) => {
   return response.success(res, data, 'Job closed');
 };
 
+/**
+ * Reactivate an expired or closed job. Body must include a future
+ * `application_deadline`; any other field carried over flips the
+ * job into admin-pending state (super-admin re-approval required).
+ * See `employer.service.reactivateJob` for the auto-approve rules.
+ *
+ * Response success message reflects which path was taken so the
+ * frontend toast can read "Reactivated — live now" vs "Submitted
+ * for approval" without inspecting payload structure.
+ */
+exports.reactivateJob = async (req, res) => {
+  const data = await service.reactivateJob(req.user.id, Number(req.params.jobId), req.body || {});
+  const message = data.requires_approval
+    ? 'Job reactivation submitted for approval'
+    : 'Job reactivated';
+  return response.success(res, data, message);
+};
+
 /** Paginated list of jobs posted by the employer's company. */
 exports.listMyJobs = async (req, res) => {
   const page = req.body?.page || 1;

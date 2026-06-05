@@ -85,6 +85,100 @@ async function closeJob(user_id, jobId) {
   return jobRepo.findById(jobId);
 }
 
+/**
+ * Reactivate an expired (or otherwise inactive) job posting.
+ *
+ * Two auto-approval branches:
+ *
+ *   1. Date-only change — the company simply extends the
+ *      `application_deadline` without touching any content. The
+ *      job goes back into the public feed instantly because
+ *      `activeJobWhere()` accepts any row with a future deadline,
+ *      `status='open'`, and `admin_status='approved'`. No super-
+ *      admin review needed since nothing changed except the cutoff.
+ *
+ *   2. Content change — the company also updates one or more of
+ *      title / description / responsibilities / requirements /
+ *      benefits / skills_tags / salary / experience_level /
+ *      work_mode / location / job_type. Those changes need
+ *      super-admin re-moderation, so we flip `admin_status` to
+ *      `'pending'` while keeping `status='open'` — the job is
+ *      under review and will reappear publicly once the admin
+ *      flips it to `approved` via /admin/jobs/:id/status.
+ *
+ * Ownership is enforced server-side via `jobRepo.ownsJob()`. The
+ * deadline validator also rejects past dates (Joi-level) so a
+ * "reactivate with yesterday's date" call can't slip through.
+ *
+ * Returns: { job, requires_approval, fields_changed[] }
+ */
+const REACTIVATE_CONTENT_FIELDS = [
+  'title', 'description', 'responsibilities', 'requirements', 'benefits',
+  'skills_tags', 'salary_min', 'salary_max', 'salary_currency', 'salary_period',
+  'experience_level', 'work_mode', 'is_remote', 'is_global_remote',
+  'location', 'country', 'job_type', 'category_id', 'vacancies',
+];
+
+async function reactivateJob(user_id, jobId, payload = {}) {
+  const owns = await jobRepo.ownsJob(jobId, user_id);
+  if (!owns) throw new AppError('Job not found or access denied', 404);
+
+  const existing = await jobRepo.findById(jobId);
+  if (!existing) throw new AppError('Job not found', 404);
+
+  // Deadline is required. Joi has already rejected non-ISO and
+  // past values; this is a defence-in-depth backstop.
+  const newDeadline = payload.application_deadline
+    ? new Date(payload.application_deadline)
+    : null;
+  if (!newDeadline || Number.isNaN(newDeadline.getTime()) || newDeadline.getTime() <= Date.now()) {
+    throw new AppError('Reactivation requires a future application_deadline', 400);
+  }
+
+  // Detect content changes by comparing every reactivate-relevant
+  // field on the payload to its current persisted value. A field
+  // is "changed" when it appears on the payload AND its value
+  // differs from the existing row. `skills_tags` is normalised
+  // to comma-joined form (the persisted column shape) before
+  // comparing so a "Node.js,React" vs ["Node.js","React"] mismatch
+  // doesn't false-trigger the admin-pending path.
+  const fieldsChanged = [];
+  const updates = { application_deadline: newDeadline };
+  for (const key of REACTIVATE_CONTENT_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(payload, key)) continue;
+    let next = payload[key];
+    let prev = existing[key];
+    if (key === 'skills_tags' && Array.isArray(next)) next = next.join(',');
+    // Loose equality so null / '' / 0 don't false-trigger.
+    const a = next == null ? '' : String(next);
+    const b = prev == null ? '' : String(prev);
+    if (a !== b) {
+      updates[key] = payload[key];
+      fieldsChanged.push(key);
+    }
+  }
+
+  const requiresApproval = fieldsChanged.length > 0;
+  // status='open' regardless — the job is back in the active
+  // pipeline. admin_status flips to 'pending' only when content
+  // changed; otherwise stays 'approved' so the public feed
+  // picks the job up instantly.
+  updates.status = 'open';
+  updates.admin_status = requiresApproval ? 'pending' : 'approved';
+
+  await jobRepo.update(jobId, updates);
+
+  await cache.deleteCache(cache.Keys.jobDetail(jobId));
+  await cache.deleteByPattern(cache.Patterns.jobsList);
+  await cache.deleteByPattern(cache.Patterns.dashboardStats('employer'));
+
+  return {
+    job: await jobRepo.findById(jobId),
+    requires_approval: requiresApproval,
+    fields_changed: fieldsChanged,
+  };
+}
+
 async function listMyJobs(user_id, paging) {
   const company = await getCompanyForUser(user_id);
   return jobRepo.listByCompany(company.id, paging);
@@ -611,6 +705,7 @@ module.exports = {
   updateCompanyProfile,
   createJob,
   updateJob,
+  reactivateJob,
   deleteJob,
   closeJob,
   listMyJobs,
