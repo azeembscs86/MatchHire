@@ -1179,30 +1179,50 @@ export default function Jobs() {
             )
             : error
               ? <ErrorState error={error} onRetry={() => setFilters({ ...filters })} />
-              : data.records.length === 0
-                ? (
-                  <EmptyState
-                    title={
-                      data.profileIncomplete
-                        ? 'Complete your profile to unlock matches'
-                        : isCandidate
-                          ? 'No strong matches found yet'
-                          : 'No jobs match these filters'
-                    }
-                    message={
-                      data.message
-                      || (data.profileIncomplete
-                        ? 'Complete your profile and add your skills to get better job recommendations.'
-                        : isCandidate
-                          ? 'Try lowering the AI match minimum, clearing a filter, or updating your skills.'
-                          : 'Try clearing one filter at a time, or broaden your keyword.')
-                    }
-                  />
-                )
-                : (
+              : (() => {
+                  // Dedupe the main grid against the "Latest Jobs for You"
+                  // rail above. A job that's already on screen in the
+                  // rail shouldn't appear again in the grid below. Keeps
+                  // the page from feeling repetitive without removing
+                  // any data from either source. Pagination meta stays
+                  // backend-truthful (page X of Y / total count) — the
+                  // server still saw those rows, we just don't re-render
+                  // them in this slot. When a filter change leaves the
+                  // grid empty solely because every row was duplicate,
+                  // the empty-state copy distinguishes that case from
+                  // "no jobs match the filters at all."
+                  const latestIds = new Set(latestForYou.map((j) => j.id));
+                  const mainRecords = data.records.filter((j) => !latestIds.has(j.id));
+                  const allDupes = data.records.length > 0 && mainRecords.length === 0;
+                  if (data.records.length === 0 || allDupes) {
+                    return (
+                      <EmptyState
+                        title={
+                          allDupes
+                            ? 'No more unique jobs to show'
+                            : data.profileIncomplete
+                              ? 'Complete your profile to unlock matches'
+                              : isCandidate
+                                ? 'No strong matches found yet'
+                                : 'No jobs match these filters'
+                        }
+                        message={
+                          allDupes
+                            ? 'Every match this page already appears in the "Latest Jobs for You" rail above. Try a different filter, or go to the next page.'
+                            : data.message
+                              || (data.profileIncomplete
+                                ? 'Complete your profile and add your skills to get better job recommendations.'
+                                : isCandidate
+                                  ? 'Try lowering the AI match minimum, clearing a filter, or updating your skills.'
+                                  : 'Try clearing one filter at a time, or broaden your keyword.')
+                        }
+                      />
+                    );
+                  }
+                  return (
                   <>
                     <div className="jobs-grid">
-                      {data.records.map((j) => (
+                      {mainRecords.map((j) => (
                         <JobCard
                           key={j.id}
                           job={j}
@@ -1299,7 +1319,8 @@ export default function Jobs() {
                       );
                     })()}
                   </>
-                )}
+                  );
+                })()}
         </div>
       </div>
 
