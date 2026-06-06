@@ -22,7 +22,7 @@ import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState.j
 import { homeApi } from '../api/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { viewerForRole } from '../lib/viewer.js';
-import { filterActiveJobs } from '../api/adapters.js';
+import { filterActiveJobs, toJobCardShape } from '../api/adapters.js';
 import { useApplyToJob } from '../hooks/useApplyToJob.js';
 
 function fmt(n) {
@@ -685,7 +685,28 @@ export default function Home() {
   // expired card in front of a candidate.
   const latestJobs = filterActiveJobs(payload?.latestJobs);
   const recommended = filterActiveJobs(payload?.recommendedJobs);
-  const latestMatched = filterActiveJobs(payload?.latestMatchedJobs);
+  // Pipe the Latest Jobs for You rail through the SAME card-shape
+  // adapter the main Jobs grid uses, then enrich with the camelCase
+  // aliases JobCard reads (publishedAt, payMin/Max, aiLabel,
+  // aiSummary). Without this normalisation the rail rendered with
+  // missing slots vs the main grid because JobCard reads
+  // `publishedAt` (camelCase) not `published_at` (raw). One adapter
+  // = one card across every surface.
+  const latestMatched = useMemo(() => {
+    const raw = filterActiveJobs(payload?.latestMatchedJobs) || [];
+    return raw
+      .map((r) => {
+        const v = toJobCardShape(r);
+        if (!v) return null;
+        v.aiLabel = r.aiRecommendationLabel || null;
+        v.aiSummary = r.aiSummary || null;
+        v.publishedAt = r.published_at || r.created_at || null;
+        v.payMin = r.salary_min ?? null;
+        v.payMax = r.salary_max ?? null;
+        return v;
+      })
+      .filter((j) => j && !j.isExpired);
+  }, [payload?.latestMatchedJobs]);
   // Which tier the backend returned for the "Latest Jobs for You"
   // rail. Drives the eyebrow + subtitle copy so the candidate
   // understands which fallback path is on screen.

@@ -514,13 +514,28 @@ export default function Jobs() {
         // call() helper's unwrap path. Handle both for robustness:
         //   Newer: { records: [...], tier: 'strong' }
         //   Older: top-level array
-        if (Array.isArray(data)) {
-          setLatestForYou(data);
-          setLatestForYouTier('strong');
-        } else {
-          setLatestForYou(data?.records || []);
-          setLatestForYouTier(data?.tier || 'strong');
-        }
+        const rawRows = Array.isArray(data) ? data : (data?.records || []);
+        const tier = Array.isArray(data) ? 'strong' : (data?.tier || 'strong');
+        // CRITICAL: pass every row through `toJobCardShape()` +
+        // enrich with the same camelCase aliases the main Jobs
+        // grid uses. Without this transform, JobCard renders with
+        // missing fields (publishedAt, payMin/Max, aiLabel) and
+        // the rail looks visually different from the main grid —
+        // the exact regression QA flagged. One adapter = one card.
+        const normalized = rawRows
+          .map((r) => {
+            const v = toJobCardShape(r);
+            if (!v) return null;
+            v.aiLabel = r.aiRecommendationLabel || null;
+            v.aiSummary = r.aiSummary || null;
+            v.publishedAt = r.published_at || r.created_at || null;
+            v.payMin = r.salary_min ?? null;
+            v.payMax = r.salary_max ?? null;
+            return v;
+          })
+          .filter((j) => j && !j.isExpired);
+        setLatestForYou(normalized);
+        setLatestForYouTier(tier);
         setLatestForYouLoaded(true);
       })
       .catch(() => { if (!cancelled) setLatestForYouLoaded(true); });
