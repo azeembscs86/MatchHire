@@ -110,13 +110,23 @@ async function create(data) {
   // scoring) stay consistent.
   const isRemoteFlag = wm === 'remote' ? 1 : 0;
 
+  // Company-posted jobs land in the moderation queue by default
+  // (`admin_status='pending'`) so they only reach the public feed
+  // once a super-admin approves them via /admin/jobs/:id/status.
+  // The caller may override with `data.admin_status` for admin-
+  // origin paths (none today, but the seam stays open). Drafts
+  // skip the queue — they're never publicly visible regardless
+  // of admin_status, so we keep them on 'approved' to avoid
+  // padding the admin queue with rows the admin can't act on.
+  const adminStatus = data.admin_status
+    || (data.status === 'draft' ? 'approved' : 'pending');
   const [res] = await db.getPool().execute(
     `INSERT INTO jobs
       (company_id, posted_by_user_id, category_id, title, slug, description, responsibilities, requirements, benefits,
        job_type, experience_level, location, country, is_remote, work_mode, is_global_remote,
        salary_min, salary_max, salary_currency, salary_period,
        skills_tags, application_deadline, vacancies, status, is_featured, admin_status, published_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       data.company_id, data.posted_by_user_id || null, data.category_id || null,
       data.title, slug, data.description, data.responsibilities || null, data.requirements || null, data.benefits || null,
@@ -124,7 +134,7 @@ async function create(data) {
       isRemoteFlag, wm, data.is_global_remote ? 1 : 0,
       data.salary_min ?? null, data.salary_max ?? null, data.salary_currency || 'USD', data.salary_period || 'year',
       (data.skills_tags || []).join(','), data.application_deadline || null, data.vacancies || 1,
-      data.status || 'open', data.is_featured ? 1 : 0,
+      data.status || 'open', data.is_featured ? 1 : 0, adminStatus,
       data.status === 'draft' ? null : new Date(),
     ]
   );
