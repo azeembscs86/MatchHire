@@ -35,6 +35,9 @@ const listFilters = Joi.object({
   keyword: Joi.string().max(190).allow('', null),
   role: Joi.string().valid('candidate', 'employer', 'admin', 'super_admin').allow('', null),
   status: Joi.string().max(40).allow('', null),
+  // Moderation-queue filter on `jobs.admin_status`. Only meaningful
+  // on the admin jobs listing; user/company endpoints ignore it.
+  admin_status: Joi.string().valid('pending', 'approved', 'rejected').allow('', null),
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(10),
 }).unknown(false);

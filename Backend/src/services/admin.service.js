@@ -33,6 +33,20 @@ async function dashboardStats() {
     const totalCompanies = await companyRepo.totalCount();
     const totalApplications = await appRepo.totalCount();
 
+    // Moderation queue counter — surfaces the "Pending job
+    // approvals" tile on the admin dashboard. One round-trip
+    // alongside the other counts so it lands in the same cache
+    // window. Reads from `admin_status='pending'` directly rather
+    // than going through listAdmin to avoid a paginated query.
+    const pendingJobsRow = await db.queryOne(
+      `SELECT COUNT(*) AS n FROM jobs WHERE deleted_at IS NULL AND admin_status = 'pending'`
+    );
+    const pendingJobsTotal = Number(pendingJobsRow?.n || 0);
+    const pendingCompaniesRow = await db.queryOne(
+      `SELECT COUNT(*) AS n FROM companies WHERE deleted_at IS NULL AND verification_status = 'pending'`
+    );
+    const pendingCompaniesTotal = Number(pendingCompaniesRow?.n || 0);
+
     // Hiring rate — what fraction of applications convert into a
     // hired status. Computed in one round-trip so the dashboard tile
     // updates with the same TTL as the rest of the stats.
@@ -69,8 +83,8 @@ async function dashboardStats() {
 
     return {
       users: { total: totalUsers, by_role: usersByRole },
-      jobs: { total: totalJobs },
-      companies: { total: totalCompanies },
+      jobs: { total: totalJobs, pending: pendingJobsTotal },
+      companies: { total: totalCompanies, pending: pendingCompaniesTotal },
       applications: { total: totalApplications, hired: hiredTotal },
       hiring_rate: hiringRate,
       activity: { last_24h: activity24h, last_7d: activity7d, last_30d: activity30d },

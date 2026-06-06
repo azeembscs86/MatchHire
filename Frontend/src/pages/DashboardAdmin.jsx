@@ -54,6 +54,16 @@ export default function DashboardAdmin() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [busyCompanyId, setBusyCompanyId] = useState(null);
+  // Pending job-approval queue — surfaced as a dedicated panel on
+  // the admin overview so super-admin can clear the moderation
+  // queue without leaving the dashboard. Per-row busy state guards
+  // the Approve / Reject buttons during the API roundtrip.
+  const [pendingJobs, setPendingJobs] = useState([]);
+  const [busyJobId, setBusyJobId] = useState(null);
+  // Inline reject-reason modal target (job row pending rejection).
+  // null means the modal is closed.
+  const [rejectingJob, setRejectingJob] = useState(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -61,13 +71,18 @@ export default function DashboardAdmin() {
       setLoading(true);
       setError(null);
       try {
-        const [statsData, pendingData, usersData, auditData, healthData, trendsData] = await Promise.all([
+        const [statsData, pendingData, usersData, auditData, healthData, trendsData, pendingJobsData] = await Promise.all([
           adminApi.dashboardStats(),
           adminApi.companies.pending({ page: 1, limit: 6 }),
           adminApi.users.list({ page: 1, limit: 6 }),
           adminApi.auditLogs({ page: 1, limit: 6 }).catch(() => ({ records: [] })),
           adminApi.healthSummary().catch(() => null),
           adminApi.searchTrends({ days: 7 }).catch(() => null),
+          // Pending job approvals — admin_status='pending' filter
+          // exposes the moderation queue. Best-effort: a backend
+          // error just hides the panel.
+          adminApi.jobs.list({ admin_status: 'pending', page: 1, limit: 8 })
+            .catch(() => ({ records: [] })),
         ]);
         if (cancelled) return;
         setStats(statsData || null);
@@ -76,6 +91,7 @@ export default function DashboardAdmin() {
         setAudit(auditData?.records || []);
         setHealth(healthData || null);
         setSearchTrends(trendsData || null);
+        setPendingJobs(pendingJobsData?.records || []);
       } catch (err) {
         if (!cancelled) setError(err);
       } finally {
@@ -97,6 +113,53 @@ export default function DashboardAdmin() {
       /* keep the row; user can retry */
     } finally {
       setBusyCompanyId(null);
+    }
+  }
+
+  /**
+   * Approve a pending job posting — flips `admin_status` to
+   * 'approved' via the existing `/admin/jobs/:id/status` endpoint
+   * (which also writes an audit-log entry server-side). On success
+   * the row drops out of the local queue immediately so the
+   * recruiter sees the change without a refresh.
+   */
+  async function approveJob(jobId) {
+    setBusyJobId(jobId);
+    try {
+      await adminApi.jobs.setStatus(jobId, { admin_status: 'approved' });
+      setPendingJobs((list) => list.filter((j) => j.id !== jobId));
+    } catch (_e) {
+      /* keep the row; super-admin can retry */
+    } finally {
+      setBusyJobId(null);
+    }
+  }
+
+  /**
+   * Reject flow — mandatory reason. The existing /admin/jobs/:id/status
+   * validator accepts a free-text reason that lands in the audit log
+   * (admin_audit_logs.meta.reason). Once the schema migration for
+   * `jobs.rejection_reason` ships, the reason can also be surfaced
+   * on the employer's My Jobs card; for now it's audit-only.
+   */
+  async function confirmRejectJob() {
+    if (!rejectingJob) return;
+    const reason = rejectReason.trim();
+    if (!reason) return;
+    setBusyJobId(rejectingJob.id);
+    try {
+      await adminApi.jobs.setStatus(rejectingJob.id, {
+        admin_status: 'rejected',
+        status: 'rejected',
+        reason,
+      });
+      setPendingJobs((list) => list.filter((j) => j.id !== rejectingJob.id));
+      setRejectingJob(null);
+      setRejectReason('');
+    } catch (_e) {
+      /* keep modal open so super-admin can retry */
+    } finally {
+      setBusyJobId(null);
     }
   }
 
@@ -170,11 +233,29 @@ export default function DashboardAdmin() {
               <div className="stat-value">{Number(totalCompanies).toLocaleString()}</div>
               <div className="stat-trend">{pending.length} pending</div>
             </div>
-            <div className="stat-card">
+            {/*
+              * Job listings tile — now clickable. The trend slot
+              * surfaces the pending-moderation count so super-admin
+              * sees the queue depth at a glance; clicking the tile
+              * scrolls down to the Pending Job Approvals panel where
+              * the row-level Approve / Reject buttons live.
+              */}
+            <button
+              type="button"
+              className="stat-card stat-card-clickable"
+              onClick={() => {
+                const el = document.getElementById('admin-pending-jobs');
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              data-testid="admin-stat-jobs"
+              style={{ textAlign: 'left', cursor: 'pointer', font: 'inherit' }}
+            >
               <div className="stat-label">Job listings<div className="stat-icon">▤</div></div>
               <div className="stat-value">{Number(totalJobs).toLocaleString()}</div>
-              <div className="stat-trend">Across all companies</div>
-            </div>
+              <div className="stat-trend">
+                {Number(stats?.jobs?.pending || 0).toLocaleString()} pending approval →
+              </div>
+            </button>
             <div className="stat-card">
               <div className="stat-label">Applications<div className="stat-icon">$</div></div>
               <div className="stat-value">{Number(totalApps).toLocaleString()}</div>
@@ -392,8 +473,161 @@ export default function DashboardAdmin() {
               )}
             </div>
           )}
+
+          {/*
+            * Pending Job Approvals — the moderation queue. Reads
+            * jobs.admin_status='pending' from /admin/jobs and lets
+            * super-admin Approve / Reject inline. Approving flips
+            * `admin_status` to 'approved' and the job rejoins the
+            * public feed via `activeJobWhere()`; rejecting opens
+            * the reason modal below and writes the reason into the
+            * audit log alongside the status flip.
+            */}
+          <div
+            className="dash-panel"
+            style={{ marginTop: 24 }}
+            id="admin-pending-jobs"
+            data-testid="admin-pending-jobs"
+          >
+            <div className="dash-panel-head">
+              <h3>Pending job approvals <small>· {pendingJobs.length} awaiting review</small></h3>
+            </div>
+            {pendingJobs.length === 0 ? (
+              <p className="muted" style={{ padding: '12px 0' }}>
+                No jobs in the moderation queue right now. New company submissions
+                will appear here automatically.
+              </p>
+            ) : (
+              <table className="dash-table">
+                <thead>
+                  <tr>
+                    <th>Job</th>
+                    <th>Company</th>
+                    <th>Posted</th>
+                    <th>Salary</th>
+                    <th>Location</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingJobs.map((j) => (
+                    <tr key={j.id} data-testid={`pending-job-row-${j.id}`}>
+                      <td>
+                        <strong>{j.title}</strong>
+                        {j.job_type && <small style={{ display: 'block', color: 'var(--muted)' }}>{j.job_type.replace(/_/g, ' ')}</small>}
+                      </td>
+                      <td><small>{j.company_name || '—'}</small></td>
+                      <td><small>{j.created_at ? new Date(j.created_at).toLocaleDateString() : '—'}</small></td>
+                      <td>
+                        <small>
+                          {j.salary_min && j.salary_max
+                            ? `${Number(j.salary_min).toLocaleString()} – ${Number(j.salary_max).toLocaleString()} ${j.salary_currency || ''}`
+                            : '—'}
+                        </small>
+                      </td>
+                      <td><small>{j.location || j.country || '—'}</small></td>
+                      <td>
+                        <div className="row-actions">
+                          <a
+                            href={`/jobs/${j.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="icon-btn"
+                            title="View job"
+                            data-testid={`pending-job-view-${j.id}`}
+                          >↗</a>
+                          <button
+                            type="button"
+                            className="icon-btn success"
+                            disabled={busyJobId === j.id}
+                            onClick={() => approveJob(j.id)}
+                            title="Approve"
+                            data-testid={`pending-job-approve-${j.id}`}
+                          >✓</button>
+                          <button
+                            type="button"
+                            className="icon-btn danger"
+                            disabled={busyJobId === j.id}
+                            onClick={() => { setRejectingJob(j); setRejectReason(''); }}
+                            title="Reject"
+                            data-testid={`pending-job-reject-${j.id}`}
+                          >×</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       </div>
+
+      {/*
+        * Reject-reason modal. Reuses the .modal / .modal-form chrome
+        * shared with CompanyRejectionModal. Reason is mandatory —
+        * the Reject button stays disabled until non-empty text.
+        */}
+      {rejectingJob && (
+        <div
+          className="modal-overlay open"
+          onClick={(e) => { if (e.target === e.currentTarget && busyJobId !== rejectingJob.id) { setRejectingJob(null); setRejectReason(''); } }}
+          data-testid="admin-reject-job-modal"
+        >
+          <div className="modal" style={{ maxWidth: 520, gridTemplateColumns: '1fr' }}>
+            <button
+              className="modal-close"
+              onClick={() => { setRejectingJob(null); setRejectReason(''); }}
+              aria-label="Close"
+              type="button"
+              disabled={busyJobId === rejectingJob.id}
+            >×</button>
+            <div className="modal-form" style={{ padding: '32px 28px' }}>
+              <h2 style={{ marginBottom: 4 }}>Reject this job posting?</h2>
+              <p className="muted" style={{ marginBottom: 16 }}>
+                <strong>{rejectingJob.title}</strong>
+                {rejectingJob.company_name ? <> · {rejectingJob.company_name}</> : null}.
+                The reason is stored in the moderation audit log so the
+                employer can read it on their My Jobs surface once the
+                rejection-reason column ships.
+              </p>
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value.slice(0, 500))}
+                placeholder="Why is this posting being rejected? Be specific so the employer can fix it."
+                rows={4}
+                disabled={busyJobId === rejectingJob.id}
+                data-testid="admin-reject-reason"
+                style={{
+                  width: '100%', padding: 10, borderRadius: 10,
+                  border: '1px solid var(--line)', fontSize: 14,
+                  resize: 'vertical', minHeight: 100,
+                }}
+              />
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, textAlign: 'right' }}>
+                {rejectReason.length}/500
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => { setRejectingJob(null); setRejectReason(''); }}
+                  disabled={busyJobId === rejectingJob.id}
+                >Cancel</button>
+                <button
+                  type="button"
+                  className="btn btn-coral"
+                  onClick={confirmRejectJob}
+                  disabled={!rejectReason.trim() || busyJobId === rejectingJob.id}
+                  data-testid="admin-reject-confirm"
+                >
+                  {busyJobId === rejectingJob.id ? 'Rejecting…' : 'Reject job'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

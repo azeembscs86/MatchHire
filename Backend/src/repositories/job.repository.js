@@ -484,11 +484,17 @@ async function listByCompany(company_id, { page = 1, limit = 10, status, exclude
   return { rows, total: Number(countRow?.total || 0) };
 }
 
-async function listAdmin({ keyword, status, page = 1, limit = 10 }) {
+async function listAdmin({ keyword, status, admin_status, page = 1, limit = 10 }) {
   const where = ['j.deleted_at IS NULL'];
   const params = [];
   if (keyword) { where.push('(j.title LIKE ? OR c.name LIKE ?)'); params.push(`%${keyword}%`, `%${keyword}%`); }
   if (status) { where.push('j.status = ?'); params.push(status); }
+  // Moderation queue filter — drives the super-admin's "Pending
+  // job approvals" surface. Validator (admin.validator.js
+  // adminJobsList) constrains this to the same ENUM the column
+  // itself accepts (pending / approved / rejected) so a stray
+  // value can't reach the SQL.
+  if (admin_status) { where.push('j.admin_status = ?'); params.push(admin_status); }
   const offset = (page - 1) * limit;
   const rows = await db.query(
     `SELECT ${jobsListSelect()}

@@ -3048,6 +3048,27 @@
 }
 
 /* =============================================================================
+ * Admin Dashboard — clickable stat card hover state
+ * ---------------------------------------------------------------------------
+ * Stat cards that act as nav (e.g. "Job listings → pending queue") get a
+ * subtle lift on hover so they read as interactive. Inherits the base
+ * `.stat-card` chrome otherwise.
+ * ===========================================================================*/
+.stat-card-clickable{
+  border:1px solid var(--line);
+  background:var(--paper);
+  transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.stat-card-clickable:hover{
+  transform:translateY(-2px);
+  box-shadow:var(--shadow);
+  border-color:var(--coral);
+}
+.stat-card-clickable:focus-visible{
+  outline:2px solid var(--coral);outline-offset:2px;
+}
+
+/* =============================================================================
  * Company My Jobs — Expired-row action strip
  * ---------------------------------------------------------------------------
  * Each company job card on My Jobs is wrapped in `.company-job-wrap`. When
