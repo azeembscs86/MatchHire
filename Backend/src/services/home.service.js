@@ -453,12 +453,29 @@ async function buildHome(viewerUserId = null, viewerRole = null) {
     const { records, candidate, candidateMissing } = await jobMatch.recommendedFor(viewerUserId, { limit: 8 });
     recommendedJobs = records || [];
 
-    // Latest matched: take the same latest-jobs list, score it for the
-    // candidate, sort by match%, and keep the top 6 regardless of
-    // threshold so the rail is never empty.
+    // "Latest Jobs for You" rail. Strict three-rule contract:
+    //   1. Posted within the last 7 days (`posted_within_days: 7`
+    //      lands the SQL filter at the repo, not in JS).
+    //   2. Match score >= 60% (above the standard 40% recommended
+    //      floor — this surface should only show strong fits).
+    //   3. Sorted by published_at DESC after scoring, so the rail
+    //      reads "freshest first" rather than "highest match first"
+    //      (that's what the recommendedJobs rail is for).
+    // We over-fetch (limit 24) so the post-score 60% filter still
+    // leaves enough rows for the 6-card cap.
     if (candidate) {
-      const scored = jobMatch.rankJobs(latestRaw, candidate, { filter: false, limit: 6 });
-      latestMatchedJobs = scored;
+      const { rows: recentRaw = [] } = await jobRepo.listPublic({
+        page: 1, limit: 24, sort: 'latest', posted_within_days: 7,
+        exclude_applied_for_user_id: viewerUserId,
+      });
+      const scored = jobMatch.rankJobs(recentRaw, candidate, { threshold: 60, filter: true });
+      // Re-sort the (already >= 60%) survivors by recency, then cap.
+      scored.sort((a, b) => {
+        const ta = new Date(a.published_at || a.created_at || 0).getTime();
+        const tb = new Date(b.published_at || b.created_at || 0).getTime();
+        return tb - ta;
+      });
+      latestMatchedJobs = scored.slice(0, 6);
 
       const skills = await candidateRepo.listSkills(viewerUserId);
       const profile = await candidateRepo.findProfileByUserId(viewerUserId);

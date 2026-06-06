@@ -131,6 +131,39 @@ async function recommendedJobs(user_id, limit = 10) {
   return jobRepo.recommendedForUser(user_id, limit);
 }
 
+/**
+ * "Latest Jobs for You" — used on the Home page rail AND the Jobs
+ * page's top-of-list section. Contract:
+ *
+ *   - Posted within the last 7 days (SQL filter via `posted_within_days`)
+ *   - Match score >= 60% against the candidate's profile
+ *   - Sorted by recency, NOT by match% (the recommendedJobs path
+ *     is the highest-match-first surface; this one is "freshest
+ *     strong-fit roles")
+ *   - Excludes jobs the candidate has already actively applied to
+ *   - Excludes expired / closed / unapproved jobs (activeJobWhere)
+ *
+ * The matchService scorer is the same one /home and /recommended-jobs
+ * use — single source of truth for match%. We over-fetch (limit 24)
+ * so the 60% post-filter still leaves enough rows for the 6-card cap.
+ */
+async function latestForYou(user_id, opts = {}) {
+  const limit = Math.max(1, Math.min(12, Number(opts.limit) || 6));
+  const candidate = await jobRepo.loadCandidateContext(user_id);
+  if (!candidate) return { records: [] };
+  const { rows: recentRaw = [] } = await jobRepo.listPublic({
+    page: 1, limit: 24, sort: 'latest', posted_within_days: 7,
+    exclude_applied_for_user_id: user_id,
+  });
+  const scored = jobMatchService.rankJobs(recentRaw, candidate, { threshold: 60, filter: true });
+  scored.sort((a, b) => {
+    const ta = new Date(a.published_at || a.created_at || 0).getTime();
+    const tb = new Date(b.published_at || b.created_at || 0).getTime();
+    return tb - ta;
+  });
+  return { records: scored.slice(0, limit) };
+}
+
 async function addFavorite(user_id, job_id) {
   const job = await jobRepo.findById(job_id);
   if (!job) throw new AppError('Job not found', 404);
@@ -743,6 +776,7 @@ module.exports = {
   updateSkills,
   updatePreferences,
   recommendedJobs,
+  latestForYou,
   addFavorite,
   removeFavorite,
   listFavorites,

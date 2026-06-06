@@ -459,6 +459,36 @@ router.post('/recommended-jobs', validate(v.recommendedFilters), asyncHandler(co
 
 /**
  * @swagger
+ * /candidates/latest-for-you:
+ *   post:
+ *     tags: [Candidates]
+ *     summary: Latest strong-fit jobs (last 7 days, >= 60% match)
+ *     description: |
+ *       Returns up to `limit` (default 6, max 12) job rows that:
+ *         - were posted in the last 7 days
+ *         - match the candidate's profile at >= 60%
+ *         - exclude expired / closed / non-approved jobs
+ *         - exclude jobs the candidate has already applied to
+ *       Sorted by recency (newest first), NOT by match% —
+ *       the /recommended-jobs endpoint is the highest-match-first
+ *       surface. Each record carries the standard match decoration
+ *       (matchPercentage, matchReasons, matchMissing).
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               limit: { type: integer, minimum: 1, maximum: 12, default: 6 }
+ *     responses:
+ *       '200': { $ref: '#/components/responses/PaginatedList' }
+ */
+router.post('/latest-for-you', validate(v.recommendedFilters), asyncHandler(controller.latestForYou));
+
+/**
+ * @swagger
  * /candidates/favorites/{jobId}/add:
  *   post:
  *     tags: [Candidates]

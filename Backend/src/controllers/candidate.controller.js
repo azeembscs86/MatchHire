@@ -143,6 +143,18 @@ exports.recommendedJobs = async (req, res) => {
   return response.list(res, data, null, 'Recommended jobs');
 };
 
+/**
+ * "Latest Jobs for You" — recency-sorted strong-fit roles posted in
+ * the last 7 days. See `candidate.service.latestForYou` for the
+ * filter contract. Used by the Home page rail and the Jobs page's
+ * top-of-list section.
+ */
+exports.latestForYou = async (req, res) => {
+  const limit = req.body?.limit || 6;
+  const data = await service.latestForYou(req.user.id, { limit });
+  return response.list(res, data?.records || [], null, 'Latest jobs for you');
+};
+
 /** Add a job to the candidate's favorites list (idempotent). */
 exports.addFavorite = async (req, res) => {
   const data = await service.addFavorite(req.user.id, Number(req.params.jobId));

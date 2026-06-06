@@ -487,6 +487,29 @@ export default function Jobs() {
   const [applyingId, setApplyingId] = useState(null);
   const [applyMessage, setApplyMessage] = useState(null);
   const [rejection, setRejection] = useState(null);
+  // "Latest Jobs for You" rail — candidate-only. Strict 7-day +
+  // >=60% match contract enforced by /candidates/latest-for-you.
+  // Loaded once on mount (or auth change). Hidden for guests +
+  // employers + admins.
+  const [latestForYou, setLatestForYou] = useState([]);
+  const [latestForYouLoaded, setLatestForYouLoaded] = useState(false);
+  useEffect(() => {
+    if (!isCandidate) {
+      setLatestForYou([]);
+      setLatestForYouLoaded(true);
+      return undefined;
+    }
+    let cancelled = false;
+    candidatesApi.latestForYou(6)
+      .then((data) => {
+        if (cancelled) return;
+        // call() unwraps Data.records into the top-level array.
+        setLatestForYou(Array.isArray(data) ? data : (data?.records || []));
+        setLatestForYouLoaded(true);
+      })
+      .catch(() => { if (!cancelled) setLatestForYouLoaded(true); });
+    return () => { cancelled = true; };
+  }, [isCandidate, user?.id]);
 
   /*
    * Debounce: when the user types in keyword / skills / location,
@@ -1020,6 +1043,52 @@ export default function Jobs() {
         </aside>
 
         <div>
+          {/*
+            * "Latest Jobs for You" — candidate-only rail above the
+            * main browse results. Same data contract as the Home
+            * page rail (7 days + >=60% match + recency-sorted, via
+            * /candidates/latest-for-you). Surfaces an empty-state
+            * card when no recent strong-fit roles exist so the
+            * recruiter UX stays consistent.
+            */}
+          {isCandidate && latestForYouLoaded && (
+            <section className="jobs-latest-for-you" style={{ marginBottom: 28 }} data-testid="jobs-latest-for-you-section">
+              <div className="section-head" style={{ marginBottom: 14 }}>
+                <div>
+                  <span className="eyebrow" style={{ display: 'block', marginBottom: 6 }}>↻ Last 7 days</span>
+                  <h2 style={{ fontFamily: "'Fraunces',serif", fontSize: 22, margin: 0 }}>
+                    Latest jobs <span style={{ fontStyle: 'italic', color: 'var(--coral)' }}>for you</span>
+                  </h2>
+                </div>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  Strong-fit roles posted in the last week
+                </span>
+              </div>
+              {latestForYou.length === 0 ? (
+                <div className="fav-empty" data-testid="jobs-latest-empty" style={{ padding: '24px 18px' }}>
+                  <div className="fav-empty-icon">↻</div>
+                  <h3 style={{ fontSize: 18 }}>No latest matching jobs found</h3>
+                  <p style={{ fontSize: 13 }}>
+                    Update your profile skills to improve recommendations.
+                  </p>
+                </div>
+              ) : (
+                <div className="jobs-grid" data-testid="jobs-latest-grid">
+                  {latestForYou.slice(0, 6).map((j) => (
+                    <JobCard
+                      key={j.id}
+                      job={j}
+                      featured
+                      viewer={viewer}
+                      onApply={handleApply}
+                      applyingId={applyingId}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
           <div className="browse-results-head">
             <div className="results-count">
               <strong>{headerCount}</strong>{' '}

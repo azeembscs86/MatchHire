@@ -906,30 +906,50 @@ export default function Home() {
       {/* Candidate-personalised "Recommended companies for your skills". */}
       <RecommendedCompaniesBlock companies={recommendedCompanies} isCandidate={isCandidate} />
 
-      {/* Latest matched jobs rail — auth-aware. */}
-      {isCandidate && latestMatched.length > 0 && (
+      {/*
+        * "Latest Jobs for You" rail — candidate-only. Strict
+        * contract enforced by the backend `home.service`: roles
+        * posted in the last 7 days, scored at >= 60% match,
+        * sorted by recency. Shows an empty-state card when no
+        * recent strong-fit roles exist so the rail never just
+        * silently disappears (which previously made the page
+        * feel less personalised when the queue was empty).
+        */}
+      {isCandidate && (
         <section className="block" style={{ paddingTop: 32 }}>
           <div className="container">
             <div className="section-head">
               <div>
-                <span className="eyebrow" style={{ display: 'block', marginBottom: 14 }}>↻ Latest matched</span>
-                <h2 className="display">Fresh openings, ranked by <span className="ital" style={{ fontStyle: 'italic', color: 'var(--coral)' }}>fit</span>.</h2>
+                <span className="eyebrow" style={{ display: 'block', marginBottom: 14 }}>↻ Last 7 days</span>
+                <h2 className="display">Latest jobs <span className="ital" style={{ fontStyle: 'italic', color: 'var(--coral)' }}>for you</span>.</h2>
               </div>
               <Link to="/jobs?sort=best_match" className="section-link">See all matches →</Link>
             </div>
-            <div className="jobs-grid">
-              {latestMatched.slice(0, 6).map((j) => (
-                <JobCard
-                  key={j.id}
-                  job={j}
-                  featured
-                  viewer={viewer}
-                  onApply={isCandidate ? apply : undefined}
-                  applied={appliedIds.has(j.id)}
-                  applyingId={applyingId}
-                />
-              ))}
-            </div>
+            {latestMatched.length === 0 ? (
+              <div className="fav-empty" data-testid="latest-jobs-empty">
+                <div className="fav-empty-icon">↻</div>
+                <h3>No latest matching jobs found</h3>
+                <p>
+                  Strong-fit roles posted in the last 7 days will appear here.
+                  Update your profile skills to improve recommendations.
+                </p>
+                <Link to="/profile" className="btn btn-coral">Update profile →</Link>
+              </div>
+            ) : (
+              <div className="jobs-grid" data-testid="latest-jobs-for-you">
+                {latestMatched.slice(0, 6).map((j) => (
+                  <JobCard
+                    key={j.id}
+                    job={j}
+                    featured
+                    viewer={viewer}
+                    onApply={isCandidate ? apply : undefined}
+                    applied={appliedIds.has(j.id)}
+                    applyingId={applyingId}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </section>
       )}

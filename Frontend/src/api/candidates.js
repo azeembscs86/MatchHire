@@ -43,6 +43,14 @@ export const candidatesApi = {
   /** Personalised job recommendations. */
   recommendedJobs(limit = 10) { return call(api.post('/candidates/recommended-jobs', { limit })); },
 
+  /**
+   * "Latest Jobs for You" — strong-fit (>= 60% match) postings
+   * published in the last 7 days, sorted by recency. Used by the
+   * Jobs page's top-of-list section. The Home page reads the
+   * same list off the /home aggregate (`latestMatchedJobs`).
+   */
+  latestForYou(limit = 6) { return call(api.post('/candidates/latest-for-you', { limit })); },
+
   favorites: {
     list(body = {}) { return call(api.post('/candidates/favorites/list', body)); },
     add(jobId) { return call(api.post(`/candidates/favorites/${jobId}/add`)); },
