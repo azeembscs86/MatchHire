@@ -25,7 +25,18 @@ function parsePagination(query = {}) {
 function buildPagination(page, limit, total) {
   const safeLimit = limit > 0 ? limit : DEFAULT_LIMIT;
   const totalPages = total > 0 ? Math.ceil(total / safeLimit) : 0;
-  return { page, limit: safeLimit, total, totalPages };
+  // hasNextPage / hasPreviousPage are derived booleans the frontend
+  // pagers read directly so they don't reimplement the arithmetic.
+  // Keep the legacy `page/limit/total/totalPages` fields so older
+  // consumers (e.g. the candidate dashboard rails) don't break.
+  return {
+    page,
+    limit: safeLimit,
+    total,
+    totalPages,
+    hasNextPage: page < totalPages,
+    hasPreviousPage: page > 1,
+  };
 }
 
 module.exports = {

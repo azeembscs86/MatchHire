@@ -152,7 +152,14 @@ exports.recommendedJobs = async (req, res) => {
 exports.latestForYou = async (req, res) => {
   const limit = req.body?.limit || 6;
   const data = await service.latestForYou(req.user.id, { limit });
-  return response.list(res, data?.records || [], null, 'Latest jobs for you');
+  // Wrap the records + tier in a single Data envelope so the
+  // frontend can read both off `response.Data`. `response.list`
+  // expects a top-level array, so we hand-roll the envelope here
+  // via `response.success`.
+  return response.success(res, {
+    records: data?.records || [],
+    tier: data?.tier || 'latest',
+  }, 'Latest jobs for you');
 };
 
 /** Add a job to the candidate's favorites list (idempotent). */

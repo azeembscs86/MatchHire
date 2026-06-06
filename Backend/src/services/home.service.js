@@ -28,6 +28,10 @@ const cache = require('../cache/cache.helper');
 const jobMatch = require('./jobMatch.service');
 const aiService = require('./ai.service');
 const careerResourcesService = require('./career-resources.service');
+// candidate.service owns the "Latest Jobs for You" tier-fallback so
+// the same logic powers both the dedicated endpoint hit by the Jobs
+// page AND the Home page rail.
+const candidateService = require('./candidate.service');
 const db = require('../config/database');
 
 const TTL_GUEST_HOME = 15 * 60;
@@ -443,6 +447,10 @@ async function buildHome(viewerUserId = null, viewerRole = null) {
 
   let recommendedJobs = [];
   let latestMatchedJobs = [];
+  // Which tier the "Latest Jobs for You" rail came back as:
+  // 'strong' (>=60% match in last 7 days), 'skill' (any active
+  // job with shared skills), 'latest' (plain newest-first feed).
+  let latestMatchedTier = 'latest';
   let aiSuggestions = null;
   let profileCompletion = null;
   let recommendedCompanies = companies;
@@ -453,29 +461,19 @@ async function buildHome(viewerUserId = null, viewerRole = null) {
     const { records, candidate, candidateMissing } = await jobMatch.recommendedFor(viewerUserId, { limit: 8 });
     recommendedJobs = records || [];
 
-    // "Latest Jobs for You" rail. Strict three-rule contract:
-    //   1. Posted within the last 7 days (`posted_within_days: 7`
-    //      lands the SQL filter at the repo, not in JS).
-    //   2. Match score >= 60% (above the standard 40% recommended
-    //      floor — this surface should only show strong fits).
-    //   3. Sorted by published_at DESC after scoring, so the rail
-    //      reads "freshest first" rather than "highest match first"
-    //      (that's what the recommendedJobs rail is for).
-    // We over-fetch (limit 24) so the post-score 60% filter still
-    // leaves enough rows for the 6-card cap.
+    // "Latest Jobs for You" rail — three-tier fallback so the rail
+    // is never silently empty when SOMETHING relevant exists. The
+    // candidate service owns the tier logic (one source of truth
+    // shared with the dedicated /candidates/latest-for-you endpoint
+    // the Jobs page hits). Returns { records, tier } so the home
+    // payload can also carry the tier the Home page renders into a
+    // banner ("Strong match" / "No strong matches — showing
+    // skill-related" / "No skill match — showing latest active").
     if (candidate) {
-      const { rows: recentRaw = [] } = await jobRepo.listPublic({
-        page: 1, limit: 24, sort: 'latest', posted_within_days: 7,
-        exclude_applied_for_user_id: viewerUserId,
-      });
-      const scored = jobMatch.rankJobs(recentRaw, candidate, { threshold: 60, filter: true });
-      // Re-sort the (already >= 60%) survivors by recency, then cap.
-      scored.sort((a, b) => {
-        const ta = new Date(a.published_at || a.created_at || 0).getTime();
-        const tb = new Date(b.published_at || b.created_at || 0).getTime();
-        return tb - ta;
-      });
-      latestMatchedJobs = scored.slice(0, 6);
+      const { records: tieredRecords = [], tier = 'latest' } =
+        await candidateService.latestForYou(viewerUserId, { limit: 6 });
+      latestMatchedJobs = tieredRecords;
+      latestMatchedTier = tier;
 
       const skills = await candidateRepo.listSkills(viewerUserId);
       const profile = await candidateRepo.findProfileByUserId(viewerUserId);
@@ -542,6 +540,7 @@ async function buildHome(viewerUserId = null, viewerRole = null) {
     latestJobs: latestRaw.slice(0, 8),
     recommendedJobs,
     latestMatchedJobs,
+    latestMatchedTier,
     aiSuggestions,
     employer,
     cta: CTA_BLOCKS,

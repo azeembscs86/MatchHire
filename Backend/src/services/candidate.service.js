@@ -133,35 +133,100 @@ async function recommendedJobs(user_id, limit = 10) {
 
 /**
  * "Latest Jobs for You" — used on the Home page rail AND the Jobs
- * page's top-of-list section. Contract:
+ * page's top-of-list section.
  *
- *   - Posted within the last 7 days (SQL filter via `posted_within_days`)
- *   - Match score >= 60% against the candidate's profile
- *   - Sorted by recency, NOT by match% (the recommendedJobs path
- *     is the highest-match-first surface; this one is "freshest
- *     strong-fit roles")
- *   - Excludes jobs the candidate has already actively applied to
- *   - Excludes expired / closed / unapproved jobs (activeJobWhere)
+ * Three-tier fallback so the rail is never empty when SOMETHING
+ * relevant exists:
  *
- * The matchService scorer is the same one /home and /recommended-jobs
- * use — single source of truth for match%. We over-fetch (limit 24)
- * so the 60% post-filter still leaves enough rows for the 6-card cap.
+ *   Tier 1 — "strong"    Posted in last 7 days, match score >= 60%.
+ *                         Sorted by recency (newest first).
+ *   Tier 2 — "skill"     If Tier 1 returns nothing, widen to ANY
+ *                         active approved job (regardless of age)
+ *                         that overlaps at least one candidate skill.
+ *                         Sorted by skill-overlap count, then recency.
+ *   Tier 3 — "latest"    If Tier 2 also returns nothing, fall back
+ *                         to the platform's plain latest-active feed.
+ *                         No skill / score filter — purely "here's
+ *                         what's open right now."
+ *
+ * All tiers respect the existing exclusions: expired / closed /
+ * pending / withdrawn / already-applied. The matchService scorer is
+ * the single source of truth for the match% decoration on the cards
+ * regardless of which tier is rendered.
+ *
+ * Returns `{ records, tier }` so the UI can render the right
+ * explanatory banner ("Strong match" vs "No strong matches — showing
+ * skill-related" vs "No skill match — showing latest active").
  */
 async function latestForYou(user_id, opts = {}) {
   const limit = Math.max(1, Math.min(12, Number(opts.limit) || 6));
   const candidate = await jobRepo.loadCandidateContext(user_id);
-  if (!candidate) return { records: [] };
+  if (!candidate) return { records: [], tier: 'latest' };
+
+  // Tier 1 — last 7 days + >= 60% match.
   const { rows: recentRaw = [] } = await jobRepo.listPublic({
     page: 1, limit: 24, sort: 'latest', posted_within_days: 7,
     exclude_applied_for_user_id: user_id,
   });
-  const scored = jobMatchService.rankJobs(recentRaw, candidate, { threshold: 60, filter: true });
-  scored.sort((a, b) => {
-    const ta = new Date(a.published_at || a.created_at || 0).getTime();
-    const tb = new Date(b.published_at || b.created_at || 0).getTime();
-    return tb - ta;
+  const strong = jobMatchService
+    .rankJobs(recentRaw, candidate, { threshold: 60, filter: true })
+    .sort((a, b) => {
+      const ta = new Date(a.published_at || a.created_at || 0).getTime();
+      const tb = new Date(b.published_at || b.created_at || 0).getTime();
+      return tb - ta;
+    });
+  if (strong.length > 0) {
+    return { records: strong.slice(0, limit), tier: 'strong' };
+  }
+
+  // Tier 2 — at least one candidate-skill overlap with the job's
+  // required skills, regardless of age or score. Over-fetch (60)
+  // so the skill-overlap filter has enough material.
+  const candidateSkills = new Set(
+    (candidate.skills || [])
+      .map((s) => String(s.name || s || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+  if (candidateSkills.size > 0) {
+    const { rows: wideRaw = [] } = await jobRepo.listPublic({
+      page: 1, limit: 60, sort: 'latest',
+      exclude_applied_for_user_id: user_id,
+    });
+    const skillRanked = wideRaw
+      .map((job) => {
+        const jobSkills = String(job.skills_tags || '')
+          .split(',')
+          .map((s) => s.trim().toLowerCase())
+          .filter(Boolean);
+        const shared = jobSkills.filter((s) => candidateSkills.has(s));
+        return { job, sharedCount: shared.length };
+      })
+      .filter((row) => row.sharedCount > 0)
+      .sort((a, b) => {
+        if (b.sharedCount !== a.sharedCount) return b.sharedCount - a.sharedCount;
+        const ta = new Date(a.job.published_at || a.job.created_at || 0).getTime();
+        const tb = new Date(b.job.published_at || b.job.created_at || 0).getTime();
+        return tb - ta;
+      });
+    if (skillRanked.length > 0) {
+      // Decorate with match% so the UI's match badge still lights up,
+      // even though the source ranking was skill-overlap not match%.
+      const decorated = jobMatchService.rankJobs(
+        skillRanked.map((r) => r.job),
+        candidate,
+        { filter: false }
+      );
+      return { records: decorated.slice(0, limit), tier: 'skill' };
+    }
+  }
+
+  // Tier 3 — plain latest active. No filter, just newest first.
+  const { rows: anyRaw = [] } = await jobRepo.listPublic({
+    page: 1, limit, sort: 'latest',
+    exclude_applied_for_user_id: user_id,
   });
-  return { records: scored.slice(0, limit) };
+  const decoratedAny = jobMatchService.rankJobs(anyRaw, candidate, { filter: false });
+  return { records: decoratedAny.slice(0, limit), tier: 'latest' };
 }
 
 async function addFavorite(user_id, job_id) {

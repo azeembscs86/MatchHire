@@ -487,11 +487,18 @@ export default function Jobs() {
   const [applyingId, setApplyingId] = useState(null);
   const [applyMessage, setApplyMessage] = useState(null);
   const [rejection, setRejection] = useState(null);
-  // "Latest Jobs for You" rail — candidate-only. Strict 7-day +
-  // >=60% match contract enforced by /candidates/latest-for-you.
-  // Loaded once on mount (or auth change). Hidden for guests +
-  // employers + admins.
+  // "Latest Jobs for You" rail — candidate-only.
+  //
+  // Three-tier backend fallback so the rail is never empty when
+  // SOMETHING relevant exists:
+  //   tier='strong' — last 7 days + >= 60% match
+  //   tier='skill'  — any active job with at least one shared skill
+  //   tier='latest' — plain latest active feed
+  //
+  // The page shows a tier-specific banner above the grid so the
+  // candidate understands WHY they're seeing what they're seeing.
   const [latestForYou, setLatestForYou] = useState([]);
+  const [latestForYouTier, setLatestForYouTier] = useState('strong');
   const [latestForYouLoaded, setLatestForYouLoaded] = useState(false);
   useEffect(() => {
     if (!isCandidate) {
@@ -503,8 +510,17 @@ export default function Jobs() {
     candidatesApi.latestForYou(6)
       .then((data) => {
         if (cancelled) return;
-        // call() unwraps Data.records into the top-level array.
-        setLatestForYou(Array.isArray(data) ? data : (data?.records || []));
+        // Two response shapes are possible depending on the
+        // call() helper's unwrap path. Handle both for robustness:
+        //   Newer: { records: [...], tier: 'strong' }
+        //   Older: top-level array
+        if (Array.isArray(data)) {
+          setLatestForYou(data);
+          setLatestForYouTier('strong');
+        } else {
+          setLatestForYou(data?.records || []);
+          setLatestForYouTier(data?.tier || 'strong');
+        }
         setLatestForYouLoaded(true);
       })
       .catch(() => { if (!cancelled) setLatestForYouLoaded(true); });
@@ -703,6 +719,10 @@ export default function Jobs() {
         setData({
           records,
           total: res?.pagination?.total || records.length,
+          // Carry the full pagination block (page, limit, total,
+          // totalPages, hasNextPage, hasPreviousPage) so the pager
+          // below the grid can drive itself without recomputing.
+          pagination: res?.pagination || null,
           profileIncomplete: !!res?.profileIncomplete,
           message: res?.message || null,
         });
@@ -788,6 +808,63 @@ export default function Jobs() {
           )}
         </div>
       </div>
+
+      {/*
+        * "Latest Jobs for You" — placed ABOVE the search filters per
+        * the latest spec. Candidate-only. Three-tier fallback driven
+        * by /candidates/latest-for-you so the rail is never silently
+        * empty:
+        *   tier='strong' — last 7 days + >= 60% match
+        *   tier='skill'  — any active job with at least one shared skill
+        *   tier='latest' — plain newest-first feed
+        * A small banner above the grid explains which tier the
+        * candidate is seeing so they understand why.
+        */}
+      {isCandidate && latestForYouLoaded && (
+        <div className="container" style={{ padding: '24px 0 0' }}>
+          <section className="jobs-latest-for-you" data-testid="jobs-latest-for-you-section">
+            <div className="section-head" style={{ marginBottom: 14 }}>
+              <div>
+                <span className="eyebrow" style={{ display: 'block', marginBottom: 6 }}>
+                  {latestForYouTier === 'strong' ? '↻ Last 7 days · strong matches'
+                    : latestForYouTier === 'skill' ? '↻ Skill-related opportunities'
+                    : '↻ Latest active jobs'}
+                </span>
+                <h2 style={{ fontFamily: "'Fraunces',serif", fontSize: 24, margin: 0 }}>
+                  Latest jobs <span style={{ fontStyle: 'italic', color: 'var(--coral)' }}>for you</span>
+                </h2>
+              </div>
+              <span className="muted" style={{ fontSize: 12 }}>
+                {latestForYouTier === 'strong'
+                  ? 'Strong-fit roles posted in the last week'
+                  : latestForYouTier === 'skill'
+                    ? 'No strong matches — showing roles that share your skills'
+                    : 'No skill match — showing the platform’s newest active roles'}
+              </span>
+            </div>
+            {latestForYou.length === 0 ? (
+              <div className="fav-empty" data-testid="jobs-latest-empty" style={{ padding: '24px 18px' }}>
+                <div className="fav-empty-icon">↻</div>
+                <h3 style={{ fontSize: 18 }}>No jobs available right now</h3>
+                <p style={{ fontSize: 13 }}>Please check back soon — we add new roles every day.</p>
+              </div>
+            ) : (
+              <div className="jobs-grid" data-testid="jobs-latest-grid">
+                {latestForYou.slice(0, 6).map((j) => (
+                  <JobCard
+                    key={j.id}
+                    job={j}
+                    featured
+                    viewer={viewer}
+                    onApply={handleApply}
+                    applyingId={applyingId}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
 
       {/*
        * Modern Jobs search bar — sits between the page hero and the
@@ -1044,51 +1121,10 @@ export default function Jobs() {
 
         <div>
           {/*
-            * "Latest Jobs for You" — candidate-only rail above the
-            * main browse results. Same data contract as the Home
-            * page rail (7 days + >=60% match + recency-sorted, via
-            * /candidates/latest-for-you). Surfaces an empty-state
-            * card when no recent strong-fit roles exist so the
-            * recruiter UX stays consistent.
+            * "Latest Jobs for You" — moved up above the search bar
+            * (see top of the page) per the latest spec. This slot
+            * keeps the results-head landmark in place.
             */}
-          {isCandidate && latestForYouLoaded && (
-            <section className="jobs-latest-for-you" style={{ marginBottom: 28 }} data-testid="jobs-latest-for-you-section">
-              <div className="section-head" style={{ marginBottom: 14 }}>
-                <div>
-                  <span className="eyebrow" style={{ display: 'block', marginBottom: 6 }}>↻ Last 7 days</span>
-                  <h2 style={{ fontFamily: "'Fraunces',serif", fontSize: 22, margin: 0 }}>
-                    Latest jobs <span style={{ fontStyle: 'italic', color: 'var(--coral)' }}>for you</span>
-                  </h2>
-                </div>
-                <span className="muted" style={{ fontSize: 12 }}>
-                  Strong-fit roles posted in the last week
-                </span>
-              </div>
-              {latestForYou.length === 0 ? (
-                <div className="fav-empty" data-testid="jobs-latest-empty" style={{ padding: '24px 18px' }}>
-                  <div className="fav-empty-icon">↻</div>
-                  <h3 style={{ fontSize: 18 }}>No latest matching jobs found</h3>
-                  <p style={{ fontSize: 13 }}>
-                    Update your profile skills to improve recommendations.
-                  </p>
-                </div>
-              ) : (
-                <div className="jobs-grid" data-testid="jobs-latest-grid">
-                  {latestForYou.slice(0, 6).map((j) => (
-                    <JobCard
-                      key={j.id}
-                      job={j}
-                      featured
-                      viewer={viewer}
-                      onApply={handleApply}
-                      applyingId={applyingId}
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
-
           <div className="browse-results-head">
             <div className="results-count">
               <strong>{headerCount}</strong>{' '}
@@ -1149,18 +1185,105 @@ export default function Jobs() {
                   />
                 )
                 : (
-                  <div className="jobs-grid">
-                    {data.records.map((j) => (
-                      <JobCard
-                        key={j.id}
-                        job={j}
-                        featured
-                        viewer={viewer}
-                        onApply={isCandidate ? handleApply : undefined}
-                        applyingId={applyingId}
-                      />
-                    ))}
-                  </div>
+                  <>
+                    <div className="jobs-grid">
+                      {data.records.map((j) => (
+                        <JobCard
+                          key={j.id}
+                          job={j}
+                          featured
+                          viewer={viewer}
+                          onApply={isCandidate ? handleApply : undefined}
+                          applyingId={applyingId}
+                        />
+                      ))}
+                    </div>
+                    {/*
+                      * Pagination strip below the results grid. Renders
+                      * only when there's more than one page of results
+                      * (the totalPages flag is computed server-side via
+                      * `buildPagination`). Page numbers stay in URL via
+                      * the existing `setPage` → effect that pushes the
+                      * filter state into the URL — share-friendly.
+                      *
+                      * The page jump never loses the active filters
+                      * because `update()` only resets page=1 on filter
+                      * change, not on a direct page set.
+                      */}
+                    {(() => {
+                      const pagination = data.pagination || {};
+                      const totalPages = Number(pagination.totalPages || 0);
+                      if (totalPages < 2) return null;
+                      const currentPage = Number(pagination.page || page || 1);
+                      // Build a compact 5-button window around the
+                      // current page (no truncation logic for now —
+                      // realistic listings rarely cross 20 pages).
+                      const pages = [];
+                      const start = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
+                      const end = Math.min(totalPages, start + 4);
+                      for (let p = start; p <= end; p += 1) pages.push(p);
+                      const hasPrev = pagination.hasPreviousPage ?? (currentPage > 1);
+                      const hasNext = pagination.hasNextPage ?? (currentPage < totalPages);
+                      return (
+                        <nav
+                          className="jobs-pager"
+                          role="navigation"
+                          aria-label="Job results pages"
+                          data-testid="jobs-pagination"
+                        >
+                          <button
+                            type="button"
+                            className="jobs-pager-btn"
+                            onClick={() => { setPage(Math.max(1, currentPage - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                            disabled={!hasPrev || loading}
+                            data-testid="jobs-pager-prev"
+                          >← Previous</button>
+                          {start > 1 && (
+                            <>
+                              <button
+                                type="button"
+                                className="jobs-pager-num"
+                                onClick={() => { setPage(1); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                              >1</button>
+                              <span className="jobs-pager-ellipsis" aria-hidden="true">…</span>
+                            </>
+                          )}
+                          {pages.map((p) => (
+                            <button
+                              key={p}
+                              type="button"
+                              className={`jobs-pager-num${p === currentPage ? ' is-active' : ''}`}
+                              onClick={() => { setPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                              aria-current={p === currentPage ? 'page' : undefined}
+                              disabled={loading}
+                              data-testid={`jobs-pager-${p}`}
+                            >{p}</button>
+                          ))}
+                          {end < totalPages && (
+                            <>
+                              <span className="jobs-pager-ellipsis" aria-hidden="true">…</span>
+                              <button
+                                type="button"
+                                className="jobs-pager-num"
+                                onClick={() => { setPage(totalPages); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                              >{totalPages}</button>
+                            </>
+                          )}
+                          <button
+                            type="button"
+                            className="jobs-pager-btn"
+                            onClick={() => { setPage(Math.min(totalPages, currentPage + 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                            disabled={!hasNext || loading}
+                            data-testid="jobs-pager-next"
+                          >Next →</button>
+                          <span className="jobs-pager-meta" data-testid="jobs-pager-meta">
+                            Page {currentPage} of {totalPages}
+                            {pagination.total ? ` · ${Number(pagination.total).toLocaleString()} jobs` : ''}
+                          </span>
+                        </nav>
+                      );
+                    })()}
+                  </>
                 )}
         </div>
       </div>

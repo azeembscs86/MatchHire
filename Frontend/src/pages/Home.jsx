@@ -686,6 +686,10 @@ export default function Home() {
   const latestJobs = filterActiveJobs(payload?.latestJobs);
   const recommended = filterActiveJobs(payload?.recommendedJobs);
   const latestMatched = filterActiveJobs(payload?.latestMatchedJobs);
+  // Which tier the backend returned for the "Latest Jobs for You"
+  // rail. Drives the eyebrow + subtitle copy so the candidate
+  // understands which fallback path is on screen.
+  const latestMatchedTier = payload?.latestMatchedTier || 'strong';
   const aiSuggestions = payload?.aiSuggestions || null;
   const cta = payload?.cta || null;
   const profileCompletion = payload?.viewer?.profileCompletion ?? null;
@@ -920,18 +924,31 @@ export default function Home() {
           <div className="container">
             <div className="section-head">
               <div>
-                <span className="eyebrow" style={{ display: 'block', marginBottom: 14 }}>↻ Last 7 days</span>
+                <span className="eyebrow" style={{ display: 'block', marginBottom: 14 }}>
+                  {latestMatchedTier === 'strong' ? '↻ Last 7 days · strong matches'
+                    : latestMatchedTier === 'skill' ? '↻ Skill-related opportunities'
+                    : '↻ Latest active jobs'}
+                </span>
                 <h2 className="display">Latest jobs <span className="ital" style={{ fontStyle: 'italic', color: 'var(--coral)' }}>for you</span>.</h2>
+                {latestMatched.length > 0 && (
+                  <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>
+                    {latestMatchedTier === 'strong'
+                      ? 'Strong-fit roles posted in the last week.'
+                      : latestMatchedTier === 'skill'
+                        ? 'No strong matches found — showing latest jobs related to your skills.'
+                        : 'No skill-based matches found — showing latest active jobs.'}
+                  </p>
+                )}
               </div>
               <Link to="/jobs?sort=best_match" className="section-link">See all matches →</Link>
             </div>
             {latestMatched.length === 0 ? (
               <div className="fav-empty" data-testid="latest-jobs-empty">
                 <div className="fav-empty-icon">↻</div>
-                <h3>No latest matching jobs found</h3>
+                <h3>No jobs available right now</h3>
                 <p>
-                  Strong-fit roles posted in the last 7 days will appear here.
-                  Update your profile skills to improve recommendations.
+                  Please check back soon — new roles are added every day.
+                  Update your profile skills to improve future recommendations.
                 </p>
                 <Link to="/profile" className="btn btn-coral">Update profile →</Link>
               </div>
