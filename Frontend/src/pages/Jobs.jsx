@@ -487,6 +487,21 @@ export default function Jobs() {
   const [applyingId, setApplyingId] = useState(null);
   const [applyMessage, setApplyMessage] = useState(null);
   const [rejection, setRejection] = useState(null);
+  // Scroll target for pager clicks. Lands the viewport at the top
+  // of the search-and-results area (just below the page hero +
+  // guidance line) instead of `window.scrollTo(0)`, which jumped
+  // past the rails and felt like a hard refresh.
+  const jobsResultsRef = useRef(null);
+  // Helper used by every pager button — keeps the call site one
+  // line so we don't repeat the smooth-scroll incantation. Setting
+  // page state is what triggers the existing fetch effect; the
+  // scroll is purely a UX nicety.
+  function goToPage(targetPage) {
+    setPage(targetPage);
+    if (jobsResultsRef.current) {
+      jobsResultsRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
   // "Latest Jobs for You" rail — candidate-only.
   //
   // Three-tier backend fallback so the rail is never empty when
@@ -891,6 +906,28 @@ export default function Jobs() {
        * salary, posted-within, experience level, AI match minimum,
        * sort). No internal scrollbars.
        */}
+      {/*
+        * Search guidance line — sits directly above the search bar
+        * with a short, role-aware sentence so first-time visitors
+        * understand WHAT the inputs do. Also doubles as the
+        * `jobsResultsRef` landmark: pager clicks scrollIntoView this
+        * node so the user lands at the top of the search-and-results
+        * region, not at the top of the entire page.
+        */}
+      <div className="container jobs-search-guidance" ref={jobsResultsRef}>
+        <p
+          className="jobs-search-guidance-text"
+          data-testid="jobs-search-guidance"
+          role="note"
+        >
+          <span aria-hidden="true" style={{ marginRight: 8 }}>💡</span>
+          {isCandidate
+            ? 'Use filters to discover jobs that match your skills, preferences, and career goals.'
+            : role === 'employer' || role === 'admin' || role === 'super_admin'
+              ? 'Browse every active posting across MatchHire — filter by role, skills, company, or location.'
+              : 'Search by role, skills, company, or location to explore available opportunities.'}
+        </p>
+      </div>
       <div className="container jobs-search-band">
         <form
           className="jobs-search-bar"
@@ -1269,8 +1306,9 @@ export default function Jobs() {
                           <button
                             type="button"
                             className="jobs-pager-btn"
-                            onClick={() => { setPage(Math.max(1, currentPage - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                            onClick={() => goToPage(Math.max(1, currentPage - 1))}
                             disabled={!hasPrev || loading}
+                            aria-label="Go to previous page"
                             data-testid="jobs-pager-prev"
                           >← Previous</button>
                           {start > 1 && (
@@ -1278,7 +1316,8 @@ export default function Jobs() {
                               <button
                                 type="button"
                                 className="jobs-pager-num"
-                                onClick={() => { setPage(1); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                                onClick={() => goToPage(1)}
+                                aria-label="Go to page 1"
                               >1</button>
                               <span className="jobs-pager-ellipsis" aria-hidden="true">…</span>
                             </>
@@ -1288,8 +1327,9 @@ export default function Jobs() {
                               key={p}
                               type="button"
                               className={`jobs-pager-num${p === currentPage ? ' is-active' : ''}`}
-                              onClick={() => { setPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                              onClick={() => goToPage(p)}
                               aria-current={p === currentPage ? 'page' : undefined}
+                              aria-label={p === currentPage ? `Current page, page ${p}` : `Go to page ${p}`}
                               disabled={loading}
                               data-testid={`jobs-pager-${p}`}
                             >{p}</button>
@@ -1300,15 +1340,17 @@ export default function Jobs() {
                               <button
                                 type="button"
                                 className="jobs-pager-num"
-                                onClick={() => { setPage(totalPages); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                                onClick={() => goToPage(totalPages)}
+                                aria-label={`Go to last page, page ${totalPages}`}
                               >{totalPages}</button>
                             </>
                           )}
                           <button
                             type="button"
                             className="jobs-pager-btn"
-                            onClick={() => { setPage(Math.min(totalPages, currentPage + 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                            onClick={() => goToPage(Math.min(totalPages, currentPage + 1))}
                             disabled={!hasNext || loading}
+                            aria-label="Go to next page"
                             data-testid="jobs-pager-next"
                           >Next →</button>
                           <span className="jobs-pager-meta" data-testid="jobs-pager-meta">

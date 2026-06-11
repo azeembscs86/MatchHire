@@ -3048,6 +3048,24 @@
 }
 
 /* =============================================================================
+ * Jobs page — search guidance line
+ * ---------------------------------------------------------------------------
+ * One-sentence hint that sits directly above the search bar. Role-aware
+ * copy in the component. Subtle muted text + emoji prefix so it reads as
+ * guidance, not a header — doesn't compete with the search bar below.
+ * ===========================================================================*/
+.jobs-search-guidance{
+  padding:18px 0 0;
+}
+.jobs-search-guidance-text{
+  margin:0;font-size:13.5px;line-height:1.5;color:var(--muted);
+  display:inline-flex;align-items:center;
+}
+@media (max-width:520px){
+  .jobs-search-guidance-text{font-size:13px}
+}
+
+/* =============================================================================
  * Jobs page — pagination strip
  * ---------------------------------------------------------------------------
  * Sits below the results grid. Numeric buttons + Prev/Next + a small meta
