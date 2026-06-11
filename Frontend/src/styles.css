@@ -3048,21 +3048,46 @@
 }
 
 /* =============================================================================
- * Jobs page — search guidance line
+ * Jobs page — search guidance banner
  * ---------------------------------------------------------------------------
- * One-sentence hint that sits directly above the search bar. Role-aware
- * copy in the component. Subtle muted text + emoji prefix so it reads as
- * guidance, not a header — doesn't compete with the search bar below.
+ * Anchor card between the "Latest Jobs for You" rail and the search bar.
+ * Bold title + role-aware sentence + target icon. Soft bone background +
+ * subtle line border keeps it on-brand without competing for attention
+ * with the coral primary CTAs.
  * ===========================================================================*/
 .jobs-search-guidance{
-  padding:18px 0 0;
+  padding:18px 0 4px;
 }
-.jobs-search-guidance-text{
-  margin:0;font-size:13.5px;line-height:1.5;color:var(--muted);
-  display:inline-flex;align-items:center;
+.jobs-guidance-banner{
+  display:flex;align-items:flex-start;gap:16px;
+  background:var(--bone);
+  border:1px solid var(--line);
+  border-left:4px solid var(--coral);
+  border-radius:14px;
+  padding:18px 22px;
+}
+.jobs-guidance-icon{
+  font-size:24px;line-height:1;flex:none;
+  display:grid;place-items:center;
+  width:44px;height:44px;border-radius:12px;
+  background:var(--paper);
+  border:1px solid var(--line-soft);
+}
+.jobs-guidance-copy{min-width:0;flex:1}
+.jobs-guidance-title{
+  margin:0 0 4px;
+  font-family:'Fraunces',serif;
+  font-size:18px;font-weight:600;letter-spacing:-.01em;
+  color:var(--ink);line-height:1.25;
+}
+.jobs-guidance-text{
+  margin:0;font-size:14px;line-height:1.55;color:var(--ink-soft);
 }
 @media (max-width:520px){
-  .jobs-search-guidance-text{font-size:13px}
+  .jobs-guidance-banner{padding:14px 16px;gap:12px}
+  .jobs-guidance-icon{width:38px;height:38px;font-size:20px;border-radius:10px}
+  .jobs-guidance-title{font-size:16px}
+  .jobs-guidance-text{font-size:13px}
 }
 
 /* =============================================================================

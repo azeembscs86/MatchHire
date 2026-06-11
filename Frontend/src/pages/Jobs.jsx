@@ -907,26 +907,35 @@ export default function Jobs() {
        * sort). No internal scrollbars.
        */}
       {/*
-        * Search guidance line — sits directly above the search bar
-        * with a short, role-aware sentence so first-time visitors
-        * understand WHAT the inputs do. Also doubles as the
-        * `jobsResultsRef` landmark: pager clicks scrollIntoView this
-        * node so the user lands at the top of the search-and-results
-        * region, not at the top of the entire page.
+        * Search guidance banner — sits between the "Latest Jobs for
+        * You" rail and the search bar. Reads as a visual "anchor"
+        * card: bold title, role-aware description, target icon.
+        * Doubles as the `jobsResultsRef` landmark so pager clicks
+        * scrollIntoView this node and the user lands at the top of
+        * the search-and-results region (not at page top, which
+        * felt like a hard refresh previously).
         */}
       <div className="container jobs-search-guidance" ref={jobsResultsRef}>
-        <p
-          className="jobs-search-guidance-text"
+        <div
+          className="jobs-guidance-banner"
           data-testid="jobs-search-guidance"
           role="note"
+          aria-labelledby="jobs-guidance-title"
         >
-          <span aria-hidden="true" style={{ marginRight: 8 }}>💡</span>
-          {isCandidate
-            ? 'Use filters to discover jobs that match your skills, preferences, and career goals.'
-            : role === 'employer' || role === 'admin' || role === 'super_admin'
-              ? 'Browse every active posting across MatchHire — filter by role, skills, company, or location.'
-              : 'Search by role, skills, company, or location to explore available opportunities.'}
-        </p>
+          <span className="jobs-guidance-icon" aria-hidden="true">🎯</span>
+          <div className="jobs-guidance-copy">
+            <h2 id="jobs-guidance-title" className="jobs-guidance-title">
+              Find your best opportunities
+            </h2>
+            <p className="jobs-guidance-text">
+              {isCandidate
+                ? 'Use filters to discover jobs that match your skills, preferences, and career goals.'
+                : role === 'employer' || role === 'admin' || role === 'super_admin'
+                  ? 'Browse every active posting across MatchHire — filter by role, skills, company, or location.'
+                  : 'Search by role, skills, company, or location to explore available opportunities.'}
+            </p>
+          </div>
+        </div>
       </div>
       <div className="container jobs-search-band">
         <form
