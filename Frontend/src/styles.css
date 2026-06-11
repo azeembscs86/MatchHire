@@ -3048,6 +3048,45 @@
 }
 
 /* =============================================================================
+ * Candidate Dashboard — account status banner
+ * ---------------------------------------------------------------------------
+ * Top-of-main-column alert that appears when the candidate's account
+ * is anything other than `active` (pending admin approval, suspended,
+ * or self-deactivated). Sits inside CandidateDashboardLayout so every
+ * candidate route shows the same banner consistently.
+ * ===========================================================================*/
+.candidate-status-banner{
+  display:flex;align-items:flex-start;gap:14px;
+  margin:14px 24px 0;
+  padding:14px 18px;border-radius:14px;
+  border:1px solid var(--line);
+}
+.candidate-status-banner-icon{
+  flex:none;width:42px;height:42px;border-radius:12px;
+  display:grid;place-items:center;font-size:20px;
+  background:var(--paper);border:1px solid var(--line-soft);
+}
+.candidate-status-banner-copy{min-width:0;flex:1}
+.candidate-status-banner-copy strong{
+  font-family:'Fraunces',serif;font-size:15px;color:var(--ink);
+  display:block;margin-bottom:4px;
+}
+.candidate-status-banner-copy p{
+  margin:0;font-size:13px;line-height:1.5;color:var(--ink-soft);
+}
+.candidate-status-pending{
+  background:rgba(232,93,60,.08);border-color:rgba(232,93,60,.20);
+}
+.candidate-status-suspended,
+.candidate-status-inactive{
+  background:rgba(232,93,60,.14);border-color:rgba(232,93,60,.32);
+}
+@media (max-width:520px){
+  .candidate-status-banner{margin:10px 14px 0;padding:12px 14px;gap:10px}
+  .candidate-status-banner-icon{width:36px;height:36px;font-size:18px}
+}
+
+/* =============================================================================
  * Jobs page — search guidance banner
  * ---------------------------------------------------------------------------
  * Anchor card between the "Latest Jobs for You" rail and the search bar.

@@ -82,6 +82,44 @@ export default function CandidateDashboardLayout() {
         />
         <div className="dash-main dash-main-flush">
           {/*
+           * Account status banner. Login blocks pending /
+           * suspended users at the auth layer, but an admin can
+           * still flip a candidate's status AFTER login (post-
+           * JWT issue). On the next /auth/me refresh the user
+           * object reflects the change and this banner appears.
+           * The per-request `requireActiveAccount` middleware on
+           * candidate.routes is what actually gates API calls —
+           * this banner just gives the candidate context for the
+           * 403s they'll see.
+           */}
+          {user?.status && user.status !== 'active' && (
+            <div
+              className={`candidate-status-banner candidate-status-${user.status}`}
+              role="alert"
+              data-testid="candidate-status-banner"
+            >
+              <div className="candidate-status-banner-icon" aria-hidden="true">
+                {user.status === 'pending' ? '⏳' : '⚠'}
+              </div>
+              <div className="candidate-status-banner-copy">
+                <strong>
+                  {user.status === 'pending'
+                    ? 'Your account is awaiting admin approval'
+                    : user.status === 'suspended'
+                      ? 'Your account has been deactivated'
+                      : 'Your account is inactive'}
+                </strong>
+                <p>
+                  {user.status === 'pending'
+                    ? 'Your profile is visible to you but you can\'t apply, save jobs, or message employers until a super-admin approves the account.'
+                    : user.status === 'suspended'
+                      ? 'Job applications and candidate APIs are blocked. If this is a mistake, contact support to restore access.'
+                      : 'Reactivate your account from the profile settings to restore full access.'}
+                </p>
+              </div>
+            </div>
+          )}
+          {/*
            * `.dash-main-flush` removes the default 36×44 padding
            * so nested pages keep their own hero / page-header
            * spacing instead of doubling it. The class is opt-in

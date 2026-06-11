@@ -64,6 +64,12 @@ export default function DashboardAdmin() {
   // null means the modal is closed.
   const [rejectingJob, setRejectingJob] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
+  // Pending candidate-approval queue. Reads from /admin/users with
+  // role='candidate' + status='pending'. Approve flips status to
+  // 'active'; reject flips to 'suspended' — both via the existing
+  // /admin/users/:id/status endpoint that already audit-logs.
+  const [pendingCandidates, setPendingCandidates] = useState([]);
+  const [busyCandidateId, setBusyCandidateId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,7 +77,7 @@ export default function DashboardAdmin() {
       setLoading(true);
       setError(null);
       try {
-        const [statsData, pendingData, usersData, auditData, healthData, trendsData, pendingJobsData] = await Promise.all([
+        const [statsData, pendingData, usersData, auditData, healthData, trendsData, pendingJobsData, pendingCandidatesData] = await Promise.all([
           adminApi.dashboardStats(),
           adminApi.companies.pending({ page: 1, limit: 6 }),
           adminApi.users.list({ page: 1, limit: 6 }),
@@ -83,6 +89,11 @@ export default function DashboardAdmin() {
           // error just hides the panel.
           adminApi.jobs.list({ admin_status: 'pending', page: 1, limit: 8 })
             .catch(() => ({ records: [] })),
+          // Pending candidate approvals — role='candidate' +
+          // status='pending'. The validator already accepts both
+          // params (admin.validator.js listFilters).
+          adminApi.users.list({ role: 'candidate', status: 'pending', page: 1, limit: 8 })
+            .catch(() => ({ records: [] })),
         ]);
         if (cancelled) return;
         setStats(statsData || null);
@@ -92,6 +103,7 @@ export default function DashboardAdmin() {
         setHealth(healthData || null);
         setSearchTrends(trendsData || null);
         setPendingJobs(pendingJobsData?.records || []);
+        setPendingCandidates(pendingCandidatesData?.records || []);
       } catch (err) {
         if (!cancelled) setError(err);
       } finally {
@@ -160,6 +172,26 @@ export default function DashboardAdmin() {
       /* keep modal open so super-admin can retry */
     } finally {
       setBusyJobId(null);
+    }
+  }
+
+  /**
+   * Candidate approval / rejection. Reuses /admin/users/:id/status
+   * (already audit-logged server-side). Approve → 'active'
+   * (full access). Reject → 'suspended' (account deactivated;
+   * the per-request status guard added to candidate.routes will
+   * block all subsequent candidate-only API calls).
+   */
+  async function moderateCandidate(candidateId, action) {
+    setBusyCandidateId(candidateId);
+    try {
+      const nextStatus = action === 'approve' ? 'active' : 'suspended';
+      await adminApi.users.setStatus(candidateId, { status: nextStatus });
+      setPendingCandidates((list) => list.filter((c) => c.id !== candidateId));
+    } catch (_e) {
+      /* keep the row visible so admin can retry */
+    } finally {
+      setBusyCandidateId(null);
     }
   }
 
@@ -483,6 +515,76 @@ export default function DashboardAdmin() {
             * the reason modal below and writes the reason into the
             * audit log alongside the status flip.
             */}
+          {/*
+            * Pending Candidate Approvals — same shape as the Pending
+            * Job Approvals panel below. Inline Approve / Reject
+            * buttons hit /admin/users/:id/status which flips
+            * `users.status` and writes an audit log entry. After
+            * the action, the row disappears from the queue; the
+            * candidate's NEXT request is caught by the
+            * `requireActiveAccount` middleware on candidate.routes
+            * (which means a rejected candidate is locked out of
+            * every candidate-only endpoint within one HTTP round-trip).
+            */}
+          <div
+            className="dash-panel"
+            style={{ marginTop: 24 }}
+            id="admin-pending-candidates"
+            data-testid="admin-pending-candidates"
+          >
+            <div className="dash-panel-head">
+              <h3>Pending candidate approvals <small>· {pendingCandidates.length} awaiting review</small></h3>
+            </div>
+            {pendingCandidates.length === 0 ? (
+              <p className="muted" style={{ padding: '12px 0' }}>
+                No candidates in the moderation queue right now. New candidate
+                signups will appear here automatically.
+              </p>
+            ) : (
+              <table className="dash-table">
+                <thead>
+                  <tr>
+                    <th>Candidate</th>
+                    <th>Email</th>
+                    <th>Joined</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingCandidates.map((c) => (
+                    <tr key={c.id} data-testid={`pending-candidate-row-${c.id}`}>
+                      <td>
+                        <strong>{c.full_name || '—'}</strong>
+                      </td>
+                      <td><small>{c.email || '—'}</small></td>
+                      <td><small>{c.created_at ? new Date(c.created_at).toLocaleDateString() : '—'}</small></td>
+                      <td>
+                        <div className="row-actions">
+                          <button
+                            type="button"
+                            className="icon-btn success"
+                            disabled={busyCandidateId === c.id}
+                            onClick={() => moderateCandidate(c.id, 'approve')}
+                            title="Approve candidate"
+                            data-testid={`pending-candidate-approve-${c.id}`}
+                          >✓</button>
+                          <button
+                            type="button"
+                            className="icon-btn danger"
+                            disabled={busyCandidateId === c.id}
+                            onClick={() => moderateCandidate(c.id, 'reject')}
+                            title="Reject (deactivate) candidate"
+                            data-testid={`pending-candidate-reject-${c.id}`}
+                          >×</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
           <div
             className="dash-panel"
             style={{ marginTop: 24 }}

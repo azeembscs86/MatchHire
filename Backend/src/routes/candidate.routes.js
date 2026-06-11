@@ -12,14 +12,20 @@ const router = require('express').Router();
 const controller = require('../controllers/candidate.controller');
 const resumeController = require('../controllers/resume.controller');
 const validate = require('../middlewares/validate.middleware');
-const { requireAuth } = require('../middlewares/auth.middleware');
+const { requireAuth, requireActiveAccount } = require('../middlewares/auth.middleware');
 const { requireCandidate } = require('../middlewares/role.middleware');
 const { resumeUpload, imageUploadSingle } = require('../middlewares/upload.middleware');
 const asyncHandler = require('../utils/asyncHandler');
 const v = require('../validators/candidate.validator');
 const pubV = require('../validators/public.validator');
 
-router.use(requireAuth, requireCandidate);
+// Stack order matters: requireAuth populates req.user.id from the
+// JWT, requireActiveAccount loads the live `users.status` and blocks
+// pending / suspended / inactive candidates (closes the post-login
+// suspension gap), requireCandidate enforces the role. An admin
+// flipping a candidate to `suspended` via /admin/users/:id/status
+// takes effect on their NEXT request — no JWT-TTL delay.
+router.use(requireAuth, requireActiveAccount, requireCandidate);
 
 /**
  * Resume endpoints. Multipart upload sits in front of the JSON-only
