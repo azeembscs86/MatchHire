@@ -3162,6 +3162,26 @@
  * strip renders below the card with the Expired pill + Reactivate CTA.
  * ===========================================================================*/
 .company-job-wrap{display:flex;flex-direction:column;gap:6px}
+
+/* Moderation strip — sits ABOVE the card chrome on company My Jobs
+ * when a posting is awaiting super-admin review or has been
+ * rejected. `is-pending` reads as a calm wait state; `is-rejected`
+ * highlights the rejection reason inline so the company can act. */
+.company-job-moderation{
+  display:flex;flex-wrap:wrap;align-items:center;gap:10px;
+  padding:10px 14px;border-radius:12px;border:1px solid var(--line-soft);
+}
+.company-job-moderation.is-pending{
+  background:rgba(232,93,60,.08);border-color:rgba(232,93,60,.20);
+}
+.company-job-moderation.is-rejected{
+  background:rgba(232,93,60,.12);border-color:rgba(232,93,60,.30);
+}
+.company-job-rejection-reason{
+  font-size:13px;color:var(--ink);
+  flex:1 1 100%;
+  padding-top:4px;border-top:1px dashed rgba(232,93,60,.30);
+}
 .company-job-expired-actions{
   display:flex;align-items:center;justify-content:space-between;gap:10px;
   padding:10px 14px;background:var(--bone);border:1px solid var(--line-soft);

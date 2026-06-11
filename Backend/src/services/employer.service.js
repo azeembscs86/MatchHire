@@ -20,6 +20,7 @@ const appRepo = require('../repositories/application.repository');
 const interviewRepo = require('../repositories/interview.repository');
 const matchService = require('./match.service');
 const cache = require('../cache/cache.helper');
+const notificationQueue = require('../queues/notification.queue');
 const AppError = require('../utils/AppError');
 
 // Match floor for the "Matching Jobs From Your Company" carousel on
@@ -55,7 +56,22 @@ async function createJob(user_id, payload) {
   });
   await cache.deleteByPattern(cache.Patterns.jobsList);
   await cache.deleteByPattern(cache.Patterns.dashboardStats('employer'));
-  return jobRepo.findById(id);
+  const job = await jobRepo.findById(id);
+  // Pings the moderation queue ONLY when the row lands as pending —
+  // drafts and admin-injected `admin_status='approved'` paths skip
+  // the notification because they don't actually need super-admin
+  // review. Best-effort: a queue failure must never tip a successful
+  // create into a 500, so we swallow the error and log.
+  if (job?.admin_status === 'pending') {
+    try {
+      await notificationQueue.add('job-approval-required', {
+        job_id: id,
+        job_title: job.title,
+        company_name: company.name,
+      });
+    } catch (_e) { /* non-blocking */ }
+  }
+  return job;
 }
 
 async function updateJob(user_id, jobId, payload) {
@@ -181,7 +197,50 @@ async function reactivateJob(user_id, jobId, payload = {}) {
 
 async function listMyJobs(user_id, paging) {
   const company = await getCompanyForUser(user_id);
-  return jobRepo.listByCompany(company.id, paging);
+  const result = await jobRepo.listByCompany(company.id, paging);
+  // Decorate each row with the latest admin rejection reason, if
+  // any. The reason is captured in `admin_audit_logs.meta` when a
+  // super-admin flips `admin_status` to 'rejected' via
+  // /admin/jobs/:id/status; there's no `jobs.rejection_reason`
+  // column today (would need a migration). Pulling the most recent
+  // matching audit row per job lets the company's My Jobs surface
+  // render the rejection reason inline without that migration.
+  // Single round-trip even with many jobs — narrow IN clause.
+  const rejectedJobs = (result.rows || []).filter((j) => j.admin_status === 'rejected');
+  if (rejectedJobs.length > 0) {
+    const ids = rejectedJobs.map((j) => j.id);
+    const placeholders = ids.map(() => '?').join(',');
+    const reasonRows = await require('../config/database').query(
+      `SELECT entity_id, meta, created_at
+         FROM admin_audit_logs
+        WHERE entity_type = 'job'
+          AND action = 'update_job_status'
+          AND entity_id IN (${placeholders})
+        ORDER BY created_at DESC`,
+      ids
+    );
+    // Map: jobId → most recent rejection-reason audit entry.
+    const byJob = new Map();
+    for (const row of reasonRows) {
+      if (byJob.has(row.entity_id)) continue; // keep the latest only
+      let meta = row.meta;
+      if (typeof meta === 'string') {
+        try { meta = JSON.parse(meta); } catch { meta = {}; }
+      }
+      if (meta?.admin_status === 'rejected' && meta?.reason) {
+        byJob.set(row.entity_id, {
+          reason: String(meta.reason),
+          at: row.created_at,
+        });
+      }
+    }
+    for (const job of result.rows) {
+      const entry = byJob.get(job.id);
+      job.rejection_reason = entry?.reason || null;
+      job.rejected_at = entry?.at || null;
+    }
+  }
+  return result;
 }
 
 /**

@@ -18,6 +18,7 @@ const jobRepo = require('../repositories/job.repository');
 const appRepo = require('../repositories/application.repository');
 const metaRepo = require('../repositories/meta.repository');
 const cache = require('../cache/cache.helper');
+const notificationQueue = require('../queues/notification.queue');
 const { buildPagination } = require('../utils/pagination');
 const AppError = require('../utils/AppError');
 const db = require('../config/database');
@@ -224,6 +225,27 @@ async function updateJobStatus(admin_user_id, id, payload, meta = {}) {
     ip_address: meta.ip,
     user_agent: meta.userAgent,
   });
+  // Notify the company contact whenever a super-admin flips the
+  // approval bit. We target `posted_by_user_id` (the employer
+  // user who submitted the posting) — falls back gracefully when
+  // the column is null (legacy / migrated rows) by skipping the
+  // emit rather than throwing. Reason is sourced from
+  // `payload.reason` and only included in the notification body
+  // when the decision was a rejection.
+  if (payload.admin_status === 'approved' || payload.admin_status === 'rejected') {
+    const recipient = job.posted_by_user_id;
+    if (recipient) {
+      try {
+        await notificationQueue.add('job-approval-decision', {
+          user_id: recipient,
+          job_id: id,
+          job_title: job.title,
+          admin_status: payload.admin_status,
+          reason: payload.reason || null,
+        });
+      } catch (_e) { /* non-blocking */ }
+    }
+  }
   await cache.deleteCache(cache.Keys.jobDetail(id));
   await cache.deleteByPattern(cache.Patterns.jobsList);
   return jobRepo.findById(id);

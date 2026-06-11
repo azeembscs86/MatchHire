@@ -205,8 +205,37 @@ export default function CompanyJobs() {
             });
             if (!view) return null;
             const expired = isJobExpired(j);
+            // Moderation badge derived from the raw row's
+            // `admin_status` (the shared adapter strips this so we
+            // read it directly here). `pending` → coral attention,
+            // `rejected` → coral-deep attention + the inline
+            // rejection-reason note below (populated server-side
+            // from the latest admin_audit_logs entry on this job).
+            const adminStatus = String(j.admin_status || '').toLowerCase();
+            const isPendingReview = adminStatus === 'pending';
+            const isRejected = adminStatus === 'rejected';
             return (
               <div key={j.id} className="company-job-wrap" data-testid={expired ? 'company-job-expired' : 'company-job'}>
+                {(isPendingReview || isRejected) && (
+                  <div
+                    className={`company-job-moderation ${isRejected ? 'is-rejected' : 'is-pending'}`}
+                    data-testid={`company-job-moderation-${j.id}`}
+                  >
+                    <span className="pill pill-applied" data-testid="company-job-moderation-badge">
+                      {isRejected ? '✕ Rejected by admin' : '⏳ Pending approval'}
+                    </span>
+                    {isRejected && j.rejection_reason && (
+                      <span className="company-job-rejection-reason" data-testid="company-job-rejection-reason">
+                        <strong>Reason:</strong> {j.rejection_reason}
+                      </span>
+                    )}
+                    {isPendingReview && (
+                      <span className="muted" style={{ fontSize: 12 }}>
+                        Your posting is in the super-admin queue — it will go live once approved.
+                      </span>
+                    )}
+                  </div>
+                )}
                 <CompanyJobCard
                   job={view}
                   featured={!!j.is_featured}

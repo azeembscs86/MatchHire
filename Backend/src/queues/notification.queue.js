@@ -6,10 +6,17 @@
  * Persists in-app notifications (`notifications` table) and optionally
  * fans out an email through the email queue. Producer for:
  *
- *   - application-status:   { user_id, application_id, status, job_title, company_name }
- *   - interview-scheduled:  { user_id, application_id, scheduled_at, mode }
- *   - new-match:            { user_id, job_id, job_title, match_score }
- *   - job-alert-digest:     { user_id, jobs: [...] }
+ *   - application-status:    { user_id, application_id, status, job_title, company_name }
+ *   - interview-scheduled:   { user_id, application_id, scheduled_at, mode }
+ *   - new-match:             { user_id, job_id, job_title, match_score }
+ *   - job-alert-digest:      { user_id, jobs: [...] }
+ *   - job-approval-required: { job_id, company_name, job_title }
+ *                             fans out one notification row per active
+ *                             super_admin user so the moderation queue
+ *                             surfaces on /dashboard/admin.
+ *   - job-approval-decision: { user_id, job_id, job_title, admin_status, reason }
+ *                             notifies the company contact when a
+ *                             super_admin approves or rejects their post.
  *
  * Inline fallback writes the row directly. Background mode is just a
  * latency optimisation; the source of truth is always the notifications
@@ -69,6 +76,54 @@ const handlers = {
       title: `${jobs.length} new ${jobs.length === 1 ? 'role' : 'roles'} to consider`,
       message: jobs.slice(0, 3).map((j) => j.title).join(' · '),
       data: { count: jobs.length },
+    });
+  },
+  /**
+   * Super-admin notification for the moderation queue. Fans out one
+   * row per active super_admin so every admin gets pinged when a
+   * company submits a new posting. Uses a small SELECT against the
+   * users table because the persistence path is one-to-one with
+   * recipient — no fan-out helper exists today.
+   */
+  'job-approval-required': async ({ job_id, job_title, company_name }) => {
+    const admins = await db.query(
+      `SELECT id FROM users
+        WHERE role IN ('admin', 'super_admin')
+          AND status = 'active'
+          AND deleted_at IS NULL`
+    );
+    for (const a of admins) {
+      await persistNotification({
+        user_id: a.id,
+        type: 'job_approval_required',
+        title: 'New job awaiting approval',
+        message: `${company_name || 'A company'} submitted "${job_title}" for review.`,
+        data: { job_id, company_name },
+      });
+    }
+  },
+  /**
+   * Company-facing notification once super_admin approves or
+   * rejects a posting. The reason field is only populated on the
+   * rejection path; the candidate already reads the reason on
+   * their own My Applications surface for application rejections,
+   * but jobs need their own flow because rejection reasons aren't
+   * stored on the job row itself today.
+   */
+  'job-approval-decision': async ({ user_id, job_title, admin_status, reason }) => {
+    const isApproved = admin_status === 'approved';
+    await persistNotification({
+      user_id,
+      type: 'job_approval_decision',
+      title: isApproved
+        ? `Job approved: ${job_title}`
+        : `Job rejected: ${job_title}`,
+      message: isApproved
+        ? 'Your posting is now live on MatchHire.'
+        : (reason
+          ? `Reason: ${reason}`
+          : 'A super-admin asked you to revise this posting.'),
+      data: { admin_status, reason: reason || null },
     });
   },
 };
